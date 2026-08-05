@@ -39,7 +39,7 @@ export function Header() {
   return (
     <header
       className={`sticky top-0 z-50 border-b transition-colors duration-300 ${
-        scrolled ? "border-border bg-background/85 backdrop-blur-xl" : "border-transparent bg-background"
+        scrolled ? "border-border bg-surface/85 backdrop-blur-xl" : "border-transparent bg-surface"
       }`}
     >
       <div className="mx-auto grid max-w-7xl grid-cols-[auto_1fr_auto] items-center gap-4 px-4 py-3 sm:px-6">

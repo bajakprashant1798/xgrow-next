@@ -59,7 +59,7 @@ export default async function BlogPostPage({ params }: PageProps) {
       "name": "XGRO",
       "logo": {
         "@type": "ImageObject",
-        "url": "https://xgro.in/assets/xgro-mark.png",
+        "url": "https://xgro.in/xlogo.png",
       },
     },
   };

@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function PortfolioPage() {
   return (
-    <div className="flex flex-col pt-10">
+    <div className="flex flex-col">
       {/* Hero Header */}
       <section className="bg-surface py-16 sm:py-20">
         <div className="mx-auto max-w-7xl px-4 text-center sm:px-6">

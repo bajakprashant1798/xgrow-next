@@ -18,7 +18,7 @@ export default function ContactPage() {
     "@context": "https://schema.org",
     "@type": "LocalBusiness",
     "name": "XGRO",
-    "image": "https://xgro.in/assets/xgro-mark.png",
+    "image": "https://xgro.in/xlogo.png",
     "telephone": "+916395319725",
     "email": "xgro.services@gmail.com",
     "address": {
@@ -45,7 +45,7 @@ export default function ContactPage() {
   };
 
   return (
-    <div className="flex flex-col pt-10">
+    <div className="flex flex-col">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
