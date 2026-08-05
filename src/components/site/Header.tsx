@@ -45,9 +45,8 @@ export function Header() {
       <div className="mx-auto grid max-w-7xl grid-cols-[auto_1fr_auto] items-center gap-4 px-4 py-3 sm:px-6">
         <Logo />
 
-        <nav className="hidden items-center justify-center gap-1 lg:flex" aria-label="Main">
+        <nav className="relative hidden items-center justify-center gap-1 lg:flex" aria-label="Main">
           <div
-            className="relative"
             onMouseEnter={() => setMegaOpen(true)}
             onMouseLeave={() => setMegaOpen(false)}
           >

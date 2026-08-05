@@ -7,21 +7,33 @@ const chapters = [
     label: "01 — Listen",
     title: "We start with your customer, not your website.",
     body: "A jeweller in Moradabad and a coaching institute in Delhi need very different first screens. We map who is searching, what they type, and what makes them pick up the phone.",
+    image: "/scroll-story-listen.png",
+    glow: "radial-gradient(circle, rgba(16, 185, 129, 0.22) 0%, transparent 65%)",
+    glowColor: "rgba(16, 185, 129, 0.35)",
   },
   {
     label: "02 — Build",
     title: "A site engineered to load before they lose patience.",
     body: "Mobile-first, under two seconds on 4G, accessible, and structured so Google understands every page. Speed is not a feature here — it is the floor.",
+    image: "/scroll-story-build.png",
+    glow: "radial-gradient(circle, rgba(6, 182, 212, 0.22) 0%, transparent 65%)",
+    glowColor: "rgba(6, 182, 212, 0.35)",
   },
   {
     label: "03 — Automate",
     title: "AI answers the moment the enquiry lands.",
     body: "Chatbots qualify the question, WhatsApp automation follows up, and your CRM fills itself. No lead waits until Monday morning.",
+    image: "/ai-chatbot-whatsapp.png",
+    glow: "radial-gradient(circle, rgba(139, 92, 246, 0.22) 0%, transparent 65%)",
+    glowColor: "rgba(139, 92, 246, 0.35)",
   },
   {
     label: "04 — Grow",
     title: "Then we compound it, month after month.",
     body: "SEO, ads and content run on a measured loop. You see cost per lead, not impressions — and you own every account we touch.",
+    image: "/scroll-story-grow.png",
+    glow: "radial-gradient(circle, rgba(236, 72, 153, 0.22) 0%, transparent 65%)",
+    glowColor: "rgba(236, 72, 153, 0.35)",
   },
 ];
 
@@ -50,29 +62,35 @@ export function ScrollStory() {
   const active = Math.min(chapters.length - 1, Math.floor(progress * chapters.length * 0.999));
 
   return (
-    <div ref={sectionRef} className="relative bg-surface" style={{ height: `${chapters.length * 90}vh` }}>
+    <div ref={sectionRef} className="relative bg-surface border-y border-border/40" style={{ height: `${chapters.length * 95}vh` }}>
       <section className="sticky top-0 flex h-screen items-center overflow-hidden">
+        {/* Ambient background glow mapped to active chapter */}
         <div
           aria-hidden
-          className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-30 blur-3xl transition-all duration-700"
+          className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-35 blur-3xl transition-all duration-700"
           style={{
-            width: `${28 + progress * 34}rem`,
-            height: `${28 + progress * 34}rem`,
-            background: "radial-gradient(circle, var(--color-cyan), transparent 65%)",
+            width: `${32 + progress * 24}rem`,
+            height: `${32 + progress * 24}rem`,
+            background: chapters[active]?.glow || "radial-gradient(circle, var(--color-cyan), transparent 65%)",
           }}
         />
-        <div className="relative mx-auto grid w-full max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[auto_1fr] lg:gap-20">
+
+        <div className="relative mx-auto grid w-full max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[auto_1fr_1.1fr] lg:gap-16 items-center">
+          {/* Left Column: Progress Indicators */}
           <ol className="flex gap-3 lg:flex-col lg:gap-6" aria-label="Our approach">
             {chapters.map((c, i) => (
               <li key={c.label} className="flex items-center gap-3">
                 <span
                   className={`h-1.5 rounded-full transition-all duration-500 lg:h-10 lg:w-1.5 ${
-                    i === active ? "w-10 bg-cyan lg:h-16" : "w-5 bg-border"
+                    i === active ? "w-10 bg-cyan lg:h-16" : "w-5 bg-border/80"
                   }`}
+                  style={{
+                    backgroundColor: i === active ? chapters[active]?.glowColor : undefined,
+                  }}
                 />
                 <span
                   className={`hidden text-xs font-semibold uppercase tracking-widest transition-colors lg:block ${
-                    i === active ? "text-foreground" : "text-muted-foreground/60"
+                    i === active ? "text-foreground font-bold" : "text-muted-foreground/50"
                   }`}
                 >
                   {c.label}
@@ -81,30 +99,83 @@ export function ScrollStory() {
             ))}
           </ol>
 
-          <div className="relative min-h-[22rem]">
+          {/* Center Column: Text Content */}
+          <div className="relative min-h-[22rem] lg:min-h-[26rem] flex flex-col justify-center">
             {chapters.map((c, i) => (
               <div
                 key={c.title}
                 aria-hidden={i !== active}
-                className="absolute inset-0 transition-all duration-700"
+                className="absolute inset-0 transition-all duration-750 flex flex-col justify-center"
                 style={{
                   opacity: i === active ? 1 : 0,
-                  transform: `translateY(${(i - active) * 28}px)`,
+                  transform: `translateY(${(i - active) * 32}px)`,
                   pointerEvents: i === active ? "auto" : "none",
                 }}
               >
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan lg:hidden">{c.label}</p>
-                <h2 className="mt-3 text-3xl font-extrabold leading-tight text-foreground sm:text-5xl lg:text-6xl">
+                <p 
+                  className="text-xs font-bold uppercase tracking-[0.2em] transition-colors duration-500 lg:hidden"
+                  style={{ color: chapters[active]?.glowColor }}
+                >
+                  {c.label}
+                </p>
+                <h2 className="mt-3 text-3xl font-extrabold leading-tight text-foreground sm:text-4xl lg:text-5xl">
                   {c.title}
                 </h2>
-                <p className="mt-6 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">{c.body}</p>
+                <p className="mt-6 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+                  {c.body}
+                </p>
               </div>
             ))}
           </div>
+
+          {/* Right Column: Premium Device Mockup with Screen Fading Transitions */}
+          <div className="relative w-full aspect-[4/3] sm:aspect-[1.4] lg:aspect-[4/3] max-w-xl mx-auto flex items-center justify-center">
+            {/* Glowing device bezel container */}
+            <div className="relative w-full h-full rounded-2xl border border-border/80 bg-neutral-950 p-2.5 shadow-2xl transition-all duration-500 overflow-hidden">
+              
+              {/* Dynamic outline glow border */}
+              <div
+                className="absolute -inset-px rounded-2xl opacity-60 transition-all duration-700"
+                style={{
+                  boxShadow: `0 0 16px 2.5px ${chapters[active]?.glowColor || 'rgba(6, 182, 212, 0.35)'}`,
+                  border: `1.5px solid ${chapters[active]?.glowColor || 'rgba(6, 182, 212, 0.35)'}`,
+                }}
+              />
+
+              {/* Mockup screen slideshow */}
+              <div className="relative w-full h-full rounded-xl overflow-hidden bg-neutral-905">
+                {chapters.map((c, i) => (
+                  <div
+                    key={c.image}
+                    className="absolute inset-0 w-full h-full transition-all duration-750 ease-in-out"
+                    style={{
+                      opacity: i === active ? 1 : 0,
+                      transform: i === active ? "scale(1) rotate(0deg)" : "scale(1.04) rotate(0.4deg)",
+                      pointerEvents: i === active ? "auto" : "none",
+                    }}
+                  >
+                    <img
+                      src={c.image}
+                      alt={c.title}
+                      className="w-full h-full object-cover select-none"
+                      loading="eager"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="absolute inset-x-0 bottom-0 h-1 bg-border">
-          <div className="h-full bg-cyan transition-[width] duration-150" style={{ width: `${progress * 100}%` }} />
+        {/* Bottom progress bar */}
+        <div className="absolute inset-x-0 bottom-0 h-1 bg-border/40">
+          <div 
+            className="h-full transition-[width,background-color] duration-300" 
+            style={{ 
+              width: `${progress * 100}%`,
+              backgroundColor: chapters[active]?.glowColor || 'var(--color-cyan)'
+            }} 
+          />
         </div>
       </section>
     </div>
