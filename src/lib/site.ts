@@ -93,13 +93,16 @@ export const services: Service[] = [
 export const serviceCategories = ["All", "Web", "Creative", "Marketing", "AI"] as const;
 
 export const clients = [
-  { name: "Central Boutique Hotel", note: "Pilikothi, Moradabad" },
-  { name: "Minds Eye", note: "Education" },
-  { name: "Ramanujan Classes", note: "Coaching" },
-  { name: "Maths Mind", note: "Coaching" },
-  { name: "Highway Yatra", note: "Travel" },
-  { name: "Bio90", note: "Wellness" },
-  { name: "SP Jewellers", note: "Retail" },
+  { name: "Central Boutique Hotel", note: "Hospitality · Moradabad", icon: "Hotel" },
+  { name: "Minds Eye", note: "Education & Learning", icon: "GraduationCap" },
+  { name: "Ramanujan Classes", note: "Coaching & EdTech", icon: "BookOpen" },
+  { name: "Maths Mind", note: "Competitive Exams", icon: "Brain" },
+  { name: "Highway Yatra", note: "Travel & Tours", icon: "Compass" },
+  { name: "Bio90", note: "Wellness & Health", icon: "Activity" },
+  { name: "SP Jewellers", note: "Luxury Retail", icon: "Gem" },
+  { name: "Moradabad Handicrafts", note: "Global Export", icon: "Globe" },
+  { name: "Apex Diagnostics", note: "Healthcare", icon: "Building2" },
+  { name: "SilverOak Legal", note: "Corporate Law", icon: "ShieldCheck" },
 ];
 
 export type CaseStudy = {

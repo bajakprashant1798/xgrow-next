@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Sora, Plus_Jakarta_Sans } from "next/font/google";
+import { DM_Sans, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/lib/theme";
 import { LanguageProvider } from "@/lib/i18n";
@@ -8,17 +8,18 @@ import { Footer } from "@/components/site/Footer";
 import { FloatingActions } from "@/components/site/FloatingActions";
 import { CookieConsent } from "@/components/site/CookieConsent";
 import { AiChatWidget } from "@/components/site/AiChatWidget";
+import { TimedLeadPopup } from "@/components/site/TimedLeadPopup";
 
-const sora = Sora({
-  variable: "--font-sora",
+const dmSans = DM_Sans({
+  variable: "--font-dm-sans",
   subsets: ["latin"],
-  weight: ["400", "600", "700", "800"],
+  weight: ["400", "500", "700", "800"],
 });
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   variable: "--font-plus-jakarta-sans",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "500", "600", "700", "800"],
 });
 
 export const metadata: Metadata = {
@@ -43,7 +44,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${sora.variable} ${plusJakartaSans.variable}`}
+      className={`${dmSans.variable} ${plusJakartaSans.variable}`}
       suppressHydrationWarning
     >
       <body>
@@ -57,9 +58,12 @@ export default function RootLayout({
             <FloatingActions />
             <CookieConsent />
             <AiChatWidget />
+            <TimedLeadPopup />
           </LanguageProvider>
         </ThemeProvider>
       </body>
     </html>
   );
 }
+
+

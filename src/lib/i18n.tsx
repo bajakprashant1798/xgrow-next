@@ -31,6 +31,59 @@ const dict = {
 
 type Key = keyof typeof dict;
 
+function applyGoogleTranslate(targetLang: Lang) {
+  if (typeof window === "undefined") return;
+
+  const cookieVal = targetLang === "hi" ? "/en/hi" : "/en/en";
+  const domain = window.location.hostname;
+
+  // Set translation cookie for Google Translate
+  document.cookie = `googtrans=${cookieVal}; path=/; domain=${domain}`;
+  document.cookie = `googtrans=${cookieVal}; path=/;`;
+
+  // Inject Google Translate engine script if not already present
+  if (!document.getElementById("google-translate-script")) {
+    window.googleTranslateElementInit = () => {
+      // @ts-expect-error Google Translate WidgetInit
+      new window.google.translate.TranslateElement(
+        {
+          pageLanguage: "en",
+          includedLanguages: "en,hi",
+          autoDisplay: false,
+        },
+        "google_translate_element"
+      );
+    };
+    const script = document.createElement("script");
+    script.id = "google-translate-script";
+    script.src = "//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit";
+    script.async = true;
+    document.body.appendChild(script);
+  }
+
+  // Poll for combo element to trigger change event safely WITHOUT window.location.reload()
+  let attempts = 0;
+  const interval = setInterval(() => {
+    attempts++;
+    const select = document.querySelector(".goog-te-combo") as HTMLSelectElement | null;
+    if (select) {
+      if (select.value !== (targetLang === "hi" ? "hi" : "en")) {
+        select.value = targetLang === "hi" ? "hi" : "en";
+        select.dispatchEvent(new Event("change"));
+      }
+      clearInterval(interval);
+    } else if (attempts >= 15) {
+      clearInterval(interval);
+    }
+  }, 150);
+}
+
+declare global {
+  interface Window {
+    googleTranslateElementInit?: () => void;
+  }
+}
+
 const LangContext = createContext<{ lang: Lang; setLang: (l: Lang) => void; t: (k: Key) => string }>({
   lang: "en",
   setLang: () => {},
@@ -42,18 +95,30 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const stored = window.localStorage.getItem("xgro-lang") as Lang | null;
-    if (stored === "hi" || stored === "en") setLangState(stored);
+    if (stored === "hi" || stored === "en") {
+      setLangState(stored);
+      if (stored === "hi") {
+        applyGoogleTranslate("hi");
+      }
+    }
   }, []);
 
   const setLang = useCallback((l: Lang) => {
     setLangState(l);
     window.localStorage.setItem("xgro-lang", l);
     document.documentElement.lang = l;
+    applyGoogleTranslate(l);
   }, []);
 
   const t = useCallback((k: Key) => dict[k][lang] ?? dict[k].en, [lang]);
 
-  return <LangContext.Provider value={{ lang, setLang, t }}>{children}</LangContext.Provider>;
+  return (
+    <LangContext.Provider value={{ lang, setLang, t }}>
+      {children}
+      <div id="google_translate_element" style={{ display: "none" }} aria-hidden="true" />
+    </LangContext.Provider>
+  );
 }
 
 export const useLang = () => useContext(LangContext);
+

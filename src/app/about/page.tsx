@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Compass, Eye, ShieldCheck, Sparkles, Trophy, Users } from "lucide-react";
-import { TeamShowcase } from "@/components/home/TeamShowcase";
+import { TeamGrid } from "@/components/about/TeamGrid";
 import { Reveal, Counter } from "@/components/site/Reveal";
 import { stats, values } from "@/lib/site";
 
@@ -81,6 +81,9 @@ export default function AboutPage() {
         </div>
       </section>
 
+      {/* Team Cards Grid (rblln.fr Inspired) */}
+      <TeamGrid />
+
       {/* Values Section */}
       <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:py-28">
         <div className="max-w-3xl">
@@ -111,9 +114,7 @@ export default function AboutPage() {
           })}
         </ul>
       </section>
-
-      {/* Team Showcase */}
-      <TeamShowcase />
     </div>
   );
 }
+

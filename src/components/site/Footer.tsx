@@ -56,6 +56,7 @@ export function Footer() {
                 ["/portfolio", "Portfolio"],
                 ["/pricing", "Pricing"],
                 ["/blog", "Blog"],
+                ["/support", "Support Center"],
                 ["/careers", "Careers"],
                 ["/faqs", "FAQs"],
                 ["/contact", "Contact"],

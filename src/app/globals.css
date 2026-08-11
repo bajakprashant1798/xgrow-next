@@ -19,7 +19,7 @@
  */
 
 @theme inline {
-  --font-display: var(--font-sora), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-dm-sans), var(--font-plus-jakarta-sans), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-plus-jakarta-sans), ui-sans-serif, system-ui, sans-serif;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -217,3 +217,43 @@
     transform: none;
   }
 }
+
+/* Hide Google Translate toolbar & highlight artifacts */
+.goog-te-banner-frame,
+.skiptranslate,
+#goog-gt-tt,
+.goog-te-balloon-frame,
+.goog-te-spinner-pos {
+  display: none !important;
+}
+body {
+  top: 0px !important;
+  position: static !important;
+}
+.goog-text-highlight {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Continuous Logo Marquee Ticker */
+@keyframes marquee-left {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee-left {
+  display: flex;
+  width: max-content;
+  animation: marquee-left 110s linear infinite;
+}
+
+.animate-marquee-left:hover {
+  animation-play-state: paused;
+}
+
+
+
