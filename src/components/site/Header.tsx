@@ -63,20 +63,30 @@ export function Header() {
   };
 
   const handleMouseLeave = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
     hoverTimeoutRef.current = setTimeout(() => {
       setMegaOpen(false);
-    }, 250);
+    }, 150);
   };
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 8);
-    onScroll();
+    const onScroll = () => {
+      setScrolled(window.scrollY > 8);
+      // Close sub-nav mega menu on scroll
+      setMegaOpen(false);
+    };
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       window.removeEventListener("scroll", onScroll);
       if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    setMegaOpen(false);
+  }, [pathname]);
 
   return (
     <header
@@ -242,12 +252,19 @@ export function Header() {
 
       {/* Squarespace-Style Floating Sub-Nav Mega Card Dropdown */}
       {megaOpen && (
-        <div
-          onMouseEnter={handleMouseEnter}
-          onMouseLeave={handleMouseLeave}
-          className="absolute left-0 right-0 top-full z-[100] px-4 sm:px-6 pt-2 pb-8 animate-in fade-in slide-in-from-top-2 duration-200"
-        >
-          <div className="mx-auto max-w-6xl rounded-3xl border border-border/90 bg-surface/98 text-popover-foreground p-6 sm:p-8 shadow-2xl backdrop-blur-3xl">
+        <div className="absolute left-0 right-0 top-full z-[100] px-4 sm:px-6 pt-2 pb-8 animate-in fade-in slide-in-from-top-2 duration-200">
+          {/* Invisible backdrop overlay to close menu instantly when mouse moves to left/right empty space or clicks outside */}
+          <div
+            className="fixed inset-0 top-16 -z-10"
+            onClick={() => setMegaOpen(false)}
+            onMouseEnter={() => setMegaOpen(false)}
+          />
+
+          <div
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+            className="relative mx-auto max-w-6xl rounded-3xl border border-border/90 bg-surface/98 text-popover-foreground p-6 sm:p-8 shadow-2xl backdrop-blur-3xl"
+          >
             <div className="flex items-center justify-between border-b border-border/60 pb-4 mb-6">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan/15 text-cyan">
