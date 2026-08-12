@@ -23,16 +23,41 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://xgrow.agency"),
   title: "XGRO — Your Digital Growth Partner",
   description:
     "Premium digital growth agency: websites, branding, SEO, marketing and AI automation for businesses in India and the USA.",
+  icons: {
+    icon: [
+      { url: "/favicon/favicon.ico" },
+      { url: "/favicon/favicon-96x96.png", sizes: "96x96", type: "image/png" },
+      { url: "/favicon/favicon.svg", type: "image/svg+xml" },
+    ],
+    apple: [
+      { url: "/favicon/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+    shortcut: ["/favicon/favicon.ico"],
+  },
+  manifest: "/favicon/site.webmanifest",
   openGraph: {
     title: "XGRO — Your Digital Growth Partner",
-    description: "Websites, branding, SEO and AI automation built to generate leads.",
+    description: "Websites, branding, SEO and AI automation built to generate leads and scale revenue.",
     type: "website",
+    siteName: "XGRO Digital Agency",
+    images: [
+      {
+        url: "/home/hero.png",
+        width: 1200,
+        height: 630,
+        alt: "XGRO — Your Digital Growth Partner",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
+    title: "XGRO — Your Digital Growth Partner",
+    description: "Websites, branding, SEO and AI automation built to generate leads.",
+    images: ["/home/hero.png"],
   },
 };
 
