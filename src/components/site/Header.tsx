@@ -68,7 +68,7 @@ export function Header() {
     }
     hoverTimeoutRef.current = setTimeout(() => {
       setMegaOpen(false);
-    }, 150);
+    }, 200);
   };
 
   useEffect(() => {
@@ -252,19 +252,21 @@ export function Header() {
 
       {/* Squarespace-Style Floating Sub-Nav Mega Card Dropdown */}
       {megaOpen && (
-        <div className="absolute left-0 right-0 top-full z-[100] px-4 sm:px-6 pt-2 pb-8 animate-in fade-in slide-in-from-top-2 duration-200">
-          {/* Invisible backdrop overlay to close menu instantly when mouse moves to left/right empty space or clicks outside */}
+        <div className="absolute left-0 right-0 top-full z-[100] px-4 sm:px-6 pb-8 animate-in fade-in slide-in-from-top-2 duration-200 pointer-events-none">
+          {/* Invisible backdrop overlay to close menu on click outside */}
           <div
-            className="fixed inset-0 top-16 -z-10"
+            className="fixed inset-0 top-16 -z-10 pointer-events-auto"
             onClick={() => setMegaOpen(false)}
-            onMouseEnter={() => setMegaOpen(false)}
           />
 
           <div
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
-            className="relative mx-auto max-w-6xl rounded-3xl border border-border/90 bg-surface/98 text-popover-foreground p-6 sm:p-8 shadow-2xl backdrop-blur-3xl"
+            className="relative mx-auto max-w-6xl rounded-3xl border border-border/90 bg-surface/98 text-popover-foreground p-6 sm:p-8 shadow-2xl backdrop-blur-3xl pointer-events-auto mt-1"
           >
+            {/* Invisible Top Hover Bridge touching header link to prevent closing on gap */}
+            <div className="absolute -top-4 left-0 right-0 h-4" />
+
             <div className="flex items-center justify-between border-b border-border/60 pb-4 mb-6">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan/15 text-cyan">
