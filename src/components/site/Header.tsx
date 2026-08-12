@@ -34,6 +34,7 @@ const links = [
   { to: "/about", key: "nav.about" },
   { to: "/portfolio", key: "nav.portfolio" },
   { to: "/pricing", key: "nav.pricing" },
+  { to: "/resources", key: "Resources" },
   { to: "/blog", key: "nav.blog" },
   { to: "/support", key: "Support" },
   { to: "/contact", key: "nav.contact" },
@@ -112,13 +113,13 @@ export function Header() {
             <Link
               key={l.to}
               href={l.to}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition-all duration-200 ${
+              className={`rounded-full px-3.5 py-2 text-sm font-semibold transition-all duration-200 ${
                 pathname === l.to
                   ? "bg-secondary text-foreground shadow-sm"
                   : "text-foreground/80 hover:bg-secondary hover:text-foreground"
               }`}
             >
-              {l.key === "Support" ? "Support" : t(l.key)}
+              {l.key.startsWith("nav.") ? t(l.key as any) : l.key}
             </Link>
           ))}
         </nav>
@@ -209,7 +210,7 @@ export function Header() {
                       onClick={() => setMobileOpen(false)}
                       className="flex items-center justify-between rounded-xl px-4 py-3 text-base font-bold text-foreground hover:bg-secondary"
                     >
-                      {l.key === "Support" ? "Support" : t(l.key)}
+                      {l.key.startsWith("nav.") ? t(l.key as any) : l.key}
                     </Link>
                   ))}
                 </div>

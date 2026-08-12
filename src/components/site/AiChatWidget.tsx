@@ -162,18 +162,18 @@ export function AiChatWidget() {
 
   return (
     <>
-      {/* FLOAT BUTTON */}
+      {/* FLOAT BUTTON - Positioned on right side above WhatsApp button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         aria-label="Open chat assistant"
-        className="fixed bottom-20 left-4 sm:bottom-6 sm:left-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-2xl transition-transform hover:scale-105"
+        className="fixed bottom-20 right-4 sm:bottom-20 sm:right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-cyan text-slate-950 shadow-2xl transition-transform hover:scale-105 border border-cyan/40"
       >
         {isOpen ? <X className="h-6 w-6" /> : <Bot className="h-6 w-6" />}
       </button>
 
-      {/* CHAT WINDOW */}
+      {/* CHAT WINDOW - Opens from right side */}
       {isOpen && (
-        <div className="fixed bottom-36 left-4 w-[min(380px,90vw)] z-50 rounded-3xl border border-border bg-popover shadow-2xl overflow-hidden flex flex-col h-[480px] transition-all sm:bottom-20 sm:left-6">
+        <div className="fixed bottom-36 right-4 sm:bottom-34 sm:right-6 w-[min(380px,90vw)] z-50 rounded-3xl border border-border bg-popover shadow-2xl overflow-hidden flex flex-col h-[480px] transition-all">
           {/* Header */}
           <div className="bg-primary p-4 text-primary-foreground flex items-center justify-between">
             <div className="flex items-center gap-2.5">

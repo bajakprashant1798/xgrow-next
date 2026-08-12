@@ -49,12 +49,13 @@ export function Footer() {
           </nav>
 
           <nav aria-label="Company">
-            <h2 className="text-sm font-semibold text-foreground">Company</h2>
+            <h2 className="text-sm font-semibold text-foreground">Company & Resources</h2>
             <ul className="mt-4 space-y-2.5">
               {[
                 ["/about", "About"],
                 ["/portfolio", "Portfolio"],
-                ["/pricing", "Pricing"],
+                ["/pricing", "Pricing & Estimates"],
+                ["/resources", "Resources Hub & Download Center"],
                 ["/blog", "Blog"],
                 ["/support", "Support Center"],
                 ["/careers", "Careers"],

@@ -26,7 +26,7 @@ export function FloatingActions() {
       <button
         onClick={scrollToTop}
         aria-label="Scroll to top"
-        className={`fixed right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-popover text-foreground border border-border shadow-2xl transition-all duration-300 hover:scale-105 bottom-36 sm:bottom-20 ${
+        className={`fixed right-4 sm:right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-popover text-foreground border border-border shadow-2xl transition-all duration-300 hover:scale-105 bottom-36 sm:bottom-34 ${
           show ? "opacity-100 translate-y-0 scale-100" : "opacity-0 translate-y-4 scale-95 pointer-events-none"
         }`}
       >
@@ -39,7 +39,7 @@ export function FloatingActions() {
         target="_blank"
         rel="noreferrer"
         aria-label={t("cta.whatsapp")}
-        className="fixed bottom-20 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-[oklch(0.72_0.18_147)] text-white shadow-lg transition-transform hover:scale-105 sm:bottom-6"
+        className="fixed bottom-5 sm:bottom-6 right-4 sm:right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-[oklch(0.72_0.18_147)] text-white shadow-lg transition-transform hover:scale-105"
       >
         <MessageCircle className="h-6 w-6" />
       </a>

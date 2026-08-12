@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { Download, Sparkles, Calculator as CalcIcon } from "lucide-react";
 import { PricingPreview } from "@/components/home/PricingPreview";
 import { ComparisonTable } from "@/components/pricing/ComparisonTable";
 import { FaqSection } from "@/components/home/FaqSection";
 import { Reveal } from "@/components/site/Reveal";
+import { CostCalculator } from "@/components/calculator/CostCalculator";
+import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = {
-  title: "Pricing Packages — Fixed, Honest Agency Rates | XGRO",
-  description: "Starter, Growth, and Scale plans mapped to your business size. Google, Meta ads, SEO, and AI automation rates.",
+  title: "Pricing Packages & AI Cost Calculator — Fixed Agency Rates | XGRO",
+  description: "Starter, Growth, and Scale plans mapped to your business size. Use our AI website cost calculator to estimate custom quote & download price list.",
   alternates: {
     canonical: "/pricing",
   },
@@ -19,19 +23,39 @@ export default function PricingPage() {
       <section className="bg-surface py-16 sm:py-20">
         <div className="mx-auto max-w-7xl px-4 text-center sm:px-6">
           <Reveal className="mx-auto max-w-3xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan">Simple plans</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan">Simple plans & Calculator</p>
             <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
               Transparent investment, zero surprises
             </h1>
             <p className="mt-6 text-lg leading-relaxed text-muted-foreground">
-              We focus on building value. Review our package options below, and explore the complete feature comparison list.
+              Review our package options below, calculate your custom website cost interactively, or download our official 2026 Price List.
             </p>
+            
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+              <Button asChild className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-black text-xs px-6 py-5 shadow-lg">
+                <a href="#calculator">
+                  <CalcIcon className="mr-2 h-4 w-4" /> AI Cost Calculator
+                </a>
+              </Button>
+              <Button asChild variant="outline" className="rounded-full border-border font-bold text-xs px-6 py-5">
+                <Link href="/resources">
+                  <Download className="mr-2 h-4 w-4 text-cyan" /> Download Price List PDF
+                </Link>
+              </Button>
+            </div>
           </Reveal>
         </div>
       </section>
 
       {/* Pricing Tier Summary Cards */}
       <PricingPreview />
+
+      {/* Interactive AI Website Cost Calculator */}
+      <section id="calculator" className="bg-surface py-20 border-t border-border">
+        <Reveal>
+          <CostCalculator />
+        </Reveal>
+      </section>
 
       {/* Feature Comparison Table */}
       <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:py-28">
@@ -57,3 +81,4 @@ export default function PricingPage() {
     </div>
   );
 }
+

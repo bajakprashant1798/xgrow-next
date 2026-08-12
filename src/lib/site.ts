@@ -92,14 +92,23 @@ export const services: Service[] = [
 
 export const serviceCategories = ["All", "Web", "Creative", "Marketing", "AI"] as const;
 
-export const clients = [
-  { name: "Central Boutique Hotel", note: "Hospitality · Moradabad", icon: "Hotel" },
-  { name: "Minds Eye", note: "Education & Learning", icon: "GraduationCap" },
+export type Client = {
+  name: string;
+  note: string;
+  icon?: string;
+  logo?: string;
+};
+
+export const clients: Client[] = [
+  { name: "Minds Eye", note: "Education & Learning", icon: "GraduationCap", logo: "/trustedByLogos/Minds eye.png" },
+  { name: "Bio90", note: "Wellness & Health", icon: "Activity", logo: "/trustedByLogos/bio90_logo-removebg-preview.png" },
+  { name: "Metrocity Salon", note: "Salon & Beauty", icon: "Gem", logo: "/trustedByLogos/Metrocity Salon.png" },
+  { name: "Iconic", note: "Lifestyle & Apparel", icon: "Sparkles", logo: "/trustedByLogos/ICONIC LOGO.png" },
+  { name: "SP Jewellers", note: "Luxury Retail", icon: "Gem", logo: "/trustedByLogos/sp.png" },
+  { name: "Central Boutique Hotel", note: "Hospitality · Moradabad", icon: "Hotel", logo: "/trustedByLogos/IMG_4188 (1).PNG" },
   { name: "Ramanujan Classes", note: "Coaching & EdTech", icon: "BookOpen" },
   { name: "Maths Mind", note: "Competitive Exams", icon: "Brain" },
   { name: "Highway Yatra", note: "Travel & Tours", icon: "Compass" },
-  { name: "Bio90", note: "Wellness & Health", icon: "Activity" },
-  { name: "SP Jewellers", note: "Luxury Retail", icon: "Gem" },
   { name: "Moradabad Handicrafts", note: "Global Export", icon: "Globe" },
   { name: "Apex Diagnostics", note: "Healthcare", icon: "Building2" },
   { name: "SilverOak Legal", note: "Corporate Law", icon: "ShieldCheck" },
@@ -113,17 +122,78 @@ export type CaseStudy = {
   solution: string;
   result: string;
   metric: string;
+  logo?: string;
 };
 
 export const caseStudies: CaseStudy[] = [
   {
+    slug: "bio90-wellness",
+    client: "Bio90",
+    category: "Website Projects",
+    logo: "/trustedByLogos/bio90_logo-removebg-preview.png",
+    problem: "Health brand lacked an online storefront and automated booking system for personalized wellness consultations.",
+    solution: "Built a high-speed Next.js web application with direct WhatsApp ordering and seamless appointment scheduling.",
+    result: "Achieved 4x growth in online consultations and expanded market reach across Northern India.",
+    metric: "4.2x Online Inquiries",
+  },
+  {
+    slug: "minds-eye-education",
+    client: "Minds Eye",
+    category: "Branding",
+    logo: "/trustedByLogos/Minds eye.png",
+    problem: "Outdated brand visuals failed to convey the premium, modern methodology of their educational institution.",
+    solution: "Designed a clean brand identity system, custom curriculum graphics, and interactive student landing pages.",
+    result: "Increased student admissions by 280% within the first trimester post-rebrand.",
+    metric: "280% Enrollment Surge",
+  },
+  {
+    slug: "maths-mind-coaching",
+    client: "Maths Mind",
+    category: "Marketing Campaigns",
+    problem: "High ad spend on social platforms yielded low-quality leads and high cost per student inquiry.",
+    solution: "Launched geo-targeted Meta & Google search campaigns combined with instant AI WhatsApp qualification.",
+    result: "Slashed acquisition costs while filling all competitive exam batches weeks before deadline.",
+    metric: "5.4x ROI on Ad Spend",
+  },
+  {
+    slug: "metrocity-salon",
+    client: "Metrocity Salon",
+    category: "Website Projects",
+    logo: "/trustedByLogos/Metrocity Salon.png",
+    problem: "Weekend appointment overbooking and weekday client drop-offs caused operational friction.",
+    solution: "Deployed a mobile-first digital service showcase and automated SMS/WhatsApp appointment system.",
+    result: "Increased weekday appointments by 45% and reduced no-shows to near zero.",
+    metric: "-85% Appointment No-Shows",
+  },
+  {
+    slug: "iconic-apparel",
+    client: "Iconic",
+    category: "Branding",
+    logo: "/trustedByLogos/ICONIC LOGO.png",
+    problem: "New fashion & apparel boutique struggled to build brand awareness against established regional retailers.",
+    solution: "Crafted luxury visual branding, social media launch strategy, and festive promotional campaigns.",
+    result: "Generated viral local reach and established Iconic as a go-to lifestyle store.",
+    metric: "6.8x Social Engagement",
+  },
+  {
+    slug: "sp-jewellers",
+    client: "SP Jewellers",
+    category: "Branding",
+    logo: "/trustedByLogos/sp.png",
+    problem: "A trusted local store looked twenty years older than its competitors online.",
+    solution: "Full identity refresh, product photography direction and a festive campaign system.",
+    result: "Walk-ins referencing Instagram became a regular part of daily footfall.",
+    metric: "4.6x Social Reach",
+  },
+  {
     slug: "central-boutique-hotel",
     client: "Central Boutique Hotel",
     category: "Website Projects",
+    logo: "/trustedByLogos/IMG_4188 (1).PNG",
     problem: "Bookings came only through OTAs, eating 18–22% commission on every room night.",
     solution: "A direct-booking website with local SEO for “hotel in Moradabad” and WhatsApp enquiry routing.",
     result: "Direct bookings became a third of monthly rooms within two seasons.",
-    metric: "3.1x direct bookings",
+    metric: "3.1x Direct Bookings",
   },
   {
     slug: "ramanujan-classes",
@@ -132,16 +202,43 @@ export const caseStudies: CaseStudy[] = [
     problem: "Admission enquiries dropped off between poster season and the batch start date.",
     solution: "Meta lead ads plus a WhatsApp automation that answered fee and batch questions instantly.",
     result: "Cost per admission enquiry fell while the counsellor team stopped chasing cold numbers.",
-    metric: "-62% cost per lead",
+    metric: "-62% Cost Per Lead",
   },
   {
-    slug: "sp-jewellers",
-    client: "SP Jewellers",
+    slug: "highway-yatra",
+    client: "Highway Yatra",
+    category: "Website Projects",
+    problem: "Manual phone booking process slowed down tour package bookings during peak holiday seasons.",
+    solution: "Created an interactive travel portal with automated WhatsApp itinerary downloads and quote builders.",
+    result: "Handled 3,000+ seasonal travel inquiries without expanding front-office staff.",
+    metric: "3.8x Monthly Bookings",
+  },
+  {
+    slug: "moradabad-handicrafts",
+    client: "Moradabad Handicrafts",
+    category: "Website Projects",
+    problem: "Brassware exporter lacked an international digital catalog for overseas buyers and distributors.",
+    solution: "Engineered a high-performance export catalog website optimized for global B2B SEO and buyer inquiries.",
+    result: "Secured inquiries from buyers in USA, Europe, and UAE in the first 90 days.",
+    metric: "+140% B2B Global Leads",
+  },
+  {
+    slug: "apex-diagnostics",
+    client: "Apex Diagnostics",
+    category: "Marketing Campaigns",
+    problem: "Local patients were unaware of advanced diagnostic testing packages offered at the center.",
+    solution: "Targeted Google Local Service ads and WhatsApp report delivery integration.",
+    result: "Increased health checkup package bookings by 320% year-over-year.",
+    metric: "320% Package Growth",
+  },
+  {
+    slug: "silveroak-legal",
+    client: "SilverOak Legal",
     category: "Branding",
-    problem: "A trusted local store looked twenty years older than its competitors online.",
-    solution: "Full identity refresh, product photography direction and a festive campaign system.",
-    result: "Walk-ins referencing Instagram became a regular part of daily footfall.",
-    metric: "4.6x social reach",
+    problem: "Law firm had minimal web presence and required a high-trust corporate digital footprint.",
+    solution: "Designed an authoritative corporate website, practice area guides, and lead capture funnels.",
+    result: "Built credibility with corporate clients and secured high-value retainer contracts.",
+    metric: "2.5x Corporate Retainers",
   },
 ];
 
