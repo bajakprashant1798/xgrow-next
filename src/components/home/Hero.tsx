@@ -89,19 +89,17 @@ export function Hero() {
           </Reveal>
         </div>
 
-        {/* Featured Image Showcase Below Hero Text (AiSensy Platform Showcase Style) */}
+        {/* Featured Image Showcase Below Hero Text */}
         <Reveal delay={300} className="mt-12 sm:mt-16">
-          <div className="relative mx-auto max-w-6xl rounded-3xl border border-cyan/30 bg-card p-2 sm:p-4 shadow-2xl shadow-cyan/20 dark:shadow-cyan/10">
-            <div className="relative overflow-hidden rounded-2xl border border-border bg-slate-950">
-              <Image
-                src="/home/hero.png"
-                alt="XGRO AI Platform & Agency Growth Suite"
-                width={1920}
-                height={1080}
-                priority
-                className="w-full h-auto object-cover rounded-2xl shadow-inner transition-transform duration-700 hover:scale-[1.01]"
-              />
-            </div>
+          <div className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl">
+            <Image
+              src="/home/hero.png"
+              alt="XGRO AI Platform & Agency Growth Suite"
+              width={1920}
+              height={1080}
+              priority
+              className="w-full h-auto object-cover rounded-3xl"
+            />
           </div>
         </Reveal>
 
