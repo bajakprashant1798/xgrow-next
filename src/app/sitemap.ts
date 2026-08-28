@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
-import { blogPosts } from "@/lib/site";
+import { getAllSlugs } from "@/sanity/lib/queries";
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = "https://xgro.in";
 
   const staticPages = [
@@ -24,8 +24,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: route === "" ? 1.0 : 0.8,
   }));
 
-  const blogPages = blogPosts.map((post) => ({
-    url: `${baseUrl}/blog/${post.slug}`,
+  const slugs = await getAllSlugs();
+
+  const blogPages = slugs.map((item) => ({
+    url: `${baseUrl}/blog/${item.slug}`,
     lastModified: new Date(),
     changeFrequency: "monthly" as const,
     priority: 0.6,

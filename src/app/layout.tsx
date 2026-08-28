@@ -3,12 +3,7 @@ import { DM_Sans, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/lib/theme";
 import { LanguageProvider } from "@/lib/i18n";
-import { Header } from "@/components/site/Header";
-import { Footer } from "@/components/site/Footer";
-import { FloatingActions } from "@/components/site/FloatingActions";
-import { CookieConsent } from "@/components/site/CookieConsent";
-import { AiChatWidget } from "@/components/site/AiChatWidget";
-import { TimedLeadPopup } from "@/components/site/TimedLeadPopup";
+import { SiteShell } from "@/components/site/SiteShell";
 
 const dmSans = DM_Sans({
   variable: "--font-dm-sans",
@@ -86,15 +81,7 @@ export default function RootLayout({
       <body>
         <ThemeProvider>
           <LanguageProvider>
-            <div className="flex min-h-screen flex-col">
-              <Header />
-              <main className="flex-1">{children}</main>
-              <Footer />
-            </div>
-            <FloatingActions />
-            <CookieConsent />
-            <AiChatWidget />
-            <TimedLeadPopup />
+            <SiteShell>{children}</SiteShell>
           </LanguageProvider>
         </ThemeProvider>
       </body>
