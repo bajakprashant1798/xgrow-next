@@ -1,13 +1,29 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { ArrowLeft, ArrowRight, Quote } from "lucide-react";
 import { SectionHeading } from "./SectionHeading";
-import { testimonials } from "@/lib/site";
+import { getTestimonials, subscribeToDataChanges } from "@/lib/db";
+import { testimonials as fallbackTestimonials } from "@/lib/site";
+import { TestimonialModel } from "@/lib/supabase/types";
 
 export function Testimonials() {
   const trackRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ x: number; left: number } | null>(null);
+  const [testimonialsList, setTestimonialsList] = useState<TestimonialModel[]>([]);
+
+  const loadTestimonials = async () => {
+    const data = await getTestimonials();
+    const published = data.filter((t) => t.status === "published");
+    setTestimonialsList(published.length > 0 ? published : (fallbackTestimonials as any));
+  };
+
+  useEffect(() => {
+    loadTestimonials();
+    return subscribeToDataChanges(loadTestimonials);
+  }, []);
+
+  const displayTestimonials = testimonialsList.length > 0 ? testimonialsList : (fallbackTestimonials as any);
 
   const scrollBy = (dir: 1 | -1) => {
     const el = trackRef.current;
@@ -68,9 +84,9 @@ export function Testimonials() {
         onPointerUp={() => setDrag(null)}
         onPointerLeave={() => setDrag(null)}
       >
-        {testimonials.map((tm) => (
+        {displayTestimonials.map((tm: any, i: number) => (
           <figure
-            key={tm.org}
+            key={tm.id || tm.org || i}
             className="flex w-[85vw] shrink-0 snap-start flex-col rounded-3xl border border-border bg-card p-7 transition-colors hover:border-cyan/40 sm:w-[26rem]"
           >
             <Quote className="h-7 w-7 text-cyan" aria-hidden />

@@ -3,6 +3,7 @@ import { DM_Sans, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/lib/theme";
 import { LanguageProvider } from "@/lib/i18n";
+import { AuthProvider } from "@/lib/auth-context";
 import { SiteShell } from "@/components/site/SiteShell";
 
 const dmSans = DM_Sans({
@@ -81,7 +82,9 @@ export default function RootLayout({
       <body>
         <ThemeProvider>
           <LanguageProvider>
-            <SiteShell>{children}</SiteShell>
+            <AuthProvider>
+              <SiteShell>{children}</SiteShell>
+            </AuthProvider>
           </LanguageProvider>
         </ThemeProvider>
       </body>

@@ -2,15 +2,31 @@
 
 import Link from "next/link";
 import { Clock, Mail, MapPin, Phone } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { Logo } from "./Logo";
-import { services, site } from "@/lib/site";
+import { getServices, subscribeToDataChanges } from "@/lib/db";
+import { services as fallbackServices, site } from "@/lib/site";
+import { ServiceModel } from "@/lib/supabase/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
 export function Footer() {
   const [email, setEmail] = useState("");
+  const [servicesList, setServicesList] = useState<ServiceModel[]>([]);
+
+  const loadServices = async () => {
+    const data = await getServices();
+    const published = data.filter((s) => s.status === "published");
+    setServicesList(published.length > 0 ? published : (fallbackServices as any));
+  };
+
+  useEffect(() => {
+    loadServices();
+    return subscribeToDataChanges(loadServices);
+  }, []);
+
+  const displayServices = servicesList.length > 0 ? servicesList : (fallbackServices as any);
 
   const subscribe = (e: FormEvent) => {
     e.preventDefault();
@@ -35,8 +51,8 @@ export function Footer() {
           <nav aria-label="Services">
             <h2 className="text-sm font-semibold text-foreground">Services</h2>
             <ul className="mt-4 space-y-2.5">
-              {services.map((s) => (
-                <li key={s.slug}>
+              {displayServices.map((s: any) => (
+                <li key={s.id || s.slug}>
                   <Link
                     href={`/services#${s.slug}`}
                     className="text-sm text-muted-foreground transition-colors hover:text-foreground"

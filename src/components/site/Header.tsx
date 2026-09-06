@@ -24,7 +24,9 @@ import {
 import { Logo } from "./Logo";
 import { useTheme } from "@/lib/theme";
 import { useLang } from "@/lib/i18n";
-import { services, site } from "@/lib/site";
+import { getServices, subscribeToDataChanges } from "@/lib/db";
+import { services as fallbackServices, site } from "@/lib/site";
+import { ServiceModel } from "@/lib/supabase/types";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { SearchDialog } from "./SearchDialog";
@@ -51,6 +53,20 @@ export function Header() {
   const [servicesModalOpen, setServicesModalOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [servicesList, setServicesList] = useState<ServiceModel[]>([]);
+
+  const loadServices = async () => {
+    const data = await getServices();
+    const published = data.filter((s) => s.status === "published");
+    setServicesList(published.length > 0 ? published : (fallbackServices as any));
+  };
+
+  useEffect(() => {
+    loadServices();
+    return subscribeToDataChanges(loadServices);
+  }, []);
+
+  const displayServices = servicesList.length > 0 ? servicesList : (fallbackServices as any);
 
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -149,6 +165,9 @@ export function Header() {
           <Button variant="ghost" size="icon" onClick={toggle} aria-label="Toggle dark mode">
             {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
+          <Button asChild variant="outline" className="hidden rounded-full font-bold sm:inline-flex border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan hover:text-slate-950 text-xs shadow-sm">
+            <Link href="/login">Sign In</Link>
+          </Button>
           <Button asChild className="hidden rounded-full font-bold md:inline-flex">
             <Link href="/contact">{t("cta.consultation")}</Link>
           </Button>
@@ -199,8 +218,8 @@ export function Header() {
                       <ArrowRight className="h-4 w-4 text-cyan" />
                     </Link>
                     <ul className="mt-2 space-y-1 border-t border-border pt-2">
-                      {services.map((s) => (
-                        <li key={s.slug}>
+                      {displayServices.map((s: any) => (
+                        <li key={s.id || s.slug}>
                           <Link
                             href={`/services#${s.slug}`}
                             onClick={() => setMobileOpen(false)}
@@ -227,6 +246,12 @@ export function Header() {
 
                 {/* Mobile Actions Footer */}
                 <div className="mt-4 flex flex-col gap-3 border-t border-border pt-6">
+                  <Button asChild variant="outline" className="w-full rounded-2xl font-bold border-cyan/40 bg-cyan/10 text-cyan text-xs py-5">
+                    <Link href="/login" onClick={() => setMobileOpen(false)}>
+                      Sign In to Dashboard
+                    </Link>
+                  </Button>
+
                   <Button asChild className="w-full rounded-full font-bold py-6">
                     <Link href="/contact" onClick={() => setMobileOpen(false)}>
                       {t("cta.consultation")}
@@ -298,11 +323,14 @@ export function Header() {
             </div>
 
             <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-              {services.map((s, idx) => {
-                const IconComponent = serviceCategoryIcons[idx] || Code2;
+              {displayServices.map((s: any, idx: number) => {
+                const IconComponent = serviceCategoryIcons[idx % serviceCategoryIcons.length] || Code2;
+                const blurb = s.short_description || s.blurb || "";
+                const items = (s.features || s.items || []) as string[];
+
                 return (
                   <Link
-                    key={s.slug}
+                    key={s.id || s.slug}
                     href={`/services#${s.slug}`}
                     onClick={() => setMegaOpen(false)}
                     className="group/item flex flex-col justify-between rounded-2xl border border-border/80 bg-card p-4 transition-all duration-200 hover:-translate-y-1 hover:border-cyan/60 hover:shadow-xl"
@@ -317,11 +345,11 @@ export function Header() {
                         </h4>
                       </div>
                       <p className="mt-2 text-xs leading-relaxed text-muted-foreground line-clamp-2">
-                        {s.blurb}
+                        {blurb}
                       </p>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-1 border-t border-border/50 pt-2">
-                      {s.items.slice(0, 2).map((item) => (
+                      {items.slice(0, 2).map((item: string) => (
                         <span key={item} className="rounded-md bg-secondary px-2 py-0.5 text-[9px] font-medium text-secondary-foreground">
                           {item}
                         </span>
@@ -365,11 +393,14 @@ export function Header() {
           </DialogHeader>
 
           <div className="mt-4 grid gap-3 max-h-[60vh] overflow-y-auto pr-1">
-            {services.map((s, idx) => {
-              const IconComponent = serviceCategoryIcons[idx] || Code2;
+            {displayServices.map((s: any, idx: number) => {
+              const IconComponent = serviceCategoryIcons[idx % serviceCategoryIcons.length] || Code2;
+              const blurb = s.short_description || s.blurb || "";
+              const items = (s.features || s.items || []) as string[];
+
               return (
                 <Link
-                  key={s.slug}
+                  key={s.id || s.slug}
                   href={`/services#${s.slug}`}
                   onClick={() => setServicesModalOpen(false)}
                   className="flex items-start gap-4 rounded-2xl border border-border bg-card p-4 transition-all hover:border-cyan hover:shadow-lg group"
@@ -385,10 +416,10 @@ export function Header() {
                       <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-cyan group-hover:translate-x-1 transition-all" />
                     </div>
                     <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      {s.blurb}
+                      {blurb}
                     </p>
                     <div className="mt-2.5 flex flex-wrap gap-1">
-                      {s.items.map((item) => (
+                      {items.map((item: string) => (
                         <span key={item} className="rounded-md bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">
                           {item}
                         </span>

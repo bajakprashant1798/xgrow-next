@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
-import { services } from "@/lib/site";
+import { getServices, subscribeToDataChanges } from "@/lib/db";
+import { services as fallbackServices } from "@/lib/site";
+import { ServiceModel } from "@/lib/supabase/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,6 +23,7 @@ type ContactFormInput = z.infer<typeof contactSchema>;
 
 export function ContactForm() {
   const [loading, setLoading] = useState(false);
+  const [servicesList, setServicesList] = useState<ServiceModel[]>([]);
   const [errors, setErrors] = useState<Partial<Record<keyof ContactFormInput, string>>>({});
   const [formData, setFormData] = useState<ContactFormInput>({
     name: "",
@@ -30,6 +33,19 @@ export function ContactForm() {
     serviceNeeded: "",
     details: "",
   });
+
+  const loadServices = async () => {
+    const data = await getServices();
+    const published = data.filter((s) => s.status === "published");
+    setServicesList(published.length > 0 ? published : (fallbackServices as any));
+  };
+
+  useEffect(() => {
+    loadServices();
+    return subscribeToDataChanges(loadServices);
+  }, []);
+
+  const displayServices = servicesList.length > 0 ? servicesList : (fallbackServices as any);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -168,8 +184,8 @@ export function ContactForm() {
           className="mt-2 block w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 h-11 text-foreground"
         >
           <option value="">Select a service...</option>
-          {services.map((s) => (
-            <option key={s.slug} value={s.title}>
+          {displayServices.map((s: any) => (
+            <option key={s.id || s.slug} value={s.title}>
               {s.title}
             </option>
           ))}

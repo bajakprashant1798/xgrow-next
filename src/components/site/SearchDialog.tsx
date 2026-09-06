@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CommandDialog,
@@ -9,7 +10,9 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { faqs, services } from "@/lib/site";
+import { getServices, getFaqs, subscribeToDataChanges } from "@/lib/db";
+import { faqs as fallbackFaqs, services as fallbackServices } from "@/lib/site";
+import { ServiceModel, FaqModel } from "@/lib/supabase/types";
 import { useLang } from "@/lib/i18n";
 
 const pages = [
@@ -33,6 +36,24 @@ export function SearchDialog({
 }) {
   const router = useRouter();
   const { t } = useLang();
+  const [servicesList, setServicesList] = useState<ServiceModel[]>([]);
+  const [faqsList, setFaqsList] = useState<FaqModel[]>([]);
+
+  const loadData = async () => {
+    const [sData, fData] = await Promise.all([getServices(), getFaqs()]);
+    const publishedServices = sData.filter((s) => s.status === "published");
+    setServicesList(publishedServices.length > 0 ? publishedServices : (fallbackServices as any));
+    const publishedFaqs = fData.filter((f) => f.status === "published");
+    setFaqsList(publishedFaqs.length > 0 ? publishedFaqs : (fallbackFaqs as any));
+  };
+
+  useEffect(() => {
+    loadData();
+    return subscribeToDataChanges(loadData);
+  }, []);
+
+  const displayServices = servicesList.length > 0 ? servicesList : (fallbackServices as any);
+  const displayFaqs = faqsList.length > 0 ? faqsList : (fallbackFaqs as any);
 
   const go = (to: string, hash?: string) => {
     onOpenChange(false);
@@ -53,22 +74,28 @@ export function SearchDialog({
           ))}
         </CommandGroup>
         <CommandGroup heading="Services">
-          {services.map((s) => (
-            <CommandItem
-              key={s.slug}
-              value={`${s.title} ${s.items.join(" ")}`}
-              onSelect={() => go("/services", s.slug)}
-            >
-              {s.title}
-            </CommandItem>
-          ))}
+          {displayServices.map((s: any) => {
+            const items = (s.features || s.items || []) as string[];
+            return (
+              <CommandItem
+                key={s.id || s.slug}
+                value={`${s.title} ${items.join(" ")}`}
+                onSelect={() => go("/services", s.slug)}
+              >
+                {s.title}
+              </CommandItem>
+            );
+          })}
         </CommandGroup>
         <CommandGroup heading="Answers">
-          {faqs.map((f) => (
-            <CommandItem key={f.q} value={f.q} onSelect={() => go("/faqs")}>
-              {f.q}
-            </CommandItem>
-          ))}
+          {displayFaqs.map((f: any, idx: number) => {
+            const question = f.question || f.q;
+            return (
+              <CommandItem key={f.id || question || idx} value={question} onSelect={() => go("/faqs")}>
+                {question}
+              </CommandItem>
+            );
+          })}
         </CommandGroup>
       </CommandList>
     </CommandDialog>
