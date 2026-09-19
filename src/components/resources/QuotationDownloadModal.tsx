@@ -13,6 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { CountryPhoneInput } from "@/components/ui/country-phone-input";
+import { DEFAULT_COUNTRY, Country } from "@/lib/countries";
 import {
   CheckCircle2,
   Copy,
@@ -58,17 +60,64 @@ export function QuotationDownloadModal({
   const [businessName, setBusinessName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [country, setCountry] = useState<Country>(DEFAULT_COUNTRY);
   const [notes, setNotes] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [generatedCoupon, setGeneratedCoupon] = useState("");
   const [copied, setCopied] = useState(false);
+  const [errors, setErrors] = useState<{ name?: string; email?: string; phone?: string }>({});
+
+  const validate = (): boolean => {
+    const newErrors: { name?: string; email?: string; phone?: string } = {};
+
+    // Name validation
+    if (!name.trim()) {
+      newErrors.name = "Please enter your name";
+    } else if (name.trim().length < 2) {
+      newErrors.name = "Name must be at least 2 characters";
+    }
+
+    // Email validation
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!email.trim()) {
+      newErrors.email = "Please enter your email address";
+    } else if (!emailRegex.test(email.trim())) {
+      newErrors.email = "Please enter a valid email address (e.g. name@company.com)";
+    }
+
+    // Phone validation
+    const digitsOnly = phone.replace(/\D/g, "");
+    if (!digitsOnly) {
+      newErrors.phone = "Please enter your phone number";
+    } else if (country.code === "IN") {
+      if (digitsOnly.length !== 10) {
+        newErrors.phone = "Indian mobile number must be exactly 10 digits";
+      } else if (!/^[6-9]/.test(digitsOnly)) {
+        newErrors.phone = "Indian mobile numbers must start with 6, 7, 8, or 9";
+      }
+    } else {
+      if (digitsOnly.length < country.minLength || digitsOnly.length > country.maxLength) {
+        newErrors.phone = `Phone number must be ${country.minLength === country.maxLength ? country.minLength : `${country.minLength}-${country.maxLength}`} digits for ${country.name}`;
+      }
+    }
+
+    setErrors(newErrors);
+
+    if (Object.keys(newErrors).length > 0) {
+      const firstError = Object.values(newErrors)[0];
+      toast.error(firstError);
+      return false;
+    }
+
+    return true;
+  };
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !email.trim() || !phone.trim()) {
-      toast.error("Please fill in your Name, Email and Phone number.");
+
+    if (!validate()) {
       return;
     }
 
@@ -80,16 +129,19 @@ export function QuotationDownloadModal({
       const coupon = `XGROW-SAVE15-${randomSuffix}`;
       setGeneratedCoupon(coupon);
 
+      const fullPhone = `${country.dialCode} ${phone.trim()}`;
+
       // Save lead to local CRM storage so marketing team has visitor info
       try {
         const existingLeads = JSON.parse(localStorage.getItem("xgro_leads") || "[]");
         const newLead = {
           id: `LEAD-${Date.now()}`,
-          name,
-          businessName,
-          email,
-          phone,
-          notes,
+          name: name.trim(),
+          businessName: businessName.trim(),
+          email: email.trim(),
+          phone: fullPhone,
+          country: `${country.flag} ${country.name} (${country.dialCode})`,
+          notes: notes.trim(),
           type,
           resourceTitle: type === "calculator" ? "Custom Calculator Quote" : resourceTitle,
           coupon,
@@ -127,14 +179,16 @@ export function QuotationDownloadModal({
       day: "numeric",
     });
 
+    const fullPhone = `${country.dialCode} ${phone.trim()}`;
+
     if (type === "calculator" && calcData) {
       const quoteDetails: QuoteDetails = {
         quoteId: `${Math.floor(100000 + Math.random() * 900000)}`,
         couponCode: generatedCoupon || "XGROW-SAVE15",
-        clientName: name,
-        businessName: businessName || "Valued Client",
-        clientEmail: email,
-        clientPhone: phone,
+        clientName: name.trim(),
+        businessName: businessName.trim() || "Valued Client",
+        clientEmail: email.trim(),
+        clientPhone: fullPhone,
         businessType: calcData.businessType,
         pagesCount: calcData.pagesCount,
         currency: calcData.currency,
@@ -154,10 +208,10 @@ export function QuotationDownloadModal({
       downloadPriceListPDF({
         resourceTitle: resourceTitle,
         resourceCategory: type === "pricelist" ? "Price List" : "Resource Hub",
-        clientName: name,
-        clientEmail: email,
-        clientPhone: phone,
-        businessName: businessName,
+        clientName: name.trim(),
+        clientEmail: email.trim(),
+        clientPhone: fullPhone,
+        businessName: businessName.trim(),
         couponCode: generatedCoupon || "XGROW-SAVE15",
         date: today,
       });
@@ -166,7 +220,7 @@ export function QuotationDownloadModal({
   };
 
   const handleWhatsAppRedirect = () => {
-    let msg = `Hi XGRO Team! My name is ${name}. `;
+    let msg = `Hi XGRO Team! My name is ${name.trim()}. `;
     if (type === "calculator" && calcData) {
       msg += `I just used your AI Cost Calculator for my ${calcData.businessType} project (${calcData.pagesCount}). Estimated quote: ${calcData.currencySymbol}${calcData.finalMinPrice.toLocaleString()} - ${calcData.currencySymbol}${calcData.finalMaxPrice.toLocaleString()}. My Discount Coupon Code is ${generatedCoupon}. I'd like to proceed!`;
     } else {
@@ -207,16 +261,21 @@ export function QuotationDownloadModal({
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="visitor-name" className="text-xs font-bold text-foreground">
-                    Your Name *
+                    Your Name <span className="text-cyan">*</span>
                   </Label>
                   <Input
                     id="visitor-name"
-                    required
                     placeholder="e.g. Rahul Sharma"
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="h-10 rounded-xl"
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      if (errors.name) setErrors((prev) => ({ ...prev, name: undefined }));
+                    }}
+                    className={`h-10 rounded-xl ${
+                      errors.name ? "border-red-500 focus-visible:ring-red-500" : ""
+                    }`}
                   />
+                  {errors.name && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.name}</p>}
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="visitor-biz" className="text-xs font-bold text-foreground">
@@ -235,31 +294,42 @@ export function QuotationDownloadModal({
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="visitor-email" className="text-xs font-bold text-foreground">
-                    Email Address *
+                    Email Address <span className="text-cyan">*</span>
                   </Label>
                   <Input
                     id="visitor-email"
                     type="email"
-                    required
                     placeholder="name@company.com"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="h-10 rounded-xl"
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
+                    }}
+                    className={`h-10 rounded-xl ${
+                      errors.email ? "border-red-500 focus-visible:ring-red-500" : ""
+                    }`}
                   />
+                  {errors.email && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.email}</p>}
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="visitor-phone" className="text-xs font-bold text-foreground">
-                    WhatsApp Phone Number *
+                    WhatsApp / Mobile Number <span className="text-cyan">*</span>
                   </Label>
-                  <Input
+                  <CountryPhoneInput
                     id="visitor-phone"
-                    type="tel"
-                    required
-                    placeholder="+91 98765 43210"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="h-10 rounded-xl"
+                    onChange={(val) => {
+                      setPhone(val);
+                      if (errors.phone) setErrors((prev) => ({ ...prev, phone: undefined }));
+                    }}
+                    selectedCountry={country}
+                    onCountryChange={(c) => {
+                      setCountry(c);
+                      if (errors.phone) setErrors((prev) => ({ ...prev, phone: undefined }));
+                    }}
+                    error={errors.phone}
                   />
+                  {errors.phone && <p className="text-[10px] text-red-500 font-medium mt-0.5">{errors.phone}</p>}
                 </div>
               </div>
 

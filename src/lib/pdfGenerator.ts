@@ -41,6 +41,9 @@ export function downloadQuotationPDF(quote: QuoteDetails) {
     return;
   }
 
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const logoUrl = `${origin}/xlogo.png`;
+
   const htmlContent = `
 <!DOCTYPE html>
 <html lang="en">
@@ -48,7 +51,7 @@ export function downloadQuotationPDF(quote: QuoteDetails) {
   <meta charset="UTF-8">
   <title>XGRO Quotation #${quote.quoteId} - ${quote.clientName}</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
     
     * {
       box-sizing: border-box;
@@ -67,22 +70,57 @@ export function downloadQuotationPDF(quote: QuoteDetails) {
     .header {
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
-      border-b: 2px solid #e2e8f0;
+      align-items: center;
+      border-bottom: 2px solid #e2e8f0;
       padding-bottom: 24px;
       margin-bottom: 30px;
     }
 
-    .logo-box h1 {
-      font-size: 28px;
-      font-weight: 900;
-      color: #0284c7;
-      letter-spacing: -0.5px;
+    .logo-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 16px;
     }
-    .logo-box p {
+    .logo-img {
+      width: 52px;
+      height: 52px;
+      object-fit: contain;
+      background: transparent;
+      padding: 0;
+      border: none;
+      box-shadow: none;
+    }
+    .brand-title {
+      font-size: 26px;
+      font-weight: 900;
+      color: #0f172a;
+      letter-spacing: -0.5px;
+      line-height: 1.1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand-tagline {
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #0284c7;
+      background: #e0f2fe;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      display: inline-block;
+    }
+    .brand-sub {
       font-size: 12px;
+      font-weight: 600;
+      color: #475569;
+      margin-top: 3px;
+    }
+    .brand-meta {
+      font-size: 11px;
       color: #64748b;
-      margin-top: 4px;
+      margin-top: 2px;
     }
 
     .meta-box {
@@ -97,6 +135,7 @@ export function downloadQuotationPDF(quote: QuoteDetails) {
       padding: 6px 14px;
       border-radius: 9999px;
       margin-bottom: 8px;
+      letter-spacing: 0.5px;
     }
     .meta-line {
       font-size: 13px;
@@ -211,7 +250,7 @@ export function downloadQuotationPDF(quote: QuoteDetails) {
     }
 
     .terms {
-      border-t: 1px solid #e2e8f0;
+      border-top: 1px solid #e2e8f0;
       padding-top: 20px;
       font-size: 12px;
       color: #64748b;
@@ -227,9 +266,29 @@ export function downloadQuotationPDF(quote: QuoteDetails) {
 
     .footer-stamp {
       margin-top: 30px;
-      text-align: center;
+      padding-top: 20px;
+      border-top: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       font-size: 12px;
-      color: #94a3b8;
+      color: #64748b;
+    }
+    .footer-stamp .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .footer-stamp img {
+      width: 22px;
+      height: 22px;
+      object-fit: contain;
+      background: transparent;
+      padding: 0;
+      border: none;
+      box-shadow: none;
     }
 
     @media print {
@@ -250,10 +309,16 @@ export function downloadQuotationPDF(quote: QuoteDetails) {
   </div>
 
   <div class="header">
-    <div class="logo-box">
-      <h1>XGRO</h1>
-      <p>Premium Digital Growth & AI Automation Agency</p>
-      <p>MDA, Moradabad, UP | India & USA | Phone: +91 63953 19725</p>
+    <div class="logo-wrapper">
+      <img src="${logoUrl}" alt="XGRO Logo" class="logo-img" onerror="this.style.display='none'" />
+      <div>
+        <div class="brand-title">
+          XGRO
+          <span class="brand-tagline">Growth Studio</span>
+        </div>
+        <div class="brand-sub">Premium Digital Growth & AI Automation Agency</div>
+        <div class="brand-meta">MDA Moradabad, UP | India & USA | Phone: +91 63953 19725</div>
+      </div>
     </div>
     <div class="meta-box">
       <span class="quote-badge">OFFICIAL ESTIMATED QUOTATION</span>
@@ -336,14 +401,12 @@ export function downloadQuotationPDF(quote: QuoteDetails) {
   </div>
 
   <div class="footer-stamp">
-    <p>© ${new Date().getFullYear()} XGRO Digital Agency. Generated automatically for ${quote.clientName}.</p>
+    <div class="brand">
+      <img src="${logoUrl}" alt="" onerror="this.style.display='none'" />
+      <span>XGRO Digital Growth Agency</span>
+    </div>
+    <p>© ${new Date().getFullYear()} XGRO. Generated automatically for ${quote.clientName}.</p>
   </div>
-
-  <script>
-    window.onload = function() {
-      // Auto open print box if desired
-    };
-  </script>
 </body>
 </html>
   `;
@@ -362,6 +425,9 @@ export function downloadPriceListPDF(details: ResourceDetails) {
     return;
   }
 
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const logoUrl = `${origin}/xlogo.png`;
+
   const htmlContent = `
 <!DOCTYPE html>
 <html lang="en">
@@ -369,8 +435,14 @@ export function downloadPriceListPDF(details: ResourceDetails) {
   <meta charset="UTF-8">
   <title>XGRO Official Price List & Rate Card 2026</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
     
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
     body {
       font-family: 'Plus Jakarta Sans', sans-serif;
       color: #0f172a;
@@ -381,12 +453,74 @@ export function downloadPriceListPDF(details: ResourceDetails) {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-b: 2px solid #0284c7;
+      border-bottom: 2px solid #0284c7;
       padding-bottom: 20px;
       margin-bottom: 24px;
     }
-    .logo { font-size: 30px; font-weight: 900; color: #0284c7; }
-    .badge { background: #e0f2fe; color: #0369a1; padding: 6px 16px; border-radius: 20px; font-weight: 700; font-size: 12px; }
+    .logo-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .logo-img {
+      width: 52px;
+      height: 52px;
+      object-fit: contain;
+      background: transparent;
+      padding: 0;
+      border: none;
+      box-shadow: none;
+    }
+    .brand-title {
+      font-size: 26px;
+      font-weight: 900;
+      color: #0f172a;
+      letter-spacing: -0.5px;
+      line-height: 1.1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand-tagline {
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #0284c7;
+      background: #e0f2fe;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      display: inline-block;
+    }
+    .brand-sub {
+      font-size: 12px;
+      font-weight: 600;
+      color: #475569;
+      margin-top: 3px;
+    }
+    .brand-meta {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+
+    .meta-box {
+      text-align: right;
+    }
+    .badge {
+      background: #e0f2fe;
+      color: #0369a1;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-weight: 800;
+      font-size: 12px;
+      display: inline-block;
+      margin-bottom: 6px;
+    }
+    .meta-line {
+      font-size: 12px;
+      color: #64748b;
+    }
 
     .user-welcome {
       background: #f8fafc;
@@ -429,6 +563,33 @@ export function downloadPriceListPDF(details: ResourceDetails) {
     td { padding: 12px 14px; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
     .price { font-weight: 800; color: #0284c7; text-align: right; }
 
+    .footer-stamp {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #cbd5e1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #64748b;
+    }
+    .footer-stamp .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .footer-stamp img {
+      width: 22px;
+      height: 22px;
+      object-fit: contain;
+      background: transparent;
+      padding: 0;
+      border: none;
+      box-shadow: none;
+    }
+
     @media print {
       .no-print { display: none; }
     }
@@ -442,12 +603,21 @@ export function downloadPriceListPDF(details: ResourceDetails) {
   </div>
 
   <div class="header">
-    <div>
-      <div class="logo">XGRO</div>
-      <p style="font-size:12px; color:#64748b;">Official 2026 Agency Rate Card & Service Directory</p>
+    <div class="logo-wrapper">
+      <img src="${logoUrl}" alt="XGRO Logo" class="logo-img" onerror="this.style.display='none'" />
+      <div>
+        <div class="brand-title">
+          XGRO
+          <span class="brand-tagline">Growth Studio</span>
+        </div>
+        <div class="brand-sub">Official 2026 Agency Rate Card & Service Directory</div>
+        <div class="brand-meta">MDA Moradabad, UP | India & USA | Phone: +91 63953 19725</div>
+      </div>
     </div>
-    <div>
+    <div class="meta-box">
       <span class="badge">OFFICIAL PRICE LIST</span>
+      <div class="meta-line">Verified: <strong>2026 Edition</strong></div>
+      <div class="meta-line">Date: <strong>${details.date}</strong></div>
     </div>
   </div>
 
@@ -553,8 +723,12 @@ export function downloadPriceListPDF(details: ResourceDetails) {
     </tbody>
   </table>
 
-  <div style="margin-top:40px; border-top:1px solid #cbd5e1; pt-4; font-size:12px; color:#64748b; text-align:center;">
-    <p>XGRO Digital Growth Agency · MDA Moradabad UP India · Phone: +91 63953 19725 · Email: xgro.services@gmail.com</p>
+  <div class="footer-stamp">
+    <div class="brand">
+      <img src="${logoUrl}" alt="" onerror="this.style.display='none'" />
+      <span>XGRO Digital Growth Agency</span>
+    </div>
+    <p>MDA Moradabad UP India · +91 63953 19725 · xgro.services@gmail.com</p>
   </div>
 </body>
 </html>
