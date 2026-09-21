@@ -28,9 +28,9 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
   // Public marketing website layout
   return (
     <>
-      <div className="flex min-h-screen flex-col">
+      <div className="flex min-h-screen flex-col overflow-x-hidden w-full max-w-full">
         <Header />
-        <main className="flex-1">{children}</main>
+        <main className="flex-1 overflow-x-hidden w-full max-w-full">{children}</main>
         <Footer />
       </div>
       <FloatingActions />

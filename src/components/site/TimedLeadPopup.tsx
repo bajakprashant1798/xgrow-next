@@ -108,14 +108,14 @@ export function TimedLeadPopup() {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-[92vw] sm:max-w-[430px] rounded-2xl sm:rounded-3xl border border-cyan/40 bg-surface/98 backdrop-blur-3xl p-4 sm:p-6 shadow-2xl">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-[430px] max-h-[90vh] overflow-y-auto rounded-2xl sm:rounded-3xl border border-cyan/40 bg-surface/98 backdrop-blur-3xl p-4 sm:p-6 shadow-2xl">
         {/* Decorative Glow */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl sm:rounded-3xl">
           <div className="absolute -top-10 -right-10 h-28 w-28 rounded-full bg-cyan/20 blur-2xl" />
           <div className="absolute -bottom-10 -left-10 h-28 w-28 rounded-full bg-primary/20 blur-2xl" />
         </div>
 
-        <DialogHeader className="relative z-10 text-left">
+        <DialogHeader className="relative z-10 text-left pr-9">
           <div className="inline-flex items-center gap-1.5 rounded-full bg-cyan/15 px-2.5 py-0.5 text-[11px] font-bold text-cyan w-fit mb-1.5">
             <Zap className="h-3 w-3 fill-cyan" /> Special Limited Offer
           </div>

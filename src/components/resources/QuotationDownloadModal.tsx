@@ -238,16 +238,16 @@ export function QuotationDownloadModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg rounded-3xl border border-border bg-surface p-6 sm:p-8 shadow-2xl backdrop-blur-2xl">
+      <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl border border-border bg-surface p-5 sm:p-8 shadow-2xl backdrop-blur-2xl">
         {!submitted ? (
           <>
-            <DialogHeader>
+            <DialogHeader className="pr-9">
               <div className="flex items-center gap-2">
                 <Badge className="bg-cyan/15 text-cyan hover:bg-cyan/20 border-cyan/30 px-3 py-1 font-bold">
                   <Gift className="mr-1.5 h-3.5 w-3.5" /> 15% OFF DISCOUNT COUPON
                 </Badge>
               </div>
-              <DialogTitle className="mt-2 text-2xl font-black text-foreground">
+              <DialogTitle className="mt-2 text-xl sm:text-2xl font-black text-foreground">
                 {type === "calculator"
                   ? "Get Detailed Quote & Claim Coupon"
                   : `Download ${resourceTitle}`}
