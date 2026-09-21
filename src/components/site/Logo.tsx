@@ -17,14 +17,14 @@ export function Logo({ className }: { className?: string }) {
         width={48}
         height={40}
         priority
-        className="h-9 sm:h-10 w-auto object-contain shrink-0 transition-transform group-hover:scale-[1.03]"
+        className="h-9 sm:h-9.5 w-auto object-contain shrink-0"
       />
       <div className="flex flex-col justify-center">
-        <span className="font-display text-lg sm:text-xl font-black tracking-tight text-foreground leading-none">
+        <span className="font-display text-[18px] sm:text-[19px] font-black tracking-tight text-foreground leading-none">
           XGRO
         </span>
-        <span className="text-[10px] font-bold uppercase tracking-widest text-cyan leading-none mt-1">
-          Growth Studio
+        <span className="text-[9.5px] sm:text-[10px] font-bold uppercase tracking-[0.18em] text-[#00d2ff] leading-none mt-1">
+          GROWTH STUDIO
         </span>
       </div>
     </Link>

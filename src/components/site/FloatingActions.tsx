@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowUp, MessageCircle, Phone } from "lucide-react";
+import { ArrowUp, MessageCircle } from "lucide-react";
 import { site } from "@/lib/site";
 import { useLang } from "@/lib/i18n";
 
@@ -50,17 +50,10 @@ export function FloatingActions() {
           show ? "translate-y-0" : "translate-y-full"
         }`}
       >
-        <div className="flex items-center gap-2">
-          <a
-            href={`tel:+91${site.phone}`}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border text-foreground"
-            aria-label="Call XGRO"
-          >
-            <Phone className="h-4 w-4" />
-          </a>
+        <div className="flex items-center">
           <Link
             href="/contact"
-            className="flex h-11 flex-1 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground"
+            className="flex h-11 w-full items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground shadow-md transition-all active:scale-[0.98]"
           >
             {t("cta.consultation")}
           </Link>

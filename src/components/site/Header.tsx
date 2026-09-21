@@ -33,6 +33,7 @@ import { SearchDialog } from "./SearchDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 const links = [
+  { to: "/", key: "nav.home" },
   { to: "/about", key: "nav.about" },
   { to: "/portfolio", key: "nav.portfolio" },
   { to: "/pricing", key: "nav.pricing" },
@@ -110,11 +111,26 @@ export function Header() {
         scrolled ? "border-border bg-surface/90 backdrop-blur-2xl shadow-lg" : "border-transparent bg-surface"
       }`}
     >
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-        <Logo />
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8 py-2.5 sm:py-3">
+        {/* Left: Logo */}
+        <div className="flex items-center shrink-0 z-10">
+          <Logo />
+        </div>
 
-        {/* Desktop Navigation Links */}
-        <nav className="hidden items-center gap-1 lg:flex" aria-label="Main">
+        {/* Center: Desktop Navigation Links */}
+        <nav className="hidden items-center justify-center gap-0.5 xl:gap-1 lg:flex" aria-label="Main">
+          {/* Home Link */}
+          <Link
+            href="/"
+            className={`rounded-full px-2.5 py-1.5 xl:px-3.5 xl:py-2 text-xs xl:text-sm font-semibold transition-all duration-200 whitespace-nowrap ${
+              pathname === "/"
+                ? "bg-secondary text-foreground shadow-sm font-bold"
+                : "text-foreground/80 hover:bg-secondary hover:text-foreground"
+            }`}
+          >
+            {t("nav.home")}
+          </Link>
+
           {/* Xiaomi-style Services Dropdown & Sub-nav Trigger */}
           <div
             onMouseEnter={handleMouseEnter}
@@ -123,9 +139,9 @@ export function Header() {
             <Link
               href="/services"
               onClick={() => setMegaOpen((prev) => !prev)}
-              className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all duration-200 ${
+              className={`flex items-center gap-1 rounded-full px-2.5 py-1.5 xl:px-3.5 xl:py-2 text-xs xl:text-sm font-semibold transition-all duration-200 whitespace-nowrap ${
                 megaOpen || pathname === "/services"
-                  ? "bg-secondary text-foreground shadow-sm"
+                  ? "bg-secondary text-foreground shadow-sm font-bold"
                   : "text-foreground/80 hover:bg-secondary hover:text-foreground"
               }`}
               aria-expanded={megaOpen}
@@ -135,13 +151,13 @@ export function Header() {
             </Link>
           </div>
 
-          {links.map((l) => (
+          {links.filter((l) => l.to !== "/").map((l) => (
             <Link
               key={l.to}
               href={l.to}
-              className={`rounded-full px-3.5 py-2 text-sm font-semibold transition-all duration-200 ${
+              className={`rounded-full px-2 py-1.5 xl:px-3 xl:py-2 text-xs xl:text-sm font-semibold transition-all duration-200 whitespace-nowrap ${
                 pathname === l.to
-                  ? "bg-secondary text-foreground shadow-sm"
+                  ? "bg-secondary text-foreground shadow-sm font-bold"
                   : "text-foreground/80 hover:bg-secondary hover:text-foreground"
               }`}
             >
@@ -150,25 +166,25 @@ export function Header() {
           ))}
         </nav>
 
-        {/* Header Right Actions */}
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" aria-label="Search site" onClick={() => setSearchOpen(true)}>
+        {/* Right: Header Actions */}
+        <div className="flex items-center justify-end gap-1.5 xl:gap-2 shrink-0 z-10">
+          <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9" aria-label="Search site" onClick={() => setSearchOpen(true)}>
             <Search className="h-4 w-4" />
           </Button>
           <button
             onClick={() => setLang(lang === "en" ? "hi" : "en")}
-            className="hidden h-9 rounded-full border border-border px-3.5 text-xs font-bold text-foreground/80 transition-colors hover:bg-secondary sm:block"
+            className="hidden h-8 rounded-full border border-border px-2.5 text-xs font-bold text-foreground/80 transition-colors hover:bg-secondary sm:block"
             aria-label={`Switch language to ${lang === "en" ? "Hindi" : "English"}`}
           >
             {lang === "en" ? "EN" : "हिं"}
           </button>
-          <Button variant="ghost" size="icon" onClick={toggle} aria-label="Toggle dark mode">
+          <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9" onClick={toggle} aria-label="Toggle dark mode">
             {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
-          <Button asChild variant="outline" className="hidden rounded-full font-bold sm:inline-flex border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan hover:text-slate-950 text-xs shadow-sm">
+          <Button asChild variant="outline" className="hidden rounded-full font-bold sm:inline-flex border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan hover:text-slate-950 text-xs px-3 h-8 shadow-sm whitespace-nowrap">
             <Link href="/login">Sign In</Link>
           </Button>
-          <Button asChild className="hidden rounded-full font-bold md:inline-flex">
+          <Button asChild className="hidden rounded-full font-bold md:inline-flex text-xs xl:text-sm h-8 xl:h-9 px-3 xl:px-4 whitespace-nowrap">
             <Link href="/contact">{t("cta.consultation")}</Link>
           </Button>
 
