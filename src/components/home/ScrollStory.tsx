@@ -48,7 +48,8 @@ export function ScrollStory() {
       const rect = el.getBoundingClientRect();
       const total = rect.height - window.innerHeight;
       if (total <= 0) return;
-      setProgress(Math.min(Math.max(-rect.top / total, 0), 1));
+      const p = Math.min(Math.max(-rect.top / total, 0), 1);
+      setProgress(p);
     };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -61,9 +62,21 @@ export function ScrollStory() {
 
   const active = Math.min(chapters.length - 1, Math.floor(progress * chapters.length * 0.999));
 
+  const scrollToChapter = (index: number) => {
+    const el = sectionRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const scrollTop = window.scrollY || window.pageYOffset;
+    const total = el.offsetHeight - window.innerHeight;
+    if (total <= 0) return;
+    const targetProgress = (index + 0.5) / chapters.length;
+    const targetScrollY = scrollTop + rect.top + targetProgress * total;
+    window.scrollTo({ top: targetScrollY, behavior: "smooth" });
+  };
+
   return (
     <div ref={sectionRef} className="relative bg-surface border-y border-border/40" style={{ height: `${chapters.length * 95}vh` }}>
-      <section className="sticky top-0 flex h-screen items-center overflow-hidden">
+      <section className="sticky top-0 flex min-h-screen h-screen items-center overflow-hidden">
         {/* Ambient background glow mapped to active chapter */}
         <div
           aria-hidden
@@ -75,40 +88,47 @@ export function ScrollStory() {
           }}
         />
 
-        <div className="relative mx-auto grid w-full max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[auto_1fr_1.1fr] lg:gap-16 items-center">
-          {/* Left Column: Progress Indicators */}
-          <ol className="flex gap-3 lg:flex-col lg:gap-6" aria-label="Our approach">
+        <div className="relative mx-auto grid w-full max-w-7xl gap-6 px-4 sm:px-6 lg:grid-cols-[auto_1fr_1.1fr] lg:gap-16 items-center pt-14 lg:pt-0">
+          {/* Left Column: Progress Indicators (Interactive) */}
+          <ol className="flex gap-2 sm:gap-3 lg:flex-col lg:gap-6 z-10" aria-label="Our approach">
             {chapters.map((c, i) => (
-              <li key={c.label} className="flex items-center gap-3">
-                <span
-                  className={`h-1.5 rounded-full transition-all duration-500 lg:h-10 lg:w-1.5 ${
-                    i === active ? "w-10 bg-cyan lg:h-16" : "w-5 bg-border/80"
-                  }`}
-                  style={{
-                    backgroundColor: i === active ? chapters[active]?.glowColor : undefined,
-                  }}
-                />
-                <span
-                  className={`hidden text-xs font-semibold uppercase tracking-widest transition-colors lg:block ${
-                    i === active ? "text-foreground font-bold" : "text-muted-foreground/50"
-                  }`}
+              <li key={c.label}>
+                <button
+                  type="button"
+                  onClick={() => scrollToChapter(i)}
+                  className="group flex items-center gap-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan rounded-xl p-1 transition-all cursor-pointer"
+                  aria-current={i === active ? "step" : undefined}
                 >
-                  {c.label}
-                </span>
+                  <span
+                    className={`h-1.5 rounded-full transition-all duration-500 lg:h-10 lg:w-1.5 ${
+                      i === active ? "w-8 sm:w-10 bg-cyan lg:h-16 shadow-[0_0_12px_rgba(6,182,212,0.6)]" : "w-4 sm:w-5 bg-border/80 group-hover:bg-border"
+                    }`}
+                    style={{
+                      backgroundColor: i === active ? (chapters[active]?.glowColor || "var(--color-cyan)") : undefined,
+                    }}
+                  />
+                  <span
+                    className={`hidden text-xs font-semibold uppercase tracking-widest transition-colors lg:block ${
+                      i === active ? "text-foreground font-bold" : "text-muted-foreground/50 group-hover:text-muted-foreground"
+                    }`}
+                  >
+                    {c.label}
+                  </span>
+                </button>
               </li>
             ))}
           </ol>
 
           {/* Center Column: Text Content */}
-          <div className="relative min-h-[22rem] lg:min-h-[26rem] flex flex-col justify-center">
+          <div className="relative min-h-[16rem] sm:min-h-[20rem] lg:min-h-[24rem] flex flex-col justify-center">
             {chapters.map((c, i) => (
               <div
                 key={c.title}
                 aria-hidden={i !== active}
-                className="absolute inset-0 transition-all duration-750 flex flex-col justify-center"
+                className="absolute inset-0 transition-all duration-500 ease-out flex flex-col justify-center"
                 style={{
                   opacity: i === active ? 1 : 0,
-                  transform: `translateY(${(i - active) * 32}px)`,
+                  transform: `translateY(${i === active ? 0 : (i < active ? -20 : 20)}px)`,
                   pointerEvents: i === active ? "auto" : "none",
                 }}
               >
@@ -118,10 +138,10 @@ export function ScrollStory() {
                 >
                   {c.label}
                 </p>
-                <h2 className="mt-3 text-3xl font-extrabold leading-tight text-foreground sm:text-4xl lg:text-5xl">
+                <h2 className="mt-2 sm:mt-3 text-2xl font-extrabold leading-tight text-foreground sm:text-4xl lg:text-5xl">
                   {c.title}
                 </h2>
-                <p className="mt-6 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+                <p className="mt-4 sm:mt-6 max-w-xl text-sm sm:text-base lg:text-lg leading-relaxed text-muted-foreground">
                   {c.body}
                 </p>
               </div>
@@ -129,28 +149,28 @@ export function ScrollStory() {
           </div>
 
           {/* Right Column: Premium Device Mockup with Screen Fading Transitions */}
-          <div className="relative w-full aspect-[4/3] sm:aspect-[1.4] lg:aspect-[4/3] max-w-xl mx-auto flex items-center justify-center">
+          <div className="relative w-full aspect-[16/10] sm:aspect-[1.4] lg:aspect-[4/3] max-w-xl mx-auto flex items-center justify-center">
             {/* Glowing device bezel container */}
-            <div className="relative w-full h-full rounded-2xl border border-border/80 bg-neutral-950 p-2.5 shadow-2xl transition-all duration-500 overflow-hidden">
+            <div className="relative w-full h-full rounded-2xl border border-border/80 bg-neutral-950 p-2 sm:p-2.5 shadow-2xl transition-all duration-500 overflow-hidden">
               
               {/* Dynamic outline glow border */}
               <div
-                className="absolute -inset-px rounded-2xl opacity-60 transition-all duration-700"
+                className="absolute -inset-px rounded-2xl opacity-60 transition-all duration-700 pointer-events-none"
                 style={{
-                  boxShadow: `0 0 16px 2.5px ${chapters[active]?.glowColor || 'rgba(6, 182, 212, 0.35)'}`,
+                  boxShadow: `0 0 20px 2px ${chapters[active]?.glowColor || 'rgba(6, 182, 212, 0.35)'}`,
                   border: `1.5px solid ${chapters[active]?.glowColor || 'rgba(6, 182, 212, 0.35)'}`,
                 }}
               />
 
               {/* Mockup screen slideshow */}
-              <div className="relative w-full h-full rounded-xl overflow-hidden bg-neutral-905">
+              <div className="relative w-full h-full rounded-xl overflow-hidden bg-neutral-950">
                 {chapters.map((c, i) => (
                   <div
                     key={c.image}
-                    className="absolute inset-0 w-full h-full transition-all duration-750 ease-in-out"
+                    className="absolute inset-0 w-full h-full transition-all duration-500 ease-in-out"
                     style={{
                       opacity: i === active ? 1 : 0,
-                      transform: i === active ? "scale(1) rotate(0deg)" : "scale(1.04) rotate(0.4deg)",
+                      transform: i === active ? "scale(1)" : "scale(1.05)",
                       pointerEvents: i === active ? "auto" : "none",
                     }}
                   >
