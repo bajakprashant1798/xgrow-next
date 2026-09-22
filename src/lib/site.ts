@@ -386,34 +386,19 @@ export const faqs = [
 
 export const teamGroups = [
   {
-    role: "Founder",
-    people: ["Founder, XGRO"],
-    body: "Sets strategy, sits in every discovery call, and personally signs off on scope and pricing.",
+    role: "WordPress Development",
+    people: ["Pooran Kushwah (WordPress Developer)"],
+    body: "Custom WordPress development, WooCommerce setups, theme engineering, and speed optimization for high conversion.",
   },
   {
-    role: "Designers",
-    people: ["Brand Designer", "UI Designer", "Creative Designer"],
-    body: "Identity, interface and campaign creative — the people who make a local business look national.",
+    role: "Copywriting & Content",
+    people: ["Neha Singh (Copywriter)"],
+    body: "Persuasive sales copywriting, landing page narratives, and search-optimized content that quietly sells 24/7.",
   },
   {
-    role: "Developers",
-    people: ["Frontend Developer", "Full-stack Developer", "Ecommerce Developer"],
-    body: "Ship fast, accessible builds that hold up on a 4G phone in a market street.",
-  },
-  {
-    role: "SEO Experts",
-    people: ["Technical SEO Lead", "Local SEO Specialist"],
-    body: "Make sure the right people find you before they find your competitor.",
-  },
-  {
-    role: "Marketing Team",
-    people: ["Performance Marketer", "Content Strategist", "Social Media Manager"],
-    body: "Run the campaigns and the calendar, measured on leads rather than likes.",
-  },
-  {
-    role: "AI Specialists",
-    people: ["Automation Engineer", "AI Solutions Lead"],
-    body: "Build the chatbots, CRM flows and WhatsApp automations that follow up while you sleep.",
+    role: "SEO & Digital Marketing",
+    people: ["Sachin Yadav (SEO & Marketing Expert)"],
+    body: "Google ranking dominance, keyword strategy, and ROI-focused multi-channel digital marketing campaigns.",
   },
 ];
 

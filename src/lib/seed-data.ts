@@ -393,6 +393,36 @@ export const initialTeamMembers: TeamMemberModel[] = [
     department: 'Executive Leadership',
     avatar_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
     status: 'active'
+  },
+  {
+    id: 'team-pooran',
+    name: 'Pooran Kushwah',
+    email: 'pooran@xgro.in',
+    phone: '+91 98765 43210',
+    role: 'developer',
+    department: 'WordPress Development',
+    avatar_url: '/team/pooran_kushwah.jpeg',
+    status: 'active'
+  },
+  {
+    id: 'team-neha',
+    name: 'Neha Singh',
+    email: 'neha@xgro.in',
+    phone: '+91 98765 43211',
+    role: 'marketer',
+    department: 'Content & Copywriting',
+    avatar_url: '/team/neha_singh.jpg',
+    status: 'active'
+  },
+  {
+    id: 'team-sachin',
+    name: 'Sachin Yadav',
+    email: 'sachin@xgro.in',
+    phone: '+91 98765 43212',
+    role: 'marketer',
+    department: 'SEO & Digital Marketing',
+    avatar_url: '/team/sachin_yadav.jpg',
+    status: 'active'
   }
 ];
 
