@@ -6,6 +6,7 @@ import {
   ProjectModel,
   ClientModel,
   TeamMemberModel,
+  TrustedLogoModel,
 } from './supabase/types';
 
 import {
@@ -16,6 +17,7 @@ import {
   initialProjects,
   initialClients,
   initialTeamMembers,
+  initialTrustedLogos,
 } from './seed-data';
 
 import {
@@ -26,6 +28,7 @@ import {
   getProjects,
   getClients,
   getTeamMembers,
+  getTrustedLogos,
 } from './db';
 
 // Safely fetch published services for SSR and Client pages
@@ -87,3 +90,13 @@ export async function getAllTeamMembers(): Promise<TeamMemberModel[]> {
   }
   return await getTeamMembers();
 }
+
+// Safely fetch published Trusted Logos
+export async function getPublishedTrustedLogos(): Promise<TrustedLogoModel[]> {
+  if (typeof window === 'undefined') {
+    return initialTrustedLogos.filter((l) => l.status === 'published');
+  }
+  const all = await getTrustedLogos();
+  return all.filter((l) => l.status === 'published');
+}
+

@@ -12,6 +12,7 @@ import {
   TestimonialModel,
   FaqModel,
   CustomRoleModel,
+  TrustedLogoModel,
 } from './supabase/types';
 
 export const initialRoles: CustomRoleModel[] = [
@@ -630,3 +631,109 @@ export const initialFaqs: FaqModel[] = [
     display_order: 6
   }
 ];
+
+export const initialTrustedLogos: TrustedLogoModel[] = [
+  {
+    id: 'brand-1',
+    name: 'Minds Eye',
+    note: 'Education & Learning',
+    icon: 'GraduationCap',
+    logo_url: '/trustedByLogos/Minds eye.png',
+    status: 'published',
+    display_order: 1,
+  },
+  {
+    id: 'brand-2',
+    name: 'Bio90',
+    note: 'Wellness & Health',
+    icon: 'Activity',
+    logo_url: '/trustedByLogos/bio90_logo-removebg-preview.png',
+    status: 'published',
+    display_order: 2,
+  },
+  {
+    id: 'brand-3',
+    name: 'Metrocity Salon',
+    note: 'Salon & Beauty',
+    icon: 'Gem',
+    logo_url: '/trustedByLogos/Metrocity Salon.png',
+    status: 'published',
+    display_order: 3,
+  },
+  {
+    id: 'brand-4',
+    name: 'Iconic',
+    note: 'Lifestyle & Apparel',
+    icon: 'Sparkles',
+    logo_url: '/trustedByLogos/ICONIC LOGO.png',
+    status: 'published',
+    display_order: 4,
+  },
+  {
+    id: 'brand-5',
+    name: 'SP Jewellers',
+    note: 'Luxury Retail',
+    icon: 'Gem',
+    logo_url: '/trustedByLogos/sp.png',
+    status: 'published',
+    display_order: 5,
+  },
+  {
+    id: 'brand-6',
+    name: 'Central Boutique Hotel',
+    note: 'Hospitality · Moradabad',
+    icon: 'Hotel',
+    logo_url: '/trustedByLogos/IMG_4188 (1).PNG',
+    status: 'published',
+    display_order: 6,
+  },
+  {
+    id: 'brand-7',
+    name: 'Ramanujan Classes',
+    note: 'Coaching & EdTech',
+    icon: 'BookOpen',
+    status: 'published',
+    display_order: 7,
+  },
+  {
+    id: 'brand-8',
+    name: 'Maths Mind',
+    note: 'Competitive Exams',
+    icon: 'Brain',
+    status: 'published',
+    display_order: 8,
+  },
+  {
+    id: 'brand-9',
+    name: 'Highway Yatra',
+    note: 'Travel & Tours',
+    icon: 'Compass',
+    status: 'published',
+    display_order: 9,
+  },
+  {
+    id: 'brand-10',
+    name: 'Moradabad Handicrafts',
+    note: 'Global Export',
+    icon: 'Globe',
+    status: 'published',
+    display_order: 10,
+  },
+  {
+    id: 'brand-11',
+    name: 'Apex Diagnostics',
+    note: 'Healthcare',
+    icon: 'Building2',
+    status: 'published',
+    display_order: 11,
+  },
+  {
+    id: 'brand-12',
+    name: 'SilverOak Legal',
+    note: 'Corporate Law',
+    icon: 'ShieldCheck',
+    status: 'published',
+    display_order: 12,
+  },
+];
+

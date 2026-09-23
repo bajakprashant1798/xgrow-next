@@ -178,14 +178,14 @@ export function CostCalculator() {
         <div>
           <div className="flex items-center gap-2">
             <Badge className="bg-cyan/15 text-cyan border-cyan/30 px-3 py-1 font-bold">
-              ⭐ INTERACTIVE COST ESTIMATOR
+              ⭐ INTERACTIVE ESTIMATOR
             </Badge>
             <span className="text-xs text-muted-foreground flex items-center gap-1">
-              <Zap className="h-3.5 w-3.5 text-amber-400" /> Instant Real-time Quotation
+              <Zap className="h-3.5 w-3.5 text-amber-500" /> Instant Real-time Quotation
             </span>
           </div>
           <h2 className="mt-2 text-3xl font-black text-foreground sm:text-4xl">
-            AI Website Cost Calculator
+            Interactive Project Cost Calculator
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Configure your project requirements below to see instant estimated pricing and unlock a 15% discount coupon!
@@ -513,17 +513,13 @@ export function CostCalculator() {
 
         {/* Right Column: Live Calculated Result & Quotation Output Card */}
         <div className="lg:sticky lg:top-24 h-fit">
-          <Card className="rounded-3xl border border-cyan/40 bg-radial from-slate-900 via-slate-950 to-background p-6 shadow-2xl overflow-hidden relative">
-            <div className="absolute top-0 right-0 p-6 opacity-10 pointer-events-none">
-              <Sparkles className="h-40 w-40 text-cyan" />
-            </div>
-
+          <Card className="rounded-3xl border border-border bg-card p-6 shadow-xl relative">
             <CardContent className="p-0 relative z-10">
               <div className="flex items-center justify-between border-b border-border/80 pb-4">
                 <Badge className="bg-cyan text-slate-950 font-black px-3 py-1 text-xs uppercase tracking-wider">
                   Real-Time Calculation
                 </Badge>
-                <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1">
+                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                   <ShieldCheck className="h-4 w-4" /> Fixed Price Guarantee
                 </span>
               </div>
@@ -533,7 +529,7 @@ export function CostCalculator() {
                 <p className="text-xs font-extrabold uppercase tracking-widest text-muted-foreground">
                   Estimated Investment Range
                 </p>
-                <div className="mt-2 text-3xl sm:text-4xl font-black tracking-tight text-white flex items-center justify-center gap-1">
+                <div className="mt-2 text-3xl sm:text-4xl font-black tracking-tight text-foreground flex items-center justify-center gap-1">
                   <span className="text-cyan">{calcData.currencySymbol}</span>
                   <span>{calcData.finalMinPrice.toLocaleString("en-IN")}</span>
                   <span className="text-muted-foreground font-light mx-1">–</span>
@@ -541,11 +537,11 @@ export function CostCalculator() {
                 </div>
 
                 {/* Original price before discount */}
-                <div className="mt-1 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                <div className="mt-2 flex items-center justify-center gap-2 text-xs text-muted-foreground">
                   <span className="line-through">
                     Standard: {calcData.currencySymbol}{calcData.minPrice.toLocaleString("en-IN")} – {calcData.currencySymbol}{calcData.maxPrice.toLocaleString("en-IN")}
                   </span>
-                  <Badge variant="outline" className="border-emerald-500/50 text-emerald-400 text-[10px] font-bold">
+                  <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold">
                     Save {calcData.discountPercent}%
                   </Badge>
                 </div>
@@ -557,10 +553,10 @@ export function CostCalculator() {
                   <BadgePercent className="h-5 w-5" />
                 </div>
                 <div>
-                  <h5 className="text-xs font-extrabold text-cyan uppercase tracking-wider">
+                  <h5 className="text-xs font-extrabold text-foreground uppercase tracking-wider">
                     Discount Coupon Available!
                   </h5>
-                  <p className="mt-0.5 text-xs text-slate-200 leading-snug">
+                  <p className="mt-0.5 text-xs text-muted-foreground leading-snug">
                     Get an instant 15% OFF voucher code + itemized PDF quote sent immediately to your phone.
                   </p>
                 </div>
@@ -571,16 +567,16 @@ export function CostCalculator() {
                 <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
                   Scope Included in Estimate:
                 </h5>
-                <ul className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                <ul className="space-y-2.5 max-h-52 overflow-y-auto pr-1">
                   {calcData.features.map((f, i) => (
-                    <li key={i} className="flex items-center justify-between text-xs text-slate-300">
+                    <li key={i} className="flex items-center justify-between text-xs text-foreground/90">
                       <span className="flex items-center gap-2 truncate">
                         <CheckCircle2 className={`h-3.5 w-3.5 shrink-0 ${f.included ? "text-cyan" : "text-muted-foreground opacity-40"}`} />
-                        <span className={f.included ? "font-medium" : "line-through opacity-50"}>
+                        <span className={f.included ? "font-medium text-foreground" : "line-through text-muted-foreground opacity-60"}>
                           {f.name}
                         </span>
                       </span>
-                      <span className="text-[11px] font-bold text-slate-400 shrink-0 ml-2">
+                      <span className="text-[11px] font-bold text-muted-foreground shrink-0 ml-2">
                         {f.costText}
                       </span>
                     </li>

@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { Download, Sparkles, Calculator as CalcIcon } from "lucide-react";
+import { Calculator as CalcIcon } from "lucide-react";
 import { PricingPreview } from "@/components/home/PricingPreview";
 import { ComparisonTable } from "@/components/pricing/ComparisonTable";
 import { FaqSection } from "@/components/home/FaqSection";
@@ -9,8 +8,8 @@ import { CostCalculator } from "@/components/calculator/CostCalculator";
 import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = {
-  title: "Pricing Packages & AI Cost Calculator — Fixed Agency Rates | XGRO",
-  description: "Starter, Growth, and Scale plans mapped to your business size. Use our AI website cost calculator to estimate custom quote & download price list.",
+  title: "Pricing Packages & Cost Calculator — Fixed Agency Rates | XGRO",
+  description: "Starter, Growth, and Scale plans mapped to your business size. Use our interactive project cost calculator to estimate your custom quote in real time.",
   alternates: {
     canonical: "/pricing",
   },
@@ -28,19 +27,14 @@ export default function PricingPage() {
               Transparent investment, zero surprises
             </h1>
             <p className="mt-6 text-lg leading-relaxed text-muted-foreground">
-              Review our package options below, calculate your custom website cost interactively, or download our official 2026 Price List.
+              Review our package options below or calculate your custom project cost interactively in real time.
             </p>
             
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-              <Button asChild className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-black text-xs px-6 py-5 shadow-lg">
+            <div className="mt-8 flex items-center justify-center">
+              <Button asChild size="lg" className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-black text-sm px-8 py-6 shadow-lg shadow-cyan/20 hover:scale-[1.02] transition-transform">
                 <a href="#calculator">
-                  <CalcIcon className="mr-2 h-4 w-4" /> AI Cost Calculator
+                  <CalcIcon className="mr-2 h-4 w-4" /> Calculate Your Project Cost
                 </a>
-              </Button>
-              <Button asChild variant="outline" className="rounded-full border-border font-bold text-xs px-6 py-5">
-                <Link href="/resources">
-                  <Download className="mr-2 h-4 w-4 text-cyan" /> Download Price List PDF
-                </Link>
               </Button>
             </div>
           </Reveal>

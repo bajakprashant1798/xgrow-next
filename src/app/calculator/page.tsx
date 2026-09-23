@@ -19,22 +19,22 @@ export default function CalculatorPage() {
   return (
     <div className="flex flex-col">
       {/* Hero Header */}
-      <section className="relative overflow-hidden bg-radial from-slate-900 via-slate-950 to-background py-16 sm:py-24 text-white border-b border-border/60">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 relative z-10 text-center">
+      <section className="bg-surface py-16 sm:py-20 border-b border-border">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 text-center">
           <Reveal className="mx-auto max-w-3xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-cyan/30 bg-cyan/10 px-4 py-1.5 text-xs font-bold text-cyan mb-4">
-              <CalcIcon className="h-4 w-4" /> AI POWERED INSTANT ESTIMATOR ⭐⭐⭐⭐⭐
+              <CalcIcon className="h-4 w-4" /> INSTANT COST ESTIMATOR ⭐⭐⭐⭐⭐
             </div>
 
-            <h1 className="text-4xl font-black tracking-tight sm:text-5xl lg:text-6xl text-white">
+            <h1 className="text-4xl font-black tracking-tight sm:text-5xl lg:text-6xl text-foreground">
               Website & Software <span className="text-cyan">Cost Calculator</span>
             </h1>
 
-            <p className="mt-6 text-base sm:text-lg leading-relaxed text-slate-300">
-              Calculate your exact project investment range in real time. Choose your business type, pages, payment gateways, admin panel, and AI features to download a custom quotation PDF with a <strong className="text-cyan">15% Discount Voucher</strong>.
+            <p className="mt-6 text-base sm:text-lg leading-relaxed text-muted-foreground">
+              Calculate your exact project investment range in real time. Choose your business type, pages, payment gateways, admin panel, and features to download a custom quotation PDF with a <strong className="text-cyan font-bold">15% Discount Voucher</strong>.
             </p>
 
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-4 text-xs font-bold text-slate-300">
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-4 text-xs font-bold text-muted-foreground">
               <span className="flex items-center gap-1.5">
                 <CheckCircle2 className="h-4 w-4 text-cyan" /> 100% Transparent Rates
               </span>

@@ -68,6 +68,20 @@ CREATE TABLE IF NOT EXISTS public.faqs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 4b. TRUSTED LOGOS / PARTNERS TABLE (CMS)
+CREATE TABLE IF NOT EXISTS public.trusted_logos (
+    id TEXT PRIMARY KEY DEFAULT ('brand-' || gen_random_uuid()),
+    name TEXT NOT NULL,
+    note TEXT,
+    logo_url TEXT,
+    icon TEXT DEFAULT 'Building2',
+    website_url TEXT,
+    status TEXT NOT NULL DEFAULT 'published' CHECK (status IN ('published', 'draft')),
+    display_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- 5. CLIENTS TABLE
 CREATE TABLE IF NOT EXISTS public.clients (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -234,6 +248,7 @@ CREATE POLICY "Public can view published services" ON public.services FOR SELECT
 CREATE POLICY "Public can view published pricing" ON public.pricing_plans FOR SELECT USING (status = 'published');
 CREATE POLICY "Public can view published testimonials" ON public.testimonials FOR SELECT USING (status = 'published');
 CREATE POLICY "Public can view published faqs" ON public.faqs FOR SELECT USING (status = 'published');
+CREATE POLICY "Public can view published trusted logos" ON public.trusted_logos FOR SELECT USING (status = 'published');
 CREATE POLICY "Public read custom_roles" ON public.custom_roles FOR SELECT USING (true);
 
 -- Service role full access
@@ -241,6 +256,7 @@ CREATE POLICY "Service role full access services" ON public.services FOR ALL USI
 CREATE POLICY "Service role full access pricing" ON public.pricing_plans FOR ALL USING (true);
 CREATE POLICY "Service role full access testimonials" ON public.testimonials FOR ALL USING (true);
 CREATE POLICY "Service role full access faqs" ON public.faqs FOR ALL USING (true);
+CREATE POLICY "Service role full access trusted logos" ON public.trusted_logos FOR ALL USING (true);
 CREATE POLICY "Service role full access clients" ON public.clients FOR ALL USING (true);
 CREATE POLICY "Service role full access custom_roles" ON public.custom_roles FOR ALL USING (true);
 CREATE POLICY "Service role full access team_members" ON public.team_members FOR ALL USING (true);

@@ -11,6 +11,33 @@ import {
   Star,
   Quote,
   Check,
+  Building2,
+  Globe,
+  ExternalLink,
+  Code2,
+  Copy,
+  ArrowUp,
+  ArrowDown,
+  Search,
+  Image as ImageIcon,
+  CheckCircle2,
+  Eye,
+  Hotel,
+  GraduationCap,
+  BookOpen,
+  Brain,
+  Compass,
+  Activity,
+  Gem,
+  ShieldCheck,
+  Building,
+  Laptop,
+  Briefcase,
+  Zap,
+  ShoppingBag,
+  Upload,
+  X,
+  Link2,
 } from 'lucide-react';
 import {
   Card,
@@ -40,13 +67,100 @@ import {
   getFaqs,
   saveFaq,
   deleteFaq,
+  getTrustedLogos,
+  saveTrustedLogo,
+  deleteTrustedLogo,
+  getTrustedSectionTitle,
+  saveTrustedSectionTitle,
   subscribeToDataChanges,
 } from '@/lib/db';
-import { TestimonialModel, FaqModel } from '@/lib/supabase/types';
+import { TestimonialModel, FaqModel, TrustedLogoModel } from '@/lib/supabase/types';
+
+const PRESET_ICONS = [
+  { name: 'Building2', icon: Building2, label: 'Building / Corporate' },
+  { name: 'Hotel', icon: Hotel, label: 'Hotel & Hospitality' },
+  { name: 'GraduationCap', icon: GraduationCap, label: 'Education / Academy' },
+  { name: 'BookOpen', icon: BookOpen, label: 'EdTech / Books' },
+  { name: 'Brain', icon: Brain, label: 'Coaching / AI' },
+  { name: 'Compass', icon: Compass, label: 'Travel & Tours' },
+  { name: 'Activity', icon: Activity, label: 'Health & Wellness' },
+  { name: 'Gem', icon: Gem, label: 'Jewellery & Luxury' },
+  { name: 'Sparkles', icon: Sparkles, label: 'Beauty & Lifestyle' },
+  { name: 'Globe', icon: Globe, label: 'Export & Global' },
+  { name: 'ShieldCheck', icon: ShieldCheck, label: 'Legal & Security' },
+  { name: 'Laptop', icon: Laptop, label: 'Tech & Software' },
+  { name: 'Briefcase', icon: Briefcase, label: 'Consulting / Agency' },
+  { name: 'Zap', icon: Zap, label: 'Energy / Startup' },
+  { name: 'ShoppingBag', icon: ShoppingBag, label: 'Retail & Ecommerce' },
+];
+
+const PRESET_LOCAL_LOGOS = [
+  { label: "Minds Eye", path: "/trustedByLogos/Minds eye.png", note: "Education & Learning" },
+  { label: "Bio90", path: "/trustedByLogos/bio90_logo-removebg-preview.png", note: "Wellness & Health" },
+  { label: "Metrocity Salon", path: "/trustedByLogos/Metrocity Salon.png", note: "Salon & Beauty" },
+  { label: "Iconic", path: "/trustedByLogos/ICONIC LOGO.png", note: "Lifestyle & Apparel" },
+  { label: "SP Jewellers", path: "/trustedByLogos/sp.png", note: "Luxury Retail" },
+  { label: "Central Boutique Hotel", path: "/trustedByLogos/IMG_4188 (1).PNG", note: "Hospitality · Moradabad" },
+];
+
+const SUPABASE_TRUSTED_LOGOS_SQL = `-- 1. Create the trusted_logos table for Supabase
+CREATE TABLE IF NOT EXISTS public.trusted_logos (
+    id TEXT PRIMARY KEY DEFAULT ('brand-' || gen_random_uuid()),
+    name TEXT NOT NULL,
+    note TEXT,
+    logo_url TEXT,
+    icon TEXT DEFAULT 'Building2',
+    website_url TEXT,
+    status TEXT NOT NULL DEFAULT 'published' CHECK (status IN ('published', 'draft')),
+    display_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 2. Enable Row Level Security (RLS)
+ALTER TABLE public.trusted_logos ENABLE ROW LEVEL SECURITY;
+
+-- 3. Public Read Policy
+CREATE POLICY "Allow public read access to published trusted logos"
+ON public.trusted_logos
+FOR SELECT
+USING (true);
+
+-- 4. Admin / Service Role Full Access Policy
+CREATE POLICY "Allow all access for authenticated users or service role"
+ON public.trusted_logos
+FOR ALL
+USING (true)
+WITH CHECK (true);
+
+-- 5. Helpful Indexing
+CREATE INDEX IF NOT EXISTS idx_trusted_logos_order ON public.trusted_logos (display_order ASC);
+CREATE INDEX IF NOT EXISTS idx_trusted_logos_status ON public.trusted_logos (status);
+
+-- 6. Seed Initial Data
+INSERT INTO public.trusted_logos (id, name, note, icon, logo_url, status, display_order)
+VALUES
+  ('brand-1', 'Minds Eye', 'Education & Learning', 'GraduationCap', '/trustedByLogos/Minds eye.png', 'published', 1),
+  ('brand-2', 'Bio90', 'Wellness & Health', 'Activity', '/trustedByLogos/bio90_logo-removebg-preview.png', 'published', 2),
+  ('brand-3', 'Metrocity Salon', 'Salon & Beauty', 'Gem', '/trustedByLogos/Metrocity Salon.png', 'published', 3),
+  ('brand-4', 'Iconic', 'Lifestyle & Apparel', 'Sparkles', '/trustedByLogos/ICONIC LOGO.png', 'published', 4),
+  ('brand-5', 'SP Jewellers', 'Luxury Retail', 'Gem', '/trustedByLogos/sp.png', 'published', 5),
+  ('brand-6', 'Central Boutique Hotel', 'Hospitality · Moradabad', 'Hotel', '/trustedByLogos/IMG_4188 (1).PNG', 'published', 6),
+  ('brand-7', 'Ramanujan Classes', 'Coaching & EdTech', 'BookOpen', NULL, 'published', 7),
+  ('brand-8', 'Maths Mind', 'Competitive Exams', 'Brain', NULL, 'published', 8),
+  ('brand-9', 'Highway Yatra', 'Travel & Tours', 'Compass', NULL, 'published', 9),
+  ('brand-10', 'Moradabad Handicrafts', 'Global Export', 'Globe', NULL, 'published', 10),
+  ('brand-11', 'Apex Diagnostics', 'Healthcare', 'Building2', NULL, 'published', 11),
+  ('brand-12', 'SilverOak Legal', 'Corporate Law', 'ShieldCheck', NULL, 'published', 12)
+ON CONFLICT (id) DO NOTHING;`;
 
 export default function CmsManagementPage() {
   const [testimonials, setTestimonials] = useState<TestimonialModel[]>([]);
   const [faqs, setFaqs] = useState<FaqModel[]>([]);
+  const [trustedLogos, setTrustedLogos] = useState<TrustedLogoModel[]>([]);
+  const [sectionHeading, setSectionHeading] = useState('Trusted by growing businesses across India & USA');
+  const [logoSearch, setLogoSearch] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
 
   // Modals
   const [isTestimonialModalOpen, setIsTestimonialModalOpen] = useState(false);
@@ -55,16 +169,74 @@ export default function CmsManagementPage() {
   const [isFaqModalOpen, setIsFaqModalOpen] = useState(false);
   const [editingFaq, setEditingFaq] = useState<Partial<FaqModel> | null>(null);
 
+  const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
+  const [editingLogo, setEditingLogo] = useState<Partial<TrustedLogoModel> | null>(null);
+
+  const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
+
   const loadData = async () => {
-    const [t, f] = await Promise.all([getTestimonials(), getFaqs()]);
+    const [t, f, l, title] = await Promise.all([
+      getTestimonials(),
+      getFaqs(),
+      getTrustedLogos(),
+      getTrustedSectionTitle(),
+    ]);
     setTestimonials(t);
     setFaqs(f);
+    setTrustedLogos(l);
+    if (title) setSectionHeading(title);
   };
 
   useEffect(() => {
     loadData();
     return subscribeToDataChanges(loadData);
   }, []);
+
+  const handleSaveHeading = async () => {
+    await saveTrustedSectionTitle(sectionHeading);
+    toast.success('Section heading updated on homepage!');
+  };
+
+  // Image Upload Handlers
+  const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image size must be less than 5MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        setEditingLogo((prev) => (prev ? { ...prev, logo_url: reader.result as string } : null));
+        toast.success(`Logo image "${file.name}" uploaded successfully!`);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload an image file (PNG, JPG, SVG, WebP)');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image size must be less than 5MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        setEditingLogo((prev) => (prev ? { ...prev, logo_url: reader.result as string } : null));
+        toast.success(`Logo image "${file.name}" uploaded successfully!`);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Testimonial Handlers
   const handleSaveTestimonial = async (e: React.FormEvent) => {
@@ -112,6 +284,62 @@ export default function CmsManagementPage() {
     }
   };
 
+  // Trusted Logo Handlers
+  const handleSaveLogo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingLogo?.name) {
+      toast.error('Brand / Business Name is required');
+      return;
+    }
+
+    await saveTrustedLogo(editingLogo as any);
+    toast.success(editingLogo.id ? 'Brand logo updated!' : 'Brand logo added!');
+    setIsLogoModalOpen(false);
+    setEditingLogo(null);
+    loadData();
+  };
+
+  const handleDeleteLogo = async (id: string) => {
+    if (confirm('Delete this partner brand logo from the homepage?')) {
+      await deleteTrustedLogo(id);
+      toast.success('Brand logo removed');
+      loadData();
+    }
+  };
+
+  const handleToggleLogoStatus = async (logo: TrustedLogoModel) => {
+    const nextStatus = logo.status === 'published' ? 'draft' : 'published';
+    await saveTrustedLogo({ ...logo, status: nextStatus });
+    toast.success(`Logo marked as ${nextStatus}`);
+    loadData();
+  };
+
+  const handleMoveOrder = async (logo: TrustedLogoModel, direction: 'up' | 'down') => {
+    const currentIndex = trustedLogos.findIndex((l) => l.id === logo.id);
+    if (currentIndex === -1) return;
+
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= trustedLogos.length) return;
+
+    const targetLogo = trustedLogos[targetIndex];
+    const currentOrder = logo.display_order ?? currentIndex + 1;
+    const targetOrder = targetLogo.display_order ?? targetIndex + 1;
+
+    await Promise.all([
+      saveTrustedLogo({ ...logo, display_order: targetOrder }),
+      saveTrustedLogo({ ...targetLogo, display_order: currentOrder }),
+    ]);
+
+    toast.success('Reordered brand logos');
+    loadData();
+  };
+
+  const filteredLogos = trustedLogos.filter(
+    (l) =>
+      l.name.toLowerCase().includes(logoSearch.toLowerCase()) ||
+      (l.note && l.note.toLowerCase().includes(logoSearch.toLowerCase()))
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -119,16 +347,29 @@ export default function CmsManagementPage() {
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-foreground flex items-center gap-2.5">
             <FileText className="h-6 w-6 text-cyan" />
-            Website Content & Testimonials CMS
+            Website Content & Brand CMS
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            Edit client reviews, testimonials, and frequently asked questions on the public website.
+            Manage Trusted by logos, client reviews, testimonials, and FAQs on the public website.
           </p>
         </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setIsSqlModalOpen(true)}
+          className="rounded-full text-xs font-bold border-cyan/40 text-cyan hover:bg-cyan/10 self-start sm:self-auto gap-1.5"
+        >
+          <Code2 className="h-4 w-4" />
+          Supabase SQL Setup
+        </Button>
       </div>
 
-      <Tabs defaultValue="testimonials" className="space-y-6">
-        <TabsList className="bg-surface/80 p-1 rounded-2xl border border-border">
+      <Tabs defaultValue="trusted-logos" className="space-y-6">
+        <TabsList className="bg-surface/80 p-1 rounded-2xl border border-border flex-wrap h-auto gap-1">
+          <TabsTrigger value="trusted-logos" className="rounded-xl text-xs font-bold px-4 py-2">
+            Trusted Logos & Brands ({trustedLogos.length})
+          </TabsTrigger>
           <TabsTrigger value="testimonials" className="rounded-xl text-xs font-bold px-4 py-2">
             Client Testimonials ({testimonials.length})
           </TabsTrigger>
@@ -137,7 +378,269 @@ export default function CmsManagementPage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* 1. TESTIMONIALS */}
+        {/* ============================================================ */}
+        {/* 1. TRUSTED LOGOS & BRANDS TAB                                */}
+        {/* ============================================================ */}
+        <TabsContent value="trusted-logos" className="space-y-6">
+          {/* Section Heading Editor Card */}
+          <Card className="rounded-2xl border-border bg-card/70 p-4 sm:p-5 backdrop-blur-sm shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-1 flex-1">
+                <label className="text-xs font-bold text-foreground flex items-center gap-2">
+                  <Sparkles className="h-3.5 w-3.5 text-cyan" />
+                  Section Heading Text (Homepage Banner)
+                </label>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+                  <Input
+                    placeholder="e.g. Trusted by growing businesses across India & USA"
+                    value={sectionHeading}
+                    onChange={(e) => setSectionHeading(e.target.value)}
+                    className="text-xs rounded-xl h-9 font-semibold flex-1 bg-surface"
+                  />
+                  <Button
+                    onClick={handleSaveHeading}
+                    size="sm"
+                    className="rounded-xl bg-cyan text-slate-950 font-bold text-xs px-4 h-9 whitespace-nowrap shadow-sm"
+                  >
+                    <Check className="h-3.5 w-3.5 mr-1" /> Update Heading
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="text-xs text-muted-foreground">
+                Manage the live client logos in the &quot;<strong>{sectionHeading}</strong>&quot; marquee.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => {
+                  setEditingLogo({
+                    name: '',
+                    note: '',
+                    logo_url: '',
+                    icon: 'Building2',
+                    website_url: '',
+                    status: 'published',
+                    display_order: trustedLogos.length + 1,
+                  });
+                  setIsLogoModalOpen(true);
+                }}
+                size="sm"
+                className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4"
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" /> Add Brand Logo
+              </Button>
+            </div>
+          </div>
+
+          {/* Search & Stats Bar */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 rounded-2xl bg-surface/50 border border-border">
+            <div className="relative w-full sm:w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search brand name or industry..."
+                value={logoSearch}
+                onChange={(e) => setLogoSearch(e.target.value)}
+                className="pl-9 h-8 text-xs rounded-xl bg-card"
+              />
+            </div>
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <span>Published: <strong className="text-emerald-500">{trustedLogos.filter(l => l.status === 'published').length}</strong></span>
+              <span>Drafts: <strong className="text-amber-500">{trustedLogos.filter(l => l.status === 'draft').length}</strong></span>
+              <span>Total: <strong className="text-foreground">{trustedLogos.length}</strong></span>
+            </div>
+          </div>
+
+          {/* Quick Preset Logo Blueprints */}
+          <div className="p-3.5 rounded-2xl bg-surface/50 border border-border space-y-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <Sparkles className="h-3 w-3 text-cyan" /> Quick-Add from Local Assets (Click to Autofill):
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {PRESET_LOCAL_LOGOS.map((tmpl) => (
+                <Button
+                  key={tmpl.label}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setEditingLogo({
+                      name: tmpl.label,
+                      note: tmpl.note,
+                      logo_url: tmpl.path,
+                      icon: 'Building2',
+                      status: 'published',
+                      display_order: trustedLogos.length + 1,
+                    });
+                    setIsLogoModalOpen(true);
+                    toast.info(`Loaded preset logo for ${tmpl.label}`);
+                  }}
+                  className="rounded-xl text-[11px] h-7 border-border hover:border-cyan/40 bg-card/60"
+                >
+                  {tmpl.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          {/* Logos Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredLogos.map((logo, index) => {
+              const hasLogoImage = Boolean(logo.logo_url && logo.logo_url.trim().length > 0);
+              const matchedIcon = PRESET_ICONS.find((i) => i.name === logo.icon) || PRESET_ICONS[0];
+              const IconComponent = matchedIcon.icon;
+
+              return (
+                <Card
+                  key={logo.id}
+                  className="rounded-2xl border-border bg-card/60 backdrop-blur-sm p-4 flex flex-col justify-between transition-all duration-200 hover:border-cyan/40 hover:shadow-md"
+                >
+                  <div className="space-y-3">
+                    {/* Top Row: Order Badge & Status */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-[10px] px-2 py-0.5 rounded-md bg-muted text-muted-foreground font-bold">
+                          #{logo.display_order ?? index + 1}
+                        </span>
+                        {logo.website_url && (
+                          <a
+                            href={logo.website_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-muted-foreground hover:text-cyan transition-colors"
+                            title="Visit website"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleToggleLogoStatus(logo)}
+                        className="cursor-pointer"
+                        title="Click to toggle status"
+                      >
+                        <Badge
+                          variant="outline"
+                          className={`text-[9px] uppercase font-bold transition-colors ${
+                            logo.status === 'published'
+                              ? 'text-emerald-500 border-emerald-500/30 bg-emerald-500/10'
+                              : 'text-amber-500 border-amber-500/30 bg-amber-500/10'
+                          }`}
+                        >
+                          {logo.status}
+                        </Badge>
+                      </button>
+                    </div>
+
+                    {/* Logo & Info Display */}
+                    <div className="flex items-center gap-3.5 pt-1">
+                      {hasLogoImage ? (
+                        <div className="flex h-12 w-20 shrink-0 items-center justify-center rounded-xl bg-white p-1 shadow-sm border border-slate-200 dark:border-slate-800">
+                          <img
+                            src={logo.logo_url!}
+                            alt={logo.name}
+                            className="h-10 w-auto max-w-[72px] object-contain"
+                            onError={(e) => {
+                              // If image fails, hide image element
+                              (e.target as HTMLElement).style.display = 'none';
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-cyan/15 text-cyan border border-cyan/30">
+                          <IconComponent className="h-6 w-6" />
+                        </div>
+                      )}
+
+                      <div className="min-w-0 flex-1">
+                        <h4 className="font-extrabold text-sm text-foreground truncate">
+                          {logo.name}
+                        </h4>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {logo.note || 'Partner Business'}
+                        </p>
+                        {logo.logo_url && (
+                          <span className="text-[10px] text-cyan/80 font-mono truncate block mt-0.5" title={logo.logo_url}>
+                            {logo.logo_url.split('/').pop() || logo.logo_url}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions Row */}
+                  <div className="pt-3 border-t border-border mt-3 flex items-center justify-between">
+                    {/* Reordering */}
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        disabled={index === 0}
+                        onClick={() => handleMoveOrder(logo, 'up')}
+                        className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+                        title="Move left / up in marquee"
+                      >
+                        <ArrowUp className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        disabled={index === filteredLogos.length - 1}
+                        onClick={() => handleMoveOrder(logo, 'down')}
+                        className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+                        title="Move right / down in marquee"
+                      >
+                        <ArrowDown className="h-3 w-3" />
+                      </Button>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setEditingLogo(logo);
+                          setIsLogoModalOpen(true);
+                        }}
+                        className="h-7 rounded-full text-xs px-2.5 gap-1"
+                      >
+                        <Edit2 className="h-3 w-3" /> Edit
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => handleDeleteLogo(logo.id)}
+                        className="h-7 w-7 text-destructive hover:bg-destructive/10 rounded-full"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+
+          {filteredLogos.length === 0 && (
+            <div className="text-center py-12 border border-dashed border-border rounded-3xl">
+              <Building2 className="h-8 w-8 text-muted-foreground mx-auto mb-2 opacity-50" />
+              <p className="text-sm font-bold text-foreground">No brand logos found</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {logoSearch ? 'Try a different search term.' : 'Add your first partner logo to show on the website marquee.'}
+              </p>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ============================================================ */}
+        {/* 2. TESTIMONIALS TAB                                          */}
+        {/* ============================================================ */}
         <TabsContent value="testimonials" className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground">
@@ -162,60 +665,6 @@ export default function CmsManagementPage() {
             </Button>
           </div>
 
-          {/* Quick Testimonial Blueprints */}
-          <div className="p-3.5 rounded-2xl bg-surface/50 border border-border space-y-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-              <Sparkles className="h-3 w-3 text-cyan" /> Quick Example Testimonials (Click to Load):
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                {
-                  label: '🏥 Dr. Alok Verma (ABC Hospital)',
-                  name: 'Dr. Alok Verma',
-                  org: 'ABC Super Speciality Hospital, Moradabad',
-                  quote: 'XGRO revamped our entire hospital website and set up an automated WhatsApp OPD booking agent. Our online patient inquiries jumped by over 180% in 60 days.',
-                  rating: 5,
-                },
-                {
-                  label: '🌿 Vikram Singhania (Bio90 Wellness)',
-                  name: 'Vikram Singhania',
-                  org: 'Bio90 Wellness D2C',
-                  quote: 'The speed of delivery and conversion-focused design of our Shopify store was outstanding. The Meta Ads pipeline they set up generated our highest monthly revenue yet.',
-                  rating: 5,
-                },
-                {
-                  label: '💎 Suresh Agarwal (SP Jewellers)',
-                  name: 'Suresh Agarwal',
-                  org: 'SP Jewellers, Bazar Ganj',
-                  quote: 'Our jewellery catalog website looks world-class. Local walk-ins from Google Maps increased dramatically after XGRO optimized our local SEO profile.',
-                  rating: 5,
-                }
-              ].map((tmpl) => (
-                <Button
-                  key={tmpl.name}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setEditingTestimonial({
-                      name: tmpl.name,
-                      org: tmpl.org,
-                      quote: tmpl.quote,
-                      rating: tmpl.rating,
-                      status: 'published',
-                      display_order: testimonials.length + 1,
-                    });
-                    setIsTestimonialModalOpen(true);
-                    toast.info(`Loaded example testimonial for ${tmpl.name}!`);
-                  }}
-                  className="rounded-xl text-[11px] h-7 border-border hover:border-cyan/40 bg-card/60"
-                >
-                  {tmpl.label}
-                </Button>
-              ))}
-            </div>
-          </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {testimonials.map((test) => (
               <Card
@@ -235,7 +684,7 @@ export default function CmsManagementPage() {
                   </div>
 
                   <p className="text-xs text-foreground/90 leading-relaxed italic">
-                    "{test.quote}"
+                    &quot;{test.quote}&quot;
                   </p>
 
                   <div className="pt-2 border-t border-border/60">
@@ -270,7 +719,9 @@ export default function CmsManagementPage() {
           </div>
         </TabsContent>
 
-        {/* 2. FAQS */}
+        {/* ============================================================ */}
+        {/* 3. FAQS TAB                                                  */}
+        {/* ============================================================ */}
         <TabsContent value="faqs" className="space-y-6">
           <div className="flex justify-between items-center">
             <p className="text-xs text-muted-foreground">
@@ -340,6 +791,283 @@ export default function CmsManagementPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* ============================================================ */}
+      {/* BRAND LOGO EDIT / ADD MODAL                                  */}
+      {/* ============================================================ */}
+      <Dialog open={isLogoModalOpen} onOpenChange={setIsLogoModalOpen}>
+        <DialogContent className="max-w-lg rounded-3xl p-6 max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-cyan" />
+              {editingLogo?.id ? 'Edit Brand Logo' : 'Add Brand Logo to Homepage'}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Configure the company logo or icon shown in the &quot;Trusted by growing businesses&quot; marquee.
+            </DialogDescription>
+          </DialogHeader>
+
+          {editingLogo && (
+            <form onSubmit={handleSaveLogo} className="space-y-4 mt-2">
+              {/* Live Preview Card */}
+              <div className="p-3.5 rounded-2xl bg-surface border border-border">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-2">
+                  Live Marquee Preview:
+                </span>
+                <div className="flex items-center gap-3.5 rounded-2xl border border-border bg-card p-3 shadow-sm w-fit max-w-full">
+                  {editingLogo.logo_url && editingLogo.logo_url.trim().length > 0 ? (
+                    <div className="flex h-12 w-20 shrink-0 items-center justify-center rounded-xl bg-white p-1 shadow-sm border border-slate-200 dark:border-slate-800">
+                      <img
+                        src={editingLogo.logo_url}
+                        alt={editingLogo.name || 'Preview'}
+                        className="h-10 w-auto max-w-[72px] object-contain"
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-cyan/15 text-cyan">
+                      {(() => {
+                        const Icon = PRESET_ICONS.find((i) => i.name === editingLogo.icon)?.icon || Building2;
+                        return <Icon className="h-5.5 w-5.5" />;
+                      })()}
+                    </div>
+                  )}
+
+                  <div className="text-left">
+                    <p className="whitespace-nowrap font-display text-sm font-extrabold text-foreground">
+                      {editingLogo.name || 'Brand Name'}
+                    </p>
+                    <p className="whitespace-nowrap text-[11px] font-medium text-muted-foreground">
+                      {editingLogo.note || 'Industry Note'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Form Fields */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-foreground">Brand / Client Name *</label>
+                  <Input
+                    placeholder="e.g. Bio90 or SP Jewellers"
+                    value={editingLogo.name || ''}
+                    onChange={(e) => setEditingLogo({ ...editingLogo, name: e.target.value })}
+                    required
+                    className="text-xs rounded-xl h-9"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-foreground">Industry / Subtitle Note</label>
+                  <Input
+                    placeholder="e.g. Wellness & Health"
+                    value={editingLogo.note || ''}
+                    onChange={(e) => setEditingLogo({ ...editingLogo, note: e.target.value })}
+                    className="text-xs rounded-xl h-9"
+                  />
+                </div>
+              </div>
+
+              {/* Logo Image Upload Zone & URL */}
+              <div className="space-y-2.5 p-3.5 rounded-2xl bg-surface/70 border border-border">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-foreground flex items-center gap-2">
+                    <ImageIcon className="h-4 w-4 text-cyan" />
+                    Company Logo Image File
+                  </label>
+                  {editingLogo.logo_url && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingLogo({ ...editingLogo, logo_url: '' })}
+                      className="text-[11px] text-destructive hover:underline font-semibold flex items-center gap-1"
+                    >
+                      <X className="h-3 w-3" /> Clear Image (Use Icon)
+                    </button>
+                  )}
+                </div>
+
+                {/* Drag & Drop Upload Zone */}
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleDrop}
+                  className={`relative border-2 border-dashed rounded-2xl p-4 text-center transition-all cursor-pointer ${
+                    isDragging
+                      ? 'border-cyan bg-cyan/10 scale-[1.01]'
+                      : 'border-border hover:border-cyan/50 bg-card/60'
+                  }`}
+                >
+                  <label className="cursor-pointer block">
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      className="hidden"
+                      onChange={handleLogoFileUpload}
+                    />
+                    <div className="flex flex-col items-center justify-center gap-1.5">
+                      <div className="h-9 w-9 rounded-full bg-cyan/15 text-cyan flex items-center justify-center shadow-sm">
+                        <Upload className="h-4.5 w-4.5" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-foreground">
+                          Click to upload new image or drag &amp; drop
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          PNG, SVG, JPG, WebP (Transparent logo recommended, max 5MB)
+                        </p>
+                      </div>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Secondary Image Link / Path Input */}
+                <div className="space-y-1 pt-1">
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>Or enter local path / hosted image URL:</span>
+                    {editingLogo.logo_url?.startsWith('data:') && (
+                      <Badge variant="outline" className="text-[9px] text-cyan border-cyan/30 bg-cyan/10 font-bold">
+                        Uploaded File Ready
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Link2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="e.g. /trustedByLogos/bio90.png or https://..."
+                      value={editingLogo.logo_url?.startsWith('data:') ? 'Uploaded custom file (Data URL ready to save)' : (editingLogo.logo_url || '')}
+                      onChange={(e) => setEditingLogo({ ...editingLogo, logo_url: e.target.value })}
+                      disabled={editingLogo.logo_url?.startsWith('data:')}
+                      className="h-8 pl-8 text-xs rounded-xl font-mono bg-card"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Fallback Icon Selector */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-foreground">Fallback Icon (when no logo image)</label>
+                <div className="grid grid-cols-5 gap-1.5 max-h-28 overflow-y-auto p-1.5 rounded-xl border border-border bg-surface/50">
+                  {PRESET_ICONS.map((item) => {
+                    const Icon = item.icon;
+                    const isSelected = (editingLogo.icon || 'Building2') === item.name;
+                    return (
+                      <button
+                        type="button"
+                        key={item.name}
+                        onClick={() => setEditingLogo({ ...editingLogo, icon: item.name })}
+                        className={`flex flex-col items-center justify-center p-2 rounded-lg text-[10px] transition-all ${
+                          isSelected
+                            ? 'bg-cyan text-slate-950 font-bold shadow-sm'
+                            : 'text-muted-foreground hover:bg-card hover:text-foreground'
+                        }`}
+                        title={item.label}
+                      >
+                        <Icon className="h-4 w-4" />
+                        <span className="text-[9px] truncate max-w-[50px] mt-0.5">{item.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Website Link & Display Order */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-foreground">Website URL (Optional)</label>
+                  <Input
+                    placeholder="https://example.com"
+                    value={editingLogo.website_url || ''}
+                    onChange={(e) => setEditingLogo({ ...editingLogo, website_url: e.target.value })}
+                    className="text-xs rounded-xl h-9"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-foreground">Display Order & Status</label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      placeholder="Order"
+                      value={editingLogo.display_order ?? 1}
+                      onChange={(e) => setEditingLogo({ ...editingLogo, display_order: parseInt(e.target.value) || 1 })}
+                      className="text-xs rounded-xl h-9 w-20"
+                    />
+                    <select
+                      value={editingLogo.status || 'published'}
+                      onChange={(e) => setEditingLogo({ ...editingLogo, status: e.target.value as any })}
+                      className="text-xs rounded-xl h-9 px-3 bg-card border border-border flex-1 text-foreground"
+                    >
+                      <option value="published">Published</option>
+                      <option value="draft">Draft (Hidden)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter className="pt-3 border-t border-border">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsLogoModalOpen(false)}
+                  className="rounded-full text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-5">
+                  Save Brand Logo
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ============================================================ */}
+      {/* SUPABASE SQL SCRIPT DIALOG                                    */}
+      {/* ============================================================ */}
+      <Dialog open={isSqlModalOpen} onOpenChange={setIsSqlModalOpen}>
+        <DialogContent className="max-w-2xl rounded-3xl p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center gap-2">
+              <Code2 className="h-5 w-5 text-cyan" />
+              Supabase SQL for &quot;trusted_logos&quot; Table
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Run this SQL script in your Supabase SQL Editor to create the table, RLS policies, and seed data.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="relative mt-2">
+            <pre className="p-4 rounded-2xl bg-slate-950 text-slate-100 font-mono text-xs overflow-x-auto max-h-[350px] border border-white/10 leading-relaxed">
+              {SUPABASE_TRUSTED_LOGOS_SQL}
+            </pre>
+            <Button
+              size="sm"
+              onClick={() => {
+                navigator.clipboard.writeText(SUPABASE_TRUSTED_LOGOS_SQL);
+                toast.success('SQL copied to clipboard!');
+              }}
+              className="absolute top-3 right-3 rounded-xl bg-cyan text-slate-950 font-bold text-xs px-3 h-7 shadow-md"
+            >
+              <Copy className="h-3.5 w-3.5 mr-1" /> Copy SQL
+            </Button>
+          </div>
+
+          <DialogFooter className="pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsSqlModalOpen(false)}
+              className="rounded-full text-xs"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Testimonial Modal */}
       <Dialog open={isTestimonialModalOpen} onOpenChange={setIsTestimonialModalOpen}>

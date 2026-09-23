@@ -232,3 +232,16 @@ export interface FaqModel {
   display_order: number;
   created_at?: string;
 }
+
+export interface TrustedLogoModel {
+  id: string;
+  name: string;
+  note?: string;
+  logo_url?: string;
+  icon?: string;
+  website_url?: string;
+  status: 'published' | 'draft';
+  display_order: number;
+  created_at?: string;
+  updated_at?: string;
+}

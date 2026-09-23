@@ -15,6 +15,7 @@ import {
   FaqModel,
   ProjectStatus,
   CustomRoleModel,
+  TrustedLogoModel,
 } from './supabase/types';
 
 import {
@@ -27,6 +28,7 @@ import {
   initialTestimonials,
   initialFaqs,
   initialRoles,
+  initialTrustedLogos,
 } from './seed-data';
 
 import { getSupabaseClient } from './supabase/client';
@@ -41,6 +43,8 @@ const STORAGE_KEYS = {
   TESTIMONIALS: 'xgro_testimonials',
   FAQS: 'xgro_faqs',
   ROLES: 'xgro_custom_roles',
+  TRUSTED_LOGOS: 'xgro_trusted_logos',
+  TRUSTED_SECTION_TITLE: 'xgro_trusted_section_title',
 };
 
 // Clear stale legacy dummy data from browser localStorage on init
@@ -1572,3 +1576,113 @@ export async function deleteRole(id: string): Promise<boolean> {
   }
   return true;
 }
+
+// ==========================================
+// TRUSTED LOGOS / PARTNERS CMS CRUD
+// ==========================================
+
+export async function getTrustedLogos(): Promise<TrustedLogoModel[]> {
+  return fetchWithSWR<TrustedLogoModel[]>(
+    STORAGE_KEYS.TRUSTED_LOGOS,
+    async () => {
+      const supabase = getSupabaseClient();
+      if (!supabase) return null;
+      const { data, error } = await supabase
+        .from('trusted_logos')
+        .select('*')
+        .order('display_order', { ascending: true });
+      if (!error && data && data.length > 0) return data as TrustedLogoModel[];
+      return null;
+    },
+    initialTrustedLogos
+  );
+}
+
+export async function saveTrustedLogo(
+  logo: Partial<TrustedLogoModel> & { name: string }
+): Promise<TrustedLogoModel> {
+  const current = await getTrustedLogos();
+  const existingIdx = current.findIndex(l => l.id === logo.id);
+  let saved: TrustedLogoModel;
+
+  if (existingIdx >= 0) {
+    saved = { ...current[existingIdx], ...logo, updated_at: new Date().toISOString() };
+    current[existingIdx] = saved;
+  } else {
+    saved = {
+      id: logo.id || `brand-${Date.now()}`,
+      name: logo.name,
+      note: logo.note || '',
+      logo_url: logo.logo_url || '',
+      icon: logo.icon || 'Building2',
+      website_url: logo.website_url || '',
+      status: logo.status || 'published',
+      display_order: logo.display_order ?? (current.length + 1),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    current.push(saved);
+  }
+
+  setLocalItem(STORAGE_KEYS.TRUSTED_LOGOS, current);
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      const isUUID = saved.id && saved.id.includes('-') && saved.id.length > 30;
+      const { data: upserted, error } = await supabase
+        .from('trusted_logos')
+        .upsert({
+          id: isUUID ? saved.id : undefined,
+          name: saved.name,
+          note: saved.note,
+          logo_url: saved.logo_url,
+          icon: saved.icon,
+          website_url: saved.website_url,
+          status: saved.status,
+          display_order: saved.display_order,
+          updated_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (!error && upserted) {
+        saved.id = upserted.id;
+        const updatedList = current.map(l => l.id === saved.id ? (upserted as TrustedLogoModel) : l);
+        setLocalItem(STORAGE_KEYS.TRUSTED_LOGOS, updatedList);
+      }
+    } catch (e) {
+      console.warn('Error syncing trusted logo to Supabase:', e);
+    }
+  }
+
+  return saved;
+}
+
+export async function deleteTrustedLogo(id: string): Promise<void> {
+  const current = await getTrustedLogos();
+  setLocalItem(STORAGE_KEYS.TRUSTED_LOGOS, current.filter(l => l.id !== id));
+
+  const supabase = getSupabaseClient();
+  if (supabase && id.length > 30) {
+    try {
+      await supabase.from('trusted_logos').delete().eq('id', id);
+    } catch (e) {
+      console.warn('Error deleting trusted logo from Supabase:', e);
+    }
+  }
+}
+
+export async function getTrustedSectionTitle(): Promise<string> {
+  const fallback = 'Trusted by growing businesses across India & USA';
+  if (typeof window === 'undefined') return fallback;
+  return getLocalItem<string>(STORAGE_KEYS.TRUSTED_SECTION_TITLE, fallback);
+}
+
+export async function saveTrustedSectionTitle(title: string): Promise<string> {
+  const cleanTitle = title.trim() || 'Trusted by growing businesses across India & USA';
+  setLocalItem(STORAGE_KEYS.TRUSTED_SECTION_TITLE, cleanTitle);
+  return cleanTitle;
+}
+
+
