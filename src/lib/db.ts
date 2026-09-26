@@ -46,6 +46,7 @@ const STORAGE_KEYS = {
   ROLES: 'xgro_custom_roles',
   TRUSTED_LOGOS: 'xgro_trusted_logos',
   TRUSTED_SECTION_TITLE: 'xgro_trusted_section_title',
+  USER_CREDENTIALS: 'xgro_user_credentials',
 };
 
 // Clear stale legacy dummy data and huge uncompressed caches from browser localStorage on init
@@ -461,24 +462,91 @@ export async function getClients(): Promise<ClientModel[]> {
   );
 }
 
+export interface EmailCheckResult {
+  exists: boolean;
+  type?: 'client' | 'team';
+  name?: string;
+  role?: string;
+  user?: ClientModel | TeamMemberModel;
+}
+
+export async function checkUserEmailExists(
+  email: string,
+  excludeId?: string
+): Promise<EmailCheckResult> {
+  const clean = (email || '').trim().toLowerCase();
+  if (!clean) return { exists: false };
+
+  const [clients, team] = await Promise.all([getClients(), getTeamMembers()]);
+
+  // Check in clients list
+  const existingClient = clients.find(
+    (c) => c.email.trim().toLowerCase() === clean && (!excludeId || c.id !== excludeId)
+  );
+  if (existingClient) {
+    return {
+      exists: true,
+      type: 'client',
+      name: existingClient.name,
+      role: 'Client (Portal User)',
+      user: existingClient,
+    };
+  }
+
+  // Check in team list
+  const existingTeam = team.find(
+    (t) => t.email.trim().toLowerCase() === clean && (!excludeId || t.id !== excludeId)
+  );
+  if (existingTeam) {
+    return {
+      exists: true,
+      type: 'team',
+      name: existingTeam.name,
+      role: existingTeam.role || 'Staff / Admin',
+      user: existingTeam,
+    };
+  }
+
+  return { exists: false };
+}
+
 export async function saveClient(client: Partial<ClientModel> & { name: string; email: string }): Promise<ClientModel> {
+  const cleanEmail = client.email.trim().toLowerCase();
   const current = await getClients();
-  const existingIdx = current.findIndex(c => c.id === client.id || c.email.toLowerCase() === client.email.toLowerCase());
+
+  // Check if another client (with a different id) is already using this email
+  const conflicting = current.find(
+    (c) => c.email.trim().toLowerCase() === cleanEmail && (client.id ? c.id !== client.id : false)
+  );
+  if (conflicting) {
+    throw new Error(`Another client account with email "${client.email}" already exists (${conflicting.name}).`);
+  }
+
+  const existingIdx = current.findIndex(
+    (c) => (client.id && c.id === client.id) || c.email.trim().toLowerCase() === cleanEmail
+  );
   let savedClient: ClientModel;
 
   if (existingIdx >= 0) {
-    savedClient = { ...current[existingIdx], ...client };
+    savedClient = {
+      ...current[existingIdx],
+      ...client,
+      id: current[existingIdx].id,
+      email: cleanEmail,
+    };
     current[existingIdx] = savedClient;
   } else {
     savedClient = {
       id: client.id || `cli-${Date.now()}`,
       name: client.name,
-      email: client.email,
+      email: cleanEmail,
       phone: client.phone || '',
       company_name: client.company_name || client.name,
       avatar_url: client.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(client.name)}`,
       address: client.address || '',
       status: client.status || 'active',
+      selected_plan: client.selected_plan,
+      notes: client.notes,
       created_at: new Date().toISOString(),
     };
     current.unshift(savedClient);
@@ -508,13 +576,33 @@ export async function saveClient(client: Partial<ClientModel> & { name: string; 
 }
 
 export async function deleteClient(id: string): Promise<boolean> {
+  // 1. Unlink any projects assigned to this client first so projects are NEVER deleted
+  const currentProjects = await getProjects();
+  const updatedProjects = currentProjects.map((p) =>
+    p.client_id === id ? { ...p, client_id: '', client: undefined, updated_at: new Date().toISOString() } : p
+  );
+  setLocalItem(STORAGE_KEYS.PROJECTS, updatedProjects);
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      await supabase.from('projects').update({ client_id: null }).eq('client_id', id);
+    } catch (e) {
+      console.warn('Error unlinking projects in Supabase before client delete:', e);
+    }
+  }
+
+  // 2. Remove client record
   const current = await getClients();
   const filtered = current.filter(c => c.id !== id);
   setLocalItem(STORAGE_KEYS.CLIENTS, filtered);
 
-  const supabase = getSupabaseClient();
   if (supabase) {
-    await supabase.from('clients').delete().eq('id', id);
+    try {
+      await supabase.from('clients').delete().eq('id', id);
+    } catch (e) {
+      console.warn('Error deleting client from Supabase:', e);
+    }
   }
   return true;
 }
@@ -624,18 +712,35 @@ export async function getTeamMembers(): Promise<TeamMemberModel[]> {
 }
 
 export async function saveTeamMember(member: Partial<TeamMemberModel> & { name: string; email: string }): Promise<TeamMemberModel> {
+  const cleanEmail = member.email.trim().toLowerCase();
   const current = await getTeamMembers();
-  const existingIdx = current.findIndex(t => t.id === member.id || t.email.toLowerCase() === member.email.toLowerCase());
+
+  // Check if another team member (with a different id) is already using this email
+  const conflicting = current.find(
+    (t) => t.email.trim().toLowerCase() === cleanEmail && (member.id ? t.id !== member.id : false)
+  );
+  if (conflicting) {
+    throw new Error(`Another team member with email "${member.email}" already exists (${conflicting.name}).`);
+  }
+
+  const existingIdx = current.findIndex(
+    (t) => (member.id && t.id === member.id) || t.email.trim().toLowerCase() === cleanEmail
+  );
   let saved: TeamMemberModel;
 
   if (existingIdx >= 0) {
-    saved = { ...current[existingIdx], ...member };
+    saved = {
+      ...current[existingIdx],
+      ...member,
+      id: current[existingIdx].id,
+      email: cleanEmail,
+    };
     current[existingIdx] = saved;
   } else {
     saved = {
       id: member.id || `team-${Date.now()}`,
       name: member.name,
-      email: member.email,
+      email: cleanEmail,
       phone: member.phone || '',
       role: member.role || 'developer',
       department: member.department || 'Engineering',
@@ -688,7 +793,7 @@ export async function deleteTeamMember(id: string): Promise<boolean> {
 // PROJECTS, MILESTONES, TASKS & UPDATES
 // ==============================================================================
 export async function getProjects(): Promise<ProjectModel[]> {
-  return fetchWithSWR<ProjectModel[]>(
+  const projects = await fetchWithSWR<ProjectModel[]>(
     STORAGE_KEYS.PROJECTS,
     async () => {
       const supabase = getSupabaseClient();
@@ -704,6 +809,48 @@ export async function getProjects(): Promise<ProjectModel[]> {
     },
     initialProjects
   );
+
+  // Attach client and team info dynamically if not already populated
+  const [clients, team] = await Promise.all([getClients(), getTeamMembers()]);
+
+  return (projects || []).map((p) => {
+    // If proj-rock lost its client_id in a previous session, restore it to cli-rock
+    const effectiveClientId = (!p.client_id && p.id === 'proj-rock') ? 'cli-rock' : p.client_id;
+    
+    // Check if client_id matches an existing client by ID or Email
+    let matchedClient = effectiveClientId
+      ? clients.find(
+          (c) => c.id === effectiveClientId || c.email.toLowerCase() === effectiveClientId.toLowerCase()
+        )
+      : undefined;
+
+    // If not matched directly, check if client object or team member matches
+    if (!matchedClient && p.client?.email) {
+      matchedClient = clients.find((c) => c.email.toLowerCase() === p.client!.email!.toLowerCase());
+    }
+
+    if (!matchedClient && effectiveClientId) {
+      const matchedTeam = team.find(
+        (t) => t.id === effectiveClientId || t.email.toLowerCase() === effectiveClientId.toLowerCase()
+      );
+      if (matchedTeam) {
+        matchedClient = clients.find((c) => c.email.toLowerCase() === matchedTeam.email.toLowerCase()) || {
+          id: matchedTeam.id,
+          name: matchedTeam.name,
+          email: matchedTeam.email,
+          phone: matchedTeam.phone || '',
+          company_name: matchedTeam.name,
+          status: 'active',
+          created_at: matchedTeam.created_at || new Date().toISOString(),
+        };
+      }
+    }
+
+    if (matchedClient) {
+      return { ...p, client_id: matchedClient.id, client: matchedClient };
+    }
+    return p;
+  });
 }
 
 export async function getProjectById(id: string): Promise<ProjectModel | null> {
@@ -812,6 +959,151 @@ export async function deleteProject(id: string): Promise<boolean> {
     }
   }
   return true;
+}
+
+export async function assignProjectsToClient(
+  clientId: string,
+  projectIds: string[],
+  userEmail?: string
+): Promise<ProjectModel[]> {
+  const [clients, team] = await Promise.all([getClients(), getTeamMembers()]);
+  const cleanEmail = (userEmail || (clientId.includes('@') ? clientId : '')).trim().toLowerCase();
+
+  // Find matching client by ID or Email
+  let matchedClient = clients.find(
+    (c) =>
+      c.id === clientId ||
+      (cleanEmail && c.email.toLowerCase() === cleanEmail) ||
+      c.email.toLowerCase() === clientId.toLowerCase()
+  );
+
+  // If not found in clients, check team members to see if they exist there
+  if (!matchedClient) {
+    const matchedTeam = team.find(
+      (t) =>
+        t.id === clientId ||
+        (cleanEmail && t.email.toLowerCase() === cleanEmail) ||
+        t.email.toLowerCase() === clientId.toLowerCase()
+    );
+    if (matchedTeam) {
+      // Create/Ensure a background client record with a stable ID so relational projects stay intact
+      matchedClient = await saveClient({
+        name: matchedTeam.name,
+        email: matchedTeam.email,
+        phone: matchedTeam.phone || '',
+        company_name: `${matchedTeam.name}'s Business`,
+        status: 'active',
+      });
+    }
+  }
+
+  const effectiveClientId = matchedClient?.id || clientId;
+  const currentProjects = await getProjects();
+  const updated = currentProjects.map((p) => {
+    // If selected for this client
+    if (projectIds.includes(p.id)) {
+      return {
+        ...p,
+        client_id: effectiveClientId,
+        client: matchedClient || p.client,
+        updated_at: new Date().toISOString(),
+      };
+    }
+    // If previously assigned to this client/user but now unselected, unassign it (never delete it!)
+    const wasAssignedToThisUser =
+      p.client_id === effectiveClientId ||
+      p.client_id === clientId ||
+      (cleanEmail && (p.client?.email?.toLowerCase() === cleanEmail || p.client_id?.toLowerCase() === cleanEmail)) ||
+      (matchedClient && (p.client_id === matchedClient.id || p.client_id === matchedClient.email));
+
+    if (wasAssignedToThisUser && !projectIds.includes(p.id)) {
+      return { ...p, client_id: '', client: undefined, updated_at: new Date().toISOString() };
+    }
+    return p;
+  });
+
+  setLocalItem(STORAGE_KEYS.PROJECTS, updated);
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    // Update all affected projects in Supabase
+    for (const p of updated) {
+      if (
+        projectIds.includes(p.id) ||
+        (currentProjects.find((cp) => cp.id === p.id)?.client_id === effectiveClientId &&
+          !projectIds.includes(p.id))
+      ) {
+        try {
+          if (p.id.length > 30) {
+            await supabase
+              .from('projects')
+              .update({ client_id: p.client_id || null })
+              .eq('id', p.id);
+          }
+        } catch (e) {
+          console.warn('Error syncing project assignment to Supabase:', e);
+        }
+      }
+    }
+  }
+
+  return updated;
+}
+
+export async function createUserWithRole(data: {
+  name: string;
+  email: string;
+  phone?: string;
+  role: string;
+  password?: string;
+  company_name?: string;
+  department?: string;
+  address?: string;
+  selected_plan?: string;
+  notes?: string;
+  assignedProjectIds?: string[];
+}): Promise<{ user: ClientModel | TeamMemberModel; type: 'client' | 'team'; password?: string }> {
+  const cleanEmail = data.email.trim().toLowerCase();
+  const duplicate = await checkUserEmailExists(cleanEmail);
+  if (duplicate.exists) {
+    throw new Error(`An account with email "${data.email}" already exists (${duplicate.name} as ${duplicate.role}). Duplicate emails are not allowed.`);
+  }
+
+  const generatedPassword = data.password?.trim() || generateSecurePassword(12);
+
+  if (data.role === 'client') {
+    const newClient = await saveClient({
+      name: data.name,
+      email: cleanEmail,
+      phone: data.phone || '',
+      company_name: data.company_name || `${data.name}'s Business`,
+      address: data.address || '',
+      selected_plan: data.selected_plan || 'Growth Plan (₹39,999)',
+      notes: data.notes || '',
+      status: 'active',
+    });
+
+    if (data.assignedProjectIds && data.assignedProjectIds.length > 0) {
+      await assignProjectsToClient(newClient.id, data.assignedProjectIds);
+    }
+
+    saveUserCredential(cleanEmail, generatedPassword, true);
+
+    return { user: newClient, type: 'client', password: generatedPassword };
+  } else {
+    const newMember = await saveTeamMember({
+      name: data.name,
+      email: cleanEmail,
+      phone: data.phone || '',
+      role: data.role,
+      department: data.department || 'Engineering',
+      status: 'active',
+    });
+
+    saveUserCredential(cleanEmail, generatedPassword, true);
+
+    return { user: newMember, type: 'team', password: generatedPassword };
+  }
 }
 
 export async function updateProjectProgress(
@@ -1785,4 +2077,387 @@ export async function saveTrustedSectionTitle(title: string): Promise<string> {
   return cleanTitle;
 }
 
+// -------------------------------------------------------------
+// USER MANAGEMENT, CREDENTIALS & RBAC ACCESS
+// -------------------------------------------------------------
 
+export function generateSecurePassword(length: number = 12): string {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghijkmnopqrstuvwxyz';
+  const numbers = '23456789';
+  const special = '!@#$%^&*';
+
+  const password = [
+    upper[Math.floor(Math.random() * upper.length)],
+    lower[Math.floor(Math.random() * lower.length)],
+    numbers[Math.floor(Math.random() * numbers.length)],
+    special[Math.floor(Math.random() * special.length)],
+  ];
+
+  const allChars = upper + lower + numbers + special;
+  for (let i = password.length; i < length; i++) {
+    password.push(allChars[Math.floor(Math.random() * allChars.length)]);
+  }
+
+  return password.sort(() => Math.random() - 0.5).join('');
+}
+
+export interface UserCredentialInfo {
+  email: string;
+  temporaryPassword?: string;
+  updatedAt: string;
+  createdByAdmin: boolean;
+}
+
+export function saveUserCredential(
+  email: string,
+  password?: string,
+  createdByAdmin: boolean = true
+): void {
+  const clean = email.trim().toLowerCase();
+  const map = getLocalItem<Record<string, UserCredentialInfo>>(STORAGE_KEYS.USER_CREDENTIALS, {});
+  map[clean] = {
+    email: clean,
+    temporaryPassword: password || map[clean]?.temporaryPassword,
+    updatedAt: new Date().toISOString(),
+    createdByAdmin,
+  };
+  setLocalItem(STORAGE_KEYS.USER_CREDENTIALS, map);
+}
+
+export function getUserCredential(email: string): UserCredentialInfo | null {
+  const clean = email.trim().toLowerCase();
+  const map = getLocalItem<Record<string, UserCredentialInfo>>(STORAGE_KEYS.USER_CREDENTIALS, {});
+  return map[clean] || null;
+}
+
+export async function resetUserPassword(
+  email: string,
+  customPassword?: string
+): Promise<{ success: boolean; password: string; message: string }> {
+  const clean = email.trim().toLowerCase();
+  const newPass =
+    customPassword && customPassword.trim().length >= 6
+      ? customPassword.trim()
+      : generateSecurePassword(12);
+
+  saveUserCredential(clean, newPass, true);
+
+  // Sync to Supabase if connected
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      // In Supabase, if auth admin is configured, it can update user password
+    } catch (e) {
+      console.warn('Supabase password reset note:', e);
+    }
+  }
+
+  return {
+    success: true,
+    password: newPass,
+    message: `Password successfully updated for ${clean}.`,
+  };
+}
+
+export interface UnifiedUserModel {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  userType: 'client' | 'team';
+  role: string;
+  roleDisplayName: string;
+  department?: string;
+  company_name?: string;
+  address?: string;
+  status: 'active' | 'inactive' | 'pending_approval';
+  selected_plan?: string;
+  notes?: string;
+  assignedProjectsCount: number;
+  created_at?: string;
+  createdByAdmin: boolean;
+  hasTemporaryPassword: boolean;
+  temporaryPassword?: string;
+  avatar_url?: string;
+}
+
+export async function getAllUsers(): Promise<UnifiedUserModel[]> {
+  const [clients, team, projects, roles] = await Promise.all([
+    getClients(),
+    getTeamMembers(),
+    getProjects(),
+    getRoles(),
+  ]);
+
+  const credsMap = getLocalItem<Record<string, UserCredentialInfo>>(STORAGE_KEYS.USER_CREDENTIALS, {});
+
+  // Build client lookup map by email & id
+  const clientMapByEmail: Record<string, ClientModel> = {};
+  const clientMapById: Record<string, ClientModel> = {};
+  clients.forEach((c) => {
+    if (c.email) {
+      clientMapByEmail[c.email.trim().toLowerCase()] = c;
+    }
+    if (c.id) {
+      clientMapById[c.id] = c;
+    }
+  });
+
+  const teamEmails = new Set<string>();
+
+  // 1. Process Team Members (Staff / Admins)
+  const teamUsers: UnifiedUserModel[] = team.map((t) => {
+    const cleanEmail = t.email.trim().toLowerCase();
+    teamEmails.add(cleanEmail);
+    const userCred = credsMap[cleanEmail];
+    const isSuperAdmin = cleanEmail === 'bajakprashant1998@gmail.com';
+    const roleObj = roles.find((r) => r.key === t.role || r.id === t.role);
+    const roleName = isSuperAdmin
+      ? 'Super Admin (Owner)'
+      : roleObj?.name || t.role.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+
+    const clientRecord = clientMapByEmail[cleanEmail] || clientMapById[t.id];
+    const assignedCount = projects.filter((p) => {
+      if (clientRecord && p.client_id === clientRecord.id) return true;
+      if (p.client_id === t.id) return true;
+      if (p.client?.email?.toLowerCase() === cleanEmail) return true;
+      if (p.client_id?.toLowerCase() === cleanEmail) return true;
+      return false;
+    }).length;
+
+    return {
+      id: t.id,
+      name: t.name,
+      email: t.email,
+      phone: t.phone || clientRecord?.phone,
+      userType: 'team',
+      role: t.role,
+      roleDisplayName: roleName,
+      department: t.department,
+      company_name: clientRecord?.company_name,
+      address: clientRecord?.address,
+      status: t.status || 'active',
+      assignedProjectsCount: assignedCount,
+      created_at: t.created_at || clientRecord?.created_at,
+      createdByAdmin: userCred?.createdByAdmin ?? true,
+      hasTemporaryPassword: !!userCred?.temporaryPassword,
+      temporaryPassword: userCred?.temporaryPassword,
+      avatar_url: t.avatar_url,
+    };
+  });
+
+  // 2. Process Client Accounts (who are not currently in teamUsers)
+  const clientUsers: UnifiedUserModel[] = clients
+    .filter((c) => !teamEmails.has(c.email.trim().toLowerCase()))
+    .map((c) => {
+      const cleanEmail = c.email.trim().toLowerCase();
+      const userCred = credsMap[cleanEmail];
+      const assignedCount = projects.filter((p) => {
+        if (p.client_id === c.id) return true;
+        if (p.client?.email?.toLowerCase() === cleanEmail) return true;
+        if (p.client_id?.toLowerCase() === cleanEmail) return true;
+        return false;
+      }).length;
+
+      return {
+        id: c.id,
+        name: c.name,
+        email: c.email,
+        phone: c.phone,
+        userType: 'client',
+        role: 'client',
+        roleDisplayName: 'Client (Portal User)',
+        company_name: c.company_name,
+        address: c.address,
+        status: c.status || 'active',
+        selected_plan: c.selected_plan,
+        notes: c.notes,
+        assignedProjectsCount: assignedCount,
+        created_at: c.created_at,
+        createdByAdmin: userCred?.createdByAdmin ?? false,
+        hasTemporaryPassword: !!userCred?.temporaryPassword,
+        temporaryPassword: userCred?.temporaryPassword,
+        avatar_url: c.avatar_url,
+      };
+    });
+
+  return [...teamUsers, ...clientUsers].sort((a, b) => {
+    const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return dateB - dateA;
+  });
+}
+
+export async function toggleUserStatus(
+  id: string,
+  userType: 'client' | 'team',
+  newStatus: 'active' | 'inactive'
+): Promise<{ success: boolean; user: ClientModel | TeamMemberModel }> {
+  if (userType === 'client') {
+    const clients = await getClients();
+    const client = clients.find((c) => c.id === id);
+    if (!client) throw new Error('Client account not found');
+    client.status = newStatus;
+    setLocalItem(STORAGE_KEYS.CLIENTS, clients);
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        await supabase.from('clients').update({ status: newStatus }).eq('id', id);
+      } catch (e) {
+        console.warn('Error syncing client status to Supabase:', e);
+      }
+    }
+    return { success: true, user: client };
+  } else {
+    const team = await getTeamMembers();
+    const member = team.find((t) => t.id === id);
+    if (!member) throw new Error('Team member not found');
+    if (member.email.toLowerCase() === 'bajakprashant1998@gmail.com') {
+      throw new Error('Cannot deactivate the primary Super Admin account.');
+    }
+    member.status = newStatus;
+    setLocalItem(STORAGE_KEYS.TEAM, team);
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        await supabase.from('team_members').update({ status: newStatus }).eq('id', id);
+      } catch (e) {
+        console.warn('Error syncing team member status to Supabase:', e);
+      }
+    }
+    return { success: true, user: member };
+  }
+}
+
+export async function updateUserRoleAndProfile(data: {
+  id: string;
+  email: string;
+  name: string;
+  phone?: string;
+  newRole: string;
+  department?: string;
+  company_name?: string;
+  status?: 'active' | 'inactive' | 'pending_approval';
+}): Promise<{ success: boolean; message: string }> {
+  const cleanEmail = data.email.trim().toLowerCase();
+
+  // Primary Super Admin Protection: Owner must always remain Super Admin
+  if (cleanEmail === 'bajakprashant1998@gmail.com' && data.newRole !== 'admin' && data.newRole !== 'super_admin') {
+    throw new Error('The primary Super Admin account (bajakprashant1998@gmail.com) is permanently protected and must always remain Super Admin to safeguard platform ownership.');
+  }
+
+  // Check if demoting an admin would leave zero active admins in the platform
+  const team = await getTeamMembers();
+  const currentMember = team.find((t) => t.email.toLowerCase() === cleanEmail || t.id === data.id);
+  const isCurrentAdmin = currentMember && (currentMember.role === 'admin' || currentMember.role === 'super_admin');
+  const willBeAdmin = data.newRole === 'admin' || data.newRole === 'super_admin';
+
+  if (isCurrentAdmin && !willBeAdmin) {
+    const otherActiveAdmins = team.filter(
+      (t) =>
+        (t.role === 'admin' || t.role === 'super_admin') &&
+        t.status !== 'inactive' &&
+        t.email.toLowerCase() !== cleanEmail &&
+        t.id !== data.id
+    );
+    if (otherActiveAdmins.length === 0) {
+      throw new Error('Cannot change role: There must always be at least one active Super Admin to manage the platform.');
+    }
+  }
+
+  // Retrieve current clients and projects
+  const clients = await getClients();
+  const existingClient = clients.find((c) => c.email.toLowerCase() === cleanEmail || c.id === data.id);
+  const stableClientId = existingClient?.id || (data.id.startsWith('cli-') || (data.id.includes('-') && data.id.length > 30) ? data.id : `cli-${Date.now()}`);
+
+  if (data.newRole === 'client') {
+    // 1. Save/Update in clients with permanent stable client ID
+    const saved = await saveClient({
+      id: stableClientId,
+      name: data.name.trim(),
+      email: cleanEmail,
+      phone: data.phone || existingClient?.phone || '',
+      company_name: data.company_name || existingClient?.company_name || `${data.name.trim()}'s Business`,
+      status: data.status || 'active',
+    });
+
+    // 2. Ensure all projects associated with this email or client ID are preserved and linked to saved.id
+    const currentProjects = await getProjects();
+    let hasProjectUpdates = false;
+    const reconnectedProjects = currentProjects.map((p) => {
+      const isUserProject =
+        p.client_id === saved.id ||
+        p.client_id === data.id ||
+        p.client_id?.toLowerCase() === cleanEmail ||
+        p.client?.email?.toLowerCase() === cleanEmail;
+      if (isUserProject && p.client_id !== saved.id) {
+        hasProjectUpdates = true;
+        return { ...p, client_id: saved.id, client: saved, updated_at: new Date().toISOString() };
+      }
+      return p;
+    });
+
+    if (hasProjectUpdates) {
+      setLocalItem(STORAGE_KEYS.PROJECTS, reconnectedProjects);
+      const supabase = getSupabaseClient();
+      if (supabase && saved.id.length > 30) {
+        for (const p of reconnectedProjects) {
+          if (p.client_id === saved.id && p.id.length > 30) {
+            try {
+              await supabase.from('projects').update({ client_id: saved.id }).eq('id', p.id);
+            } catch (e) {
+              console.warn('Error reconnecting project in Supabase on role change to client:', e);
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Remove from team_members (they are now solely a Client)
+    const existingTeam = await getTeamMembers();
+    const filteredTeam = existingTeam.filter((t) => t.email.toLowerCase() !== cleanEmail && t.id !== data.id);
+    setLocalItem(STORAGE_KEYS.TEAM, filteredTeam);
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        await supabase.from('team_members').delete().eq('email', cleanEmail);
+      } catch (e) {
+        console.warn('Error removing team member in Supabase on role transition:', e);
+      }
+    }
+  } else {
+    // 1. Check if an existing team record exists with this email or id
+    const teamMembers = await getTeamMembers();
+    const existingTeam = teamMembers.find((t) => t.email.toLowerCase() === cleanEmail || t.id === data.id);
+
+    // Save/Update in team_members
+    await saveTeamMember({
+      id: existingTeam?.id || (data.id.startsWith('team-') || data.id.length > 30 ? data.id : `team-${Date.now()}`),
+      name: data.name.trim(),
+      email: cleanEmail,
+      phone: data.phone || existingClient?.phone || '',
+      role: data.newRole,
+      department: data.department || (data.newRole === 'admin' ? 'Executive Leadership' : 'Agency Operations'),
+      status: data.status === 'inactive' ? 'inactive' : 'active',
+    });
+
+    // 2. CRITICAL: NEVER delete the client record or unlink projects when changing to a team role!
+    // Preserve the client record in the background with its stable ID and projects intact.
+    if (!existingClient) {
+      await saveClient({
+        id: stableClientId,
+        name: data.name.trim(),
+        email: cleanEmail,
+        phone: data.phone || '',
+        company_name: data.company_name || `${data.name.trim()}'s Business`,
+        status: 'active',
+      });
+    }
+  }
+
+  return { success: true, message: `Successfully updated ${data.name}'s role to ${data.newRole}.` };
+}

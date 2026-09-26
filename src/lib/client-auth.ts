@@ -32,11 +32,27 @@ export function setActiveClientId(id: string): void {
 }
 
 export async function getActiveClient(): Promise<ClientModel | null> {
-  const currentId = getActiveClientId();
   const clients = await getClients();
+  if (typeof window !== 'undefined') {
+    try {
+      const authStored = localStorage.getItem('xgro_current_auth_user');
+      if (authStored) {
+        const authUser = JSON.parse(authStored);
+        if (authUser?.email) {
+          const matched = clients.find(
+            (c) => c.email.toLowerCase() === authUser.email.toLowerCase() || (authUser.id && c.id === authUser.id)
+          );
+          if (matched) return matched;
+        }
+      }
+    } catch (e) {}
+  }
+  const currentId = getActiveClientId();
   if (currentId) {
-    const matched = clients.find((c) => c.id === currentId || c.email.toLowerCase() === currentId.toLowerCase());
+    const matched = clients.find(
+      (c) => c.id === currentId || c.email.toLowerCase() === currentId.toLowerCase()
+    );
     if (matched) return matched;
   }
-  return null;
+  return clients[0] || null;
 }

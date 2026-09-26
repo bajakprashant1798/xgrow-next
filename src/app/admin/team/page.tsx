@@ -52,10 +52,13 @@ import {
   getProjects,
   getRoles,
   updateTaskStatus,
+  checkUserEmailExists,
   subscribeToDataChanges,
+  EmailCheckResult,
 } from '@/lib/db';
 import { TeamMemberModel, ProjectModel, CustomRoleModel, TaskModel } from '@/lib/supabase/types';
 import { useAuth } from '@/lib/auth-context';
+import { Loader2, AlertCircle, AlertTriangle } from 'lucide-react';
 
 export default function TeamManagementPage() {
   const { isAdmin } = useAuth();
@@ -64,6 +67,10 @@ export default function TeamManagementPage() {
   const [roles, setRoles] = useState<CustomRoleModel[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<Partial<TeamMemberModel> | null>(null);
+
+  // Debounced email check for team member modal
+  const [emailCheckStatus, setEmailCheckStatus] = useState<'idle' | 'checking' | 'available' | 'duplicate'>('idle');
+  const [emailCheckResult, setEmailCheckResult] = useState<EmailCheckResult | null>(null);
 
   const loadData = async () => {
     const [t, p, r] = await Promise.all([getTeamMembers(), getProjects(), getRoles()]);
@@ -77,6 +84,33 @@ export default function TeamManagementPage() {
     return subscribeToDataChanges(loadData);
   }, []);
 
+  useEffect(() => {
+    const email = (editingMember?.email || '').trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      setEmailCheckStatus('idle');
+      setEmailCheckResult(null);
+      return;
+    }
+
+    setEmailCheckStatus('checking');
+    const timer = setTimeout(async () => {
+      try {
+        const result = await checkUserEmailExists(email, editingMember?.id);
+        if (result.exists) {
+          setEmailCheckStatus('duplicate');
+          setEmailCheckResult(result);
+        } else {
+          setEmailCheckStatus('available');
+          setEmailCheckResult(null);
+        }
+      } catch (e) {
+        setEmailCheckStatus('idle');
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [editingMember?.email, editingMember?.id]);
+
   const openCreateDialog = () => {
     const defaultRoleKey = roles.find((r) => !r.is_system)?.key || 'developer';
     setEditingMember({
@@ -87,11 +121,15 @@ export default function TeamManagementPage() {
       department: 'Engineering',
       status: 'active',
     });
+    setEmailCheckStatus('idle');
+    setEmailCheckResult(null);
     setIsDialogOpen(true);
   };
 
   const openEditDialog = (member: TeamMemberModel) => {
     setEditingMember(member);
+    setEmailCheckStatus('idle');
+    setEmailCheckResult(null);
     setIsDialogOpen(true);
   };
 
@@ -102,14 +140,19 @@ export default function TeamManagementPage() {
       return;
     }
 
+    if (emailCheckStatus === 'duplicate' && emailCheckResult?.exists) {
+      toast.error(`Email "${editingMember.email}" is already registered (${emailCheckResult.name} as ${emailCheckResult.role}).`);
+      return;
+    }
+
     try {
       await saveTeamMember(editingMember as any);
       toast.success(editingMember.id ? 'Team member updated!' : 'New employee added successfully!');
       setIsDialogOpen(false);
       setEditingMember(null);
       loadData();
-    } catch (err) {
-      toast.error('Failed to save team member');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save team member');
     }
   };
 
@@ -377,15 +420,47 @@ export default function TeamManagementPage() {
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-foreground">Email (Login ID) *</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-foreground">Email (Login ID) *</label>
+                  {emailCheckStatus === 'checking' && (
+                    <span className="text-[10px] text-cyan flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Checking...
+                    </span>
+                  )}
+                  {emailCheckStatus === 'available' && (
+                    <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                      <Check className="h-3 w-3" /> Email available
+                    </span>
+                  )}
+                  {emailCheckStatus === 'duplicate' && (
+                    <span className="text-[10px] text-rose-400 font-bold flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3" /> Already in use!
+                    </span>
+                  )}
+                </div>
                 <Input
                   type="email"
                   placeholder="e.g. aman@xgro.in"
                   value={editingMember.email || ''}
                   onChange={(e) => setEditingMember({ ...editingMember, email: e.target.value })}
                   required
-                  className="text-xs rounded-xl h-9 font-mono"
+                  className={`text-xs rounded-xl h-9 font-mono transition-colors ${
+                    emailCheckStatus === 'duplicate'
+                      ? 'border-rose-500 focus-visible:ring-rose-500 bg-rose-500/5'
+                      : emailCheckStatus === 'available'
+                      ? 'border-emerald-500 focus-visible:ring-emerald-500 bg-emerald-500/5'
+                      : ''
+                  }`}
                 />
+                {emailCheckStatus === 'duplicate' && emailCheckResult && (
+                  <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-300 flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold">Duplicate Email:</span> Already used by{' '}
+                      <strong>{emailCheckResult.name}</strong> ({emailCheckResult.role}).
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -438,7 +513,8 @@ export default function TeamManagementPage() {
               <DialogFooter className="pt-3">
                 <Button
                   type="submit"
-                  className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-6"
+                  disabled={emailCheckStatus === 'duplicate'}
+                  className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-6 disabled:opacity-50"
                 >
                   Save Employee Profile
                 </Button>

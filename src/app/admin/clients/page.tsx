@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useTransition } from 'react';
 import Link from 'next/link';
 import {
   Users,
@@ -17,10 +17,16 @@ import {
   Clock,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Sparkles,
   Edit2,
   Trash2,
   Zap,
+  Check,
+  Loader2,
+  Briefcase,
+  X,
+  Power,
 } from 'lucide-react';
 import {
   Card,
@@ -49,6 +55,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import {
@@ -58,10 +65,32 @@ import {
   approveClient,
   saveTeamMember,
   getProjects,
+  saveProject,
   getRoles,
+  checkUserEmailExists,
+  assignProjectsToClient,
+  updateUserRoleAndProfile,
   subscribeToDataChanges,
+  EmailCheckResult,
 } from '@/lib/db';
-import { ClientModel, ProjectModel, CustomRoleModel } from '@/lib/supabase/types';
+import { ClientModel, ProjectModel, CustomRoleModel, ProjectStatus } from '@/lib/supabase/types';
+
+interface OnboardUserData {
+  id?: string;
+  name: string;
+  email: string;
+  phone?: string;
+  role: string;
+  company_name?: string;
+  department?: string;
+  address?: string;
+  status: 'active' | 'pending_approval' | 'inactive';
+  selected_plan?: string;
+  notes?: string;
+  assignedProjectIds: string[];
+  autoCreateProject?: boolean;
+  initialProjectTitle?: string;
+}
 
 export default function ClientsManagementPage() {
   const [clients, setClients] = useState<ClientModel[]>([]);
@@ -70,14 +99,38 @@ export default function ClientsManagementPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'active'>('all');
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingClient, setEditingClient] = useState<Partial<ClientModel> | null>(null);
 
-  // Promote to Team dialog state
-  const [isPromoteDialogOpen, setIsPromoteDialogOpen] = useState(false);
-  const [promotingClient, setPromotingClient] = useState<ClientModel | null>(null);
-  const [promoteRole, setPromoteRole] = useState('developer');
-  const [promoteDepartment, setPromoteDepartment] = useState('Engineering');
+  // Unified Onboard User/Client Dialog state
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [userData, setUserData] = useState<OnboardUserData>({
+    name: '',
+    email: '',
+    phone: '',
+    role: 'client',
+    company_name: '',
+    department: 'Engineering',
+    address: '',
+    status: 'active',
+    selected_plan: 'Growth Plan (₹39,999)',
+    notes: '',
+    assignedProjectIds: [],
+    autoCreateProject: true,
+    initialProjectTitle: '',
+  });
+
+  // Debounced Email Check state for dialog
+  const [emailCheckStatus, setEmailCheckStatus] = useState<'idle' | 'checking' | 'available' | 'duplicate'>('idle');
+  const [emailCheckResult, setEmailCheckResult] = useState<EmailCheckResult | null>(null);
+
+  // Assign Projects to existing client modal state
+  const [isAssignProjectDialogOpen, setIsAssignProjectDialogOpen] = useState(false);
+  const [activeClientForAssign, setActiveClientForAssign] = useState<ClientModel | null>(null);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
+  const [projectSearchFilter, setProjectSearchFilter] = useState('');
+  const [showQuickCreateProject, setShowQuickCreateProject] = useState(false);
+  const [quickProjectName, setQuickProjectName] = useState('');
+  const [quickServiceName, setQuickServiceName] = useState('Website Development & Growth Engine');
+  const [quickProjectValue, setQuickProjectValue] = useState(39999);
 
   const loadData = async () => {
     try {
@@ -97,69 +150,251 @@ export default function ClientsManagementPage() {
     return subscribeToDataChanges(loadData);
   }, []);
 
+  // Debounce email availability check whenever email input changes in Onboarding Dialog
+  useEffect(() => {
+    const email = userData.email.trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      setEmailCheckStatus('idle');
+      setEmailCheckResult(null);
+      return;
+    }
+
+    setEmailCheckStatus('checking');
+    const timer = setTimeout(async () => {
+      try {
+        const result = await checkUserEmailExists(email, userData.id);
+        if (result.exists) {
+          setEmailCheckStatus('duplicate');
+          setEmailCheckResult(result);
+        } else {
+          setEmailCheckStatus('available');
+          setEmailCheckResult(null);
+        }
+      } catch (e) {
+        setEmailCheckStatus('idle');
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [userData.email, userData.id]);
+
   const openCreateDialog = () => {
-    setEditingClient({
+    setUserData({
       name: '',
       email: '',
       phone: '',
+      role: 'client',
       company_name: '',
+      department: 'Engineering',
       address: '',
       status: 'active',
       selected_plan: 'Growth Plan (₹39,999)',
       notes: '',
+      assignedProjectIds: [],
+      autoCreateProject: true,
+      initialProjectTitle: '',
     });
+    setEmailCheckStatus('idle');
+    setEmailCheckResult(null);
     setIsDialogOpen(true);
   };
 
   const openEditDialog = (client: ClientModel) => {
-    setEditingClient(client);
+    const cleanEmail = client.email.trim().toLowerCase();
+    const clientProjects = projects
+      .filter(
+        (p) =>
+          p.client_id === client.id ||
+          (cleanEmail &&
+            (p.client?.email?.toLowerCase() === cleanEmail ||
+              p.client_id?.toLowerCase() === cleanEmail))
+      )
+      .map((p) => p.id);
+    setUserData({
+      id: client.id,
+      name: client.name,
+      email: client.email,
+      phone: client.phone || '',
+      role: 'client',
+      company_name: client.company_name || '',
+      department: 'Engineering',
+      address: client.address || '',
+      status: client.status || 'active',
+      selected_plan: client.selected_plan || 'Growth Plan (₹39,999)',
+      notes: client.notes || '',
+      assignedProjectIds: clientProjects,
+      autoCreateProject: false,
+    });
+    setEmailCheckStatus('idle');
+    setEmailCheckResult(null);
     setIsDialogOpen(true);
   };
 
-  const openPromoteDialog = (client: ClientModel) => {
-    setPromotingClient(client);
-    const defaultRoleKey = roles.find((r) => !r.is_system)?.key || 'developer';
-    setPromoteRole(defaultRoleKey);
-    setPromoteDepartment('Engineering');
-    setIsPromoteDialogOpen(true);
+  const openAssignProjectsModal = (client: ClientModel) => {
+    setActiveClientForAssign(client);
+    const cleanEmail = client.email.trim().toLowerCase();
+    const linkedProjectIds = projects
+      .filter(
+        (p) =>
+          p.client_id === client.id ||
+          (cleanEmail &&
+            (p.client?.email?.toLowerCase() === cleanEmail ||
+              p.client_id?.toLowerCase() === cleanEmail))
+      )
+      .map((p) => p.id);
+    setSelectedProjectIds(linkedProjectIds);
+    setProjectSearchFilter('');
+    setShowQuickCreateProject(false);
+    setQuickProjectName(`${client.company_name || client.name} — Web Platform`);
+    setIsAssignProjectDialogOpen(true);
   };
 
-  const handlePromoteToTeam = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!promotingClient) return;
 
-    try {
-      await saveTeamMember({
-        name: promotingClient.name,
-        email: promotingClient.email,
-        phone: promotingClient.phone || '',
-        role: promoteRole,
-        department: promoteDepartment,
-        status: 'active',
-      });
-      toast.success(`${promotingClient.name} successfully promoted to ${promoteRole}! They can now log in to the Admin & Staff dashboard.`);
-      setIsPromoteDialogOpen(false);
-      setPromotingClient(null);
-    } catch (err) {
-      toast.error('Failed to promote user to team member');
+
+  const handleSaveUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userData.name.trim() || !userData.email.trim()) {
+      toast.error('Full Name and Email address are required');
+      return;
     }
-  };
 
-  const handleSaveClient = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingClient?.name || !editingClient?.email) {
-      toast.error('Client Name and Email are required');
+    if (emailCheckStatus === 'duplicate' && emailCheckResult?.exists) {
+      toast.error(`Email "${userData.email}" is already registered (${emailCheckResult.name} as ${emailCheckResult.role}). Please use a unique email.`);
       return;
     }
 
     try {
-      await saveClient(editingClient as any);
-      toast.success(editingClient.id ? 'Client account updated!' : 'Client account created!');
+      if (userData.role === 'client') {
+        const saved = await saveClient({
+          id: userData.id,
+          name: userData.name.trim(),
+          email: userData.email.trim().toLowerCase(),
+          phone: userData.phone || '',
+          company_name: userData.company_name?.trim() || `${userData.name.trim()}'s Business`,
+          address: userData.address || '',
+          status: userData.status,
+          selected_plan: userData.selected_plan,
+          notes: userData.notes,
+        });
+
+        // If projects were selected, assign them cleanly
+        if (userData.assignedProjectIds.length > 0) {
+          await assignProjectsToClient(saved.id, userData.assignedProjectIds, saved.email);
+        }
+
+        // If new client & auto-create workspace toggle is checked and no project was linked
+        if (!userData.id && userData.autoCreateProject && userData.assignedProjectIds.length === 0) {
+          const autoProj: ProjectModel = {
+            id: `proj-${Date.now()}`,
+            client_id: saved.id,
+            project_name: userData.initialProjectTitle?.trim() || `${saved.company_name || saved.name} — Digital Growth Platform`,
+            service_name: saved.selected_plan ? saved.selected_plan.split('(')[0].trim() : 'Website Development',
+            start_date: new Date().toISOString().split('T')[0],
+            project_value: 39999,
+            status: 'requirement',
+            progress_percentage: 15,
+            assigned_employee_ids: [],
+            description: `Workspace initialized for ${saved.company_name || saved.name}.`,
+            milestones: [
+              { id: `ms-${Date.now()}-1`, project_id: '', title: 'Discovery & Requirements Setup', status: 'completed', order_index: 1 },
+              { id: `ms-${Date.now()}-2`, project_id: '', title: 'UI/UX Design & Figma Mockups', status: 'in_progress', order_index: 2 },
+              { id: `ms-${Date.now()}-3`, project_id: '', title: 'Development & Core Integrations', status: 'pending', order_index: 3 },
+              { id: `ms-${Date.now()}-4`, project_id: '', title: 'Quality Assurance & Launch', status: 'pending', order_index: 4 },
+            ],
+            tasks: [],
+            updates: [
+              {
+                id: `upd-${Date.now()}`,
+                project_id: '',
+                author_name: 'Super Admin',
+                author_role: 'Admin',
+                title: 'Client Workspace Initialized',
+                message: `Client account created and project workspace setup initiated for ${saved.company_name}.`,
+                progress_percent: 15,
+                is_visible_to_client: true,
+                created_at: new Date().toISOString(),
+              },
+            ],
+            invoices: [],
+            created_at: new Date().toISOString(),
+          };
+          await saveProject(autoProj as any);
+        }
+
+        toast.success(userData.id ? 'Client account updated successfully!' : 'New client account created successfully!');
+      } else {
+        if (userData.id) {
+          await updateUserRoleAndProfile({
+            id: userData.id,
+            name: userData.name.trim(),
+            email: userData.email.trim().toLowerCase(),
+            phone: userData.phone || '',
+            newRole: userData.role,
+            department: userData.department || 'Engineering',
+            status: 'active',
+          });
+        } else {
+          // Staff / Admin Member creation
+          await saveTeamMember({
+            name: userData.name.trim(),
+            email: userData.email.trim().toLowerCase(),
+            phone: userData.phone || '',
+            role: userData.role,
+            department: userData.department || 'Engineering',
+            status: 'active',
+          });
+        }
+        toast.success(`Staff user "${userData.name}" saved successfully with role "${userData.role}"!`);
+      }
+
       setIsDialogOpen(false);
-      setEditingClient(null);
       loadData();
-    } catch (err) {
-      toast.error('Failed to save client');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save user account');
+    }
+  };
+
+  const handleSaveAssignedProjects = async () => {
+    if (!activeClientForAssign) return;
+
+    try {
+      await assignProjectsToClient(activeClientForAssign.id, selectedProjectIds, activeClientForAssign.email);
+      toast.success(`Updated assigned projects for ${activeClientForAssign.name}!`);
+      setIsAssignProjectDialogOpen(false);
+      setActiveClientForAssign(null);
+      loadData();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update project assignments');
+    }
+  };
+
+  const handleQuickCreateAndAssignProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeClientForAssign || !quickProjectName.trim()) {
+      toast.error('Project Name is required');
+      return;
+    }
+
+    try {
+      const newProj = await saveProject({
+        project_name: quickProjectName.trim(),
+        client_id: activeClientForAssign.id,
+        service_name: quickServiceName,
+        project_value: quickProjectValue || 39999,
+        start_date: new Date().toISOString().split('T')[0],
+        status: 'requirement',
+        progress_percentage: 15,
+        description: `Dedicated project workspace for ${activeClientForAssign.company_name || activeClientForAssign.name}.`,
+      } as any);
+
+      // Auto check the newly created project in selection
+      setSelectedProjectIds((prev) => [...prev, newProj.id]);
+      setShowQuickCreateProject(false);
+      setQuickProjectName('');
+      toast.success(`Project "${newProj.project_name}" created and assigned to ${activeClientForAssign.name}!`);
+      loadData();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to create new project');
     }
   };
 
@@ -173,17 +408,28 @@ export default function ClientsManagementPage() {
     }
   };
 
-  const handleDeleteClient = async (client: ClientModel) => {
-    if (!confirm(`Are you sure you want to delete ${client.name} (${client.company_name})? This will also remove their client portal access.`)) {
+  const handleToggleClientStatus = async (client: ClientModel) => {
+    const nextStatus = client.status === 'active' ? 'inactive' : 'active';
+    const actionWord = nextStatus === 'active' ? 'activate' : 'deactivate';
+
+    if (
+      !confirm(
+        `Are you sure you want to ${actionWord} ${client.name} (${client.company_name})? ${
+          nextStatus === 'inactive'
+            ? 'Their portal login will be disabled, but project workspaces and history remain preserved.'
+            : 'Portal access will be restored.'
+        }`
+      )
+    ) {
       return;
     }
 
     try {
-      await deleteClient(client.id);
-      toast.success(`Removed client ${client.name}.`);
+      await saveClient({ id: client.id, email: client.email, name: client.name, status: nextStatus });
+      toast.success(`${client.name} is now ${nextStatus === 'active' ? 'Active' : 'Deactivated'}.`);
       loadData();
-    } catch (err) {
-      toast.error('Failed to delete client');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update client status');
     }
   };
 
@@ -203,6 +449,27 @@ export default function ClientsManagementPage() {
     return true;
   });
 
+  const filteredProjectsForAssign = projects.filter((p) => {
+    if (!projectSearchFilter) return true;
+    return (
+      p.project_name.toLowerCase().includes(projectSearchFilter.toLowerCase()) ||
+      p.service_name.toLowerCase().includes(projectSearchFilter.toLowerCase()) ||
+      p.status.toLowerCase().includes(projectSearchFilter.toLowerCase())
+    );
+  });
+
+  const getRoleDisplayName = (roleKey?: string) => {
+    if (!roleKey) return 'Client';
+    if (roleKey === 'client') return 'Client (Portal User)';
+    if (roleKey === 'admin' || roleKey === 'super_admin') return 'Super Admin';
+    if (roleKey === 'manager') return 'Project Manager';
+    if (roleKey === 'developer') return 'Developer / Engineer';
+    if (roleKey === 'designer') return 'UI/UX Designer';
+    if (roleKey === 'seo_specialist') return 'SEO Specialist';
+    const found = roles.find((r) => r.key === roleKey || r.id === roleKey);
+    return found ? found.name : roleKey.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -210,17 +477,17 @@ export default function ClientsManagementPage() {
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-foreground flex items-center gap-2.5">
             <Users className="h-6 w-6 text-cyan" />
-            Client Accounts & Approvals
+            Client Accounts & User Management
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            Admin can review newly registered clients, approve project workspaces, and manage client access.
+            Admin can onboard new clients or staff users (any role), manage project assignments, review pending signups, and link active workspaces.
           </p>
         </div>
         <Button
           onClick={openCreateDialog}
           className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-5 shadow-sm self-start sm:self-auto"
         >
-          <Plus className="h-3.5 w-3.5 mr-1.5" /> Onboard New Client
+          <UserPlus className="h-3.5 w-3.5 mr-1.5" /> Onboard New User / Client
         </Button>
       </div>
 
@@ -319,363 +586,622 @@ export default function ClientsManagementPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredClients.map((client) => {
-          const clientProjects = projects.filter((p) => p.client_id === client.id);
-          const isPending = client.status === 'pending_approval';
+            const clientProjects = projects.filter(
+              (p) =>
+                p.client_id === client.id ||
+                (client.email && (p.client?.email?.toLowerCase() === client.email.toLowerCase() || p.client_id?.toLowerCase() === client.email.toLowerCase()))
+            );
+            const isPending = client.status === 'pending_approval';
 
-          return (
-            <Card
-              key={client.id}
-              className={`rounded-3xl border transition-all flex flex-col justify-between overflow-hidden ${
-                isPending
-                  ? 'border-amber-500/40 bg-gradient-to-br from-card via-amber-500/5 to-card shadow-md ring-1 ring-amber-500/30'
-                  : 'border-border bg-card/60 backdrop-blur-sm shadow-sm hover:border-cyan/50 hover:shadow-lg'
-              }`}
-            >
-              <div>
-                <div className="p-6 pb-4 border-b border-border/60 bg-surface/30 flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`h-11 w-11 rounded-2xl flex items-center justify-center font-black text-sm border ${
-                      isPending
-                        ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
-                        : 'bg-cyan/20 text-cyan border-cyan/40'
-                    }`}>
-                      {client.name.slice(0, 2).toUpperCase()}
-                    </div>
-                    <div>
-                      <h3 className="font-extrabold text-base text-foreground">
-                        {client.name}
-                      </h3>
-                      <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                        <Building className="h-3 w-3 text-cyan" />
-                        {client.company_name || 'Individual Client'}
-                      </p>
-                    </div>
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className={`text-[9px] uppercase font-bold ${
-                      isPending
-                        ? 'border-amber-500/40 text-amber-400 bg-amber-500/10'
-                        : 'border-emerald-500/40 text-emerald-500 bg-emerald-500/10'
-                    }`}
-                  >
-                    {isPending ? 'Pending Review' : 'Active Client'}
-                  </Badge>
-                </div>
-
-                <div className="p-6 space-y-3.5 text-xs">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Mail className="h-3.5 w-3.5 text-cyan shrink-0" />
-                    <span className="font-mono text-[11px] text-foreground truncate">{client.email}</span>
-                  </div>
-
-                  {client.phone && (
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Phone className="h-3.5 w-3.5 text-cyan shrink-0" />
-                      <span>{client.phone}</span>
-                    </div>
-                  )}
-
-                  {client.selected_plan && (
-                    <div className="p-2.5 rounded-xl bg-surface/60 border border-border text-[11px] space-y-0.5">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase">
-                        Plan Scope:
-                      </span>
-                      <p className="font-semibold text-foreground">{client.selected_plan}</p>
-                    </div>
-                  )}
-
-                  {client.notes && (
-                    <p className="text-[11px] text-muted-foreground italic leading-relaxed">
-                      "{client.notes}"
-                    </p>
-                  )}
-
-                  {/* Assigned Projects */}
-                  <div className="pt-2 border-t border-border/60">
-                    <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground mb-1.5 uppercase">
-                      <span>Assigned Projects</span>
-                      <span className="text-cyan">{clientProjects.length} Active</span>
-                    </div>
-                    <div className="space-y-1.5">
-                      {clientProjects.length === 0 ? (
-                        <p className="text-[11px] text-muted-foreground italic">
-                          {isPending
-                            ? 'Awaiting admin approval to initialize project workspace.'
-                            : 'No active project linked yet.'}
+            return (
+              <Card
+                key={client.id}
+                className={`rounded-3xl border transition-all flex flex-col justify-between overflow-hidden ${
+                  isPending
+                    ? 'border-amber-500/40 bg-gradient-to-br from-card via-amber-500/5 to-card shadow-md ring-1 ring-amber-500/30'
+                    : 'border-border bg-card/60 backdrop-blur-sm shadow-sm hover:border-cyan/50 hover:shadow-lg'
+                }`}
+              >
+                <div>
+                  <div className="p-6 pb-4 border-b border-border/60 bg-surface/30 flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`h-11 w-11 rounded-2xl flex items-center justify-center font-black text-sm border ${
+                          isPending
+                            ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                            : 'bg-cyan/20 text-cyan border-cyan/40'
+                        }`}
+                      >
+                        {client.name.slice(0, 2).toUpperCase()}
+                      </div>
+                      <div>
+                        <h3 className="font-extrabold text-base text-foreground">
+                          {client.name}
+                        </h3>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                          <Building className="h-3 w-3 text-cyan" />
+                          {client.company_name || 'Individual Client'}
                         </p>
-                      ) : (
-                        clientProjects.map((p) => (
-                          <Link
-                            key={p.id}
-                            href={`/admin/projects/${p.id}`}
-                            className="p-2 rounded-xl border border-border bg-surface/40 hover:border-cyan/40 flex items-center justify-between transition-colors block"
-                          >
-                            <span className="font-semibold text-foreground truncate max-w-[180px]">
-                              {p.project_name}
-                            </span>
-                            <span className="text-[10px] font-mono font-bold text-cyan">
-                              {p.progress_percentage}% →
-                            </span>
-                          </Link>
-                        ))
-                      )}
+                      </div>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={`text-[9px] uppercase font-bold ${
+                        isPending
+                          ? 'border-amber-500/40 text-amber-400 bg-amber-500/10'
+                          : 'border-emerald-500/40 text-emerald-500 bg-emerald-500/10'
+                      }`}
+                    >
+                      {isPending ? 'Pending Review' : 'Active Client'}
+                    </Badge>
+                  </div>
+
+                  <div className="p-6 space-y-3.5 text-xs">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Mail className="h-3.5 w-3.5 text-cyan shrink-0" />
+                      <span className="font-mono text-[11px] text-foreground truncate">{client.email}</span>
+                    </div>
+
+                    {client.phone && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Phone className="h-3.5 w-3.5 text-cyan shrink-0" />
+                        <span>{client.phone}</span>
+                      </div>
+                    )}
+
+                    {client.selected_plan && (
+                      <div className="p-2.5 rounded-xl bg-surface/60 border border-border text-[11px] space-y-0.5">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase">
+                          Plan Scope:
+                        </span>
+                        <p className="font-semibold text-foreground">{client.selected_plan}</p>
+                      </div>
+                    )}
+
+                    {client.notes && (
+                      <p className="text-[11px] text-muted-foreground italic leading-relaxed">
+                        "{client.notes}"
+                      </p>
+                    )}
+
+                    {/* Assigned Projects Section */}
+                    <div className="pt-2 border-t border-border/60">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground mb-1.5 uppercase">
+                        <span>Assigned Projects</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-cyan">{clientProjects.length} Active</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        {clientProjects.length === 0 ? (
+                          <div className="p-3 rounded-xl border border-dashed border-border text-center space-y-1">
+                            <p className="text-[11px] text-muted-foreground italic">
+                              {isPending
+                                ? 'Awaiting approval to activate workspaces.'
+                                : 'No project workspace linked yet.'}
+                            </p>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openAssignProjectsModal(client)}
+                              className="h-6 text-[10px] font-bold text-cyan hover:text-cyan hover:bg-cyan/10 rounded-full px-2"
+                            >
+                              <Plus className="h-3 w-3 mr-1" /> Assign or Create Project
+                            </Button>
+                          </div>
+                        ) : (
+                          clientProjects.map((p) => (
+                            <Link
+                              key={p.id}
+                              href={`/admin/projects/${p.id}`}
+                              className="p-2 rounded-xl border border-border bg-surface/40 hover:border-cyan/40 flex items-center justify-between transition-colors group"
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <FolderKanban className="h-3.5 w-3.5 text-cyan shrink-0" />
+                                <span className="font-semibold text-foreground truncate max-w-[160px] group-hover:text-cyan transition-colors">
+                                  {p.project_name}
+                                </span>
+                              </div>
+                              <span className="text-[10px] font-mono font-bold text-cyan shrink-0">
+                                {p.progress_percentage}% →
+                              </span>
+                            </Link>
+                          ))
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
+
+                {/* Actions Footer */}
+                <div className="p-4 border-t border-border bg-surface/40 flex items-center justify-between gap-2 flex-wrap">
+                  {isPending ? (
+                    <div className="flex items-center gap-2 w-full">
+                      <Button
+                        size="sm"
+                        onClick={() => handleApproveClient(client)}
+                        className="flex-1 rounded-full bg-emerald-500 text-slate-950 hover:bg-emerald-400 font-bold text-xs h-8 px-3 shadow-sm"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Approve Client
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openAssignProjectsModal(client)}
+                        className="rounded-full text-xs font-semibold h-8 px-2.5 border-cyan/40 text-cyan hover:bg-cyan/10"
+                        title="Assign Project Workspaces"
+                      >
+                        <FolderKanban className="h-3.5 w-3.5 mr-1" /> Projects
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between w-full">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openAssignProjectsModal(client)}
+                          className="rounded-full text-xs font-semibold h-8 px-2.5 border-cyan/40 text-cyan hover:bg-cyan/10"
+                        >
+                          <FolderKanban className="h-3.5 w-3.5 mr-1" /> Assign Projects
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openEditDialog(client)}
+                          className="rounded-full text-xs font-semibold h-8 px-2.5 border-border hover:border-cyan/40"
+                        >
+                          <Edit2 className="h-3 w-3 mr-1" /> Edit
+                        </Button>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleToggleClientStatus(client)}
+                        className={`rounded-full text-xs font-semibold h-8 px-2.5 transition-colors ${
+                          client.status === 'inactive'
+                            ? 'text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10'
+                            : 'text-rose-400 hover:text-rose-300 hover:bg-rose-500/10'
+                        }`}
+                        title={client.status === 'inactive' ? 'Activate Client' : 'Deactivate Client'}
+                      >
+                        <Power className="h-3.5 w-3.5 mr-1" />
+                        {client.status === 'inactive' ? 'Activate' : 'Deactivate'}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Dedicated Assign Projects to Client Modal */}
+      <Dialog open={isAssignProjectDialogOpen} onOpenChange={setIsAssignProjectDialogOpen}>
+        <DialogContent className="max-w-2xl rounded-3xl p-6 sm:p-8 max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-extrabold flex items-center gap-2">
+              <FolderKanban className="h-5 w-5 text-cyan" />
+              Assign Projects to {activeClientForAssign?.name}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Select which agency projects are linked to <strong>{activeClientForAssign?.company_name || activeClientForAssign?.name}</strong>. The client will see all assigned projects in their Client Portal.
+            </DialogDescription>
+          </DialogHeader>
+
+          {activeClientForAssign && (
+            <div className="space-y-4 mt-2">
+              {/* Client summary pill */}
+              <div className="p-3 rounded-2xl bg-surface/60 border border-border flex items-center justify-between text-xs">
+                <div>
+                  <p className="font-bold text-foreground">{activeClientForAssign.name}</p>
+                  <p className="text-[11px] text-muted-foreground font-mono">{activeClientForAssign.email}</p>
+                </div>
+                <Badge variant="outline" className="text-cyan border-cyan/40 bg-cyan/10 text-[10px]">
+                  {selectedProjectIds.length} Selected Project(s)
+                </Badge>
               </div>
 
-              {/* Actions Footer */}
-              <div className="p-4 border-t border-border bg-surface/40 flex items-center justify-between gap-2">
-                {isPending ? (
-                  <div className="flex items-center gap-2 w-full">
-                    <Button
-                      size="sm"
-                      onClick={() => handleApproveClient(client)}
-                      className="flex-1 rounded-full bg-emerald-500 text-slate-950 hover:bg-emerald-400 font-bold text-xs h-8 px-3 shadow-sm"
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Approve Client
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => openPromoteDialog(client)}
-                      className="rounded-full text-xs font-semibold h-8 px-3 border-cyan/40 text-cyan hover:bg-cyan/10"
-                      title="Promote to Staff / Employee"
-                    >
-                      <UserPlus className="h-3.5 w-3.5 mr-1" /> Move to Team
-                    </Button>
+              {/* Project Search Bar */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Filter projects by title, service, status..."
+                  value={projectSearchFilter}
+                  onChange={(e) => setProjectSearchFilter(e.target.value)}
+                  className="pl-8.5 h-8.5 text-xs rounded-xl bg-surface/80"
+                />
+              </div>
+
+              {/* Project Selection List */}
+              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                {projects.length === 0 ? (
+                  <div className="p-6 rounded-2xl border border-dashed border-border text-center text-xs text-muted-foreground">
+                    No agency projects created yet. Create a project below.
+                  </div>
+                ) : filteredProjectsForAssign.length === 0 ? (
+                  <div className="p-4 rounded-xl border border-border text-center text-xs text-muted-foreground">
+                    No projects match "{projectSearchFilter}".
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between w-full">
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => openEditDialog(client)}
-                        className="rounded-full text-xs font-semibold h-8 px-3 border-border hover:border-cyan/40"
+                  filteredProjectsForAssign.map((p) => {
+                    const isSelected = selectedProjectIds.includes(p.id);
+                    const isAssignedToOther = p.client_id && p.client_id !== activeClientForAssign.id;
+                    const otherClient = isAssignedToOther ? clients.find((c) => c.id === p.client_id) : null;
+
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() => {
+                          if (isSelected) {
+                            setSelectedProjectIds(selectedProjectIds.filter((id) => id !== p.id));
+                          } else {
+                            setSelectedProjectIds([...selectedProjectIds, p.id]);
+                          }
+                        }}
+                        className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                          isSelected
+                            ? 'border-cyan bg-cyan/10 shadow-sm'
+                            : 'border-border bg-card/60 hover:border-cyan/40'
+                        }`}
                       >
-                        <Edit2 className="h-3 w-3 mr-1" /> Edit
-                      </Button>
+                        <div className="flex items-center gap-3 min-w-0">
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setSelectedProjectIds([...selectedProjectIds, p.id]);
+                              } else {
+                                setSelectedProjectIds(selectedProjectIds.filter((id) => id !== p.id));
+                              }
+                            }}
+                            className="rounded-md"
+                          />
+                          <div className="min-w-0">
+                            <p className="font-bold text-xs text-foreground truncate">{p.project_name}</p>
+                            <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
+                              <span>{p.service_name}</span>
+                              <span>•</span>
+                              <span className="font-mono text-cyan">{p.progress_percentage}% completed</span>
+                              {isAssignedToOther && otherClient && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-amber-400 font-semibold truncate max-w-[120px]">
+                                    (Currently: {otherClient.name})
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <Badge
+                          variant="outline"
+                          className={`text-[9px] uppercase font-bold shrink-0 ${
+                            isSelected
+                              ? 'border-cyan/50 text-cyan bg-cyan/20'
+                              : 'border-border text-muted-foreground'
+                          }`}
+                        >
+                          {isSelected ? 'Assigned' : 'Unassigned'}
+                        </Badge>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Quick Create Project Inline Collapsible */}
+              <div className="pt-2 border-t border-border/80">
+                {!showQuickCreateProject ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowQuickCreateProject(true)}
+                    className="text-xs font-bold text-cyan hover:text-cyan hover:bg-cyan/10 rounded-xl w-full justify-start px-2"
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1.5" /> + Quick Create New Project for this Client
+                  </Button>
+                ) : (
+                  <div className="p-4 rounded-2xl bg-surface/80 border border-cyan/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                        <Sparkles className="h-3.5 w-3.5 text-cyan" />
+                        Quick Create & Link Project
+                      </span>
                       <Button
+                        variant="ghost"
                         size="sm"
-                        variant="outline"
-                        onClick={() => openPromoteDialog(client)}
-                        className="rounded-full text-xs font-semibold h-8 px-3 border-cyan/30 text-cyan hover:bg-cyan/10"
+                        onClick={() => setShowQuickCreateProject(false)}
+                        className="h-6 w-6 p-0 rounded-full text-muted-foreground"
                       >
-                        <UserPlus className="h-3.5 w-3.5 mr-1" /> Promote to Team
+                        <X className="h-3.5 w-3.5" />
                       </Button>
                     </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Project Name *</label>
+                        <Input
+                          placeholder="e.g. Apex Hospital Next.js Redesign"
+                          value={quickProjectName}
+                          onChange={(e) => setQuickProjectName(e.target.value)}
+                          className="text-xs rounded-xl h-8 bg-background"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Service Type</label>
+                        <Input
+                          placeholder="e.g. Website Development"
+                          value={quickServiceName}
+                          onChange={(e) => setQuickServiceName(e.target.value)}
+                          className="text-xs rounded-xl h-8 bg-background"
+                        />
+                      </div>
+                    </div>
+
                     <Button
+                      type="button"
                       size="sm"
-                      variant="ghost"
-                      onClick={() => handleDeleteClient(client)}
-                      className="rounded-full text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 h-8 px-2"
+                      onClick={handleQuickCreateAndAssignProject}
+                      className="rounded-xl bg-cyan text-slate-950 font-bold text-xs h-8 px-4 w-full"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Plus className="h-3 w-3 mr-1" /> Create & Link Project Now
                     </Button>
                   </div>
                 )}
               </div>
-            </Card>
-          );
-        })}
-      </div>
-    )}
 
-      {/* Promote to Team Member Dialog */}
-      <Dialog open={isPromoteDialogOpen} onOpenChange={setIsPromoteDialogOpen}>
-        <DialogContent className="max-w-md rounded-3xl p-6 sm:p-8">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-extrabold flex items-center gap-2">
-              <UserPlus className="h-5 w-5 text-cyan" />
-              Promote to Staff / Admin
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Assign an internal role (Admin, Employee, Project Manager, Developer) to <strong>{promotingClient?.name}</strong> ({promotingClient?.email}).
-            </DialogDescription>
-          </DialogHeader>
-
-          {promotingClient && (
-            <form onSubmit={handlePromoteToTeam} className="space-y-4 mt-2">
-              <div className="p-3 rounded-2xl bg-surface/60 border border-border text-xs space-y-1">
-                <p className="font-bold text-foreground">{promotingClient.name}</p>
-                <p className="font-mono text-muted-foreground text-[11px]">{promotingClient.email}</p>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground">Select System Role *</label>
-                <Select value={promoteRole} onValueChange={setPromoteRole}>
-                  <SelectTrigger className="text-xs rounded-xl h-10">
-                    <SelectValue placeholder="Select a role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="admin">Super Admin (Full Platform Control)</SelectItem>
-                    <SelectItem value="manager">Project Manager</SelectItem>
-                    <SelectItem value="developer">Senior Developer / Engineer</SelectItem>
-                    <SelectItem value="designer">UI/UX Designer</SelectItem>
-                    <SelectItem value="seo_specialist">SEO & Growth Specialist</SelectItem>
-                    {roles
-                      .filter((r) => !['super_admin', 'admin', 'client'].includes(r.key))
-                      .map((r) => (
-                        <SelectItem key={r.id} value={r.key}>
-                          {r.name}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground">Department</label>
-                <Select value={promoteDepartment} onValueChange={setPromoteDepartment}>
-                  <SelectTrigger className="text-xs rounded-xl h-10">
-                    <SelectValue placeholder="Department" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Engineering">Engineering / Development</SelectItem>
-                    <SelectItem value="Design">Design & Branding</SelectItem>
-                    <SelectItem value="Marketing">Marketing & SEO</SelectItem>
-                    <SelectItem value="Management">Executive & Operations</SelectItem>
-                    <SelectItem value="Support">Client Success</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <DialogFooter className="pt-3">
+              <DialogFooter className="pt-2 flex sm:justify-between items-center gap-2">
                 <Button
-                  type="submit"
-                  className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-6 w-full"
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsAssignProjectDialogOpen(false)}
+                  className="rounded-full text-xs"
                 >
-                  <UserPlus className="h-3.5 w-3.5 mr-1.5" /> Confirm Promotion to Team
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleSaveAssignedProjects}
+                  className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-6"
+                >
+                  Save Project Assignments ({selectedProjectIds.length})
                 </Button>
               </DialogFooter>
-            </form>
+            </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Add / Edit Client Dialog */}
+      {/* Dedicated Onboard / Edit Client Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-md rounded-3xl p-6 sm:p-8">
+        <DialogContent className="max-w-lg rounded-3xl p-6 sm:p-8 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl font-extrabold flex items-center gap-2">
-              <Users className="h-5 w-5 text-cyan" />
-              {editingClient?.id ? 'Edit Client Account' : 'Onboard New Client'}
+              <UserPlus className="h-5 w-5 text-cyan" />
+              {userData.id ? 'Edit Client Account' : 'Onboard New Client'}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Configure client identity, business organization, and portal status.
+              Enter client details, business information, and assign project workspaces.
             </DialogDescription>
           </DialogHeader>
 
-          {editingClient && (
-            <form onSubmit={handleSaveClient} className="space-y-3.5 mt-2">
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-foreground">Client Full Name *</label>
-                <Input
-                  placeholder="e.g. Dr. Alok Verma"
-                  value={editingClient.name || ''}
-                  onChange={(e) => setEditingClient({ ...editingClient, name: e.target.value })}
-                  required
-                  className="text-xs rounded-xl h-9"
-                />
-              </div>
+          <form onSubmit={handleSaveUser} className="space-y-4 mt-2">
+            {/* Name */}
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-foreground">Full Name *</label>
+              <Input
+                placeholder="e.g. Dr. Alok Verma"
+                value={userData.name}
+                onChange={(e) => setUserData({ ...userData, name: e.target.value })}
+                required
+                className="text-xs rounded-xl h-9"
+              />
+            </div>
 
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-foreground">Company / Hospital / Brand *</label>
-                <Input
-                  placeholder="e.g. ABC Super Speciality Hospital"
-                  value={editingClient.company_name || ''}
-                  onChange={(e) => setEditingClient({ ...editingClient, company_name: e.target.value })}
-                  required
-                  className="text-xs rounded-xl h-9"
-                />
+            {/* Email with Debounced Real-time Duplicate Check */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-foreground">Email Address (Login ID) *</label>
+                {emailCheckStatus === 'checking' && (
+                  <span className="text-[10px] text-cyan flex items-center gap-1">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Checking email availability...
+                  </span>
+                )}
+                {emailCheckStatus === 'available' && (
+                  <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3" /> Email available
+                  </span>
+                )}
+                {emailCheckStatus === 'duplicate' && (
+                  <span className="text-[10px] text-rose-400 font-bold flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" /> Email already registered!
+                  </span>
+                )}
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-foreground">Client Email *</label>
-                  <Input
-                    type="email"
-                    placeholder="contact@abchospital.in"
-                    value={editingClient.email || ''}
-                    onChange={(e) => setEditingClient({ ...editingClient, email: e.target.value })}
-                    required
-                    className="text-xs rounded-xl h-9 font-mono"
-                  />
+              <Input
+                type="email"
+                placeholder="e.g. contact@abchospital.in"
+                value={userData.email}
+                onChange={(e) => setUserData({ ...userData, email: e.target.value })}
+                required
+                className={`text-xs rounded-xl h-9 font-mono transition-colors ${
+                  emailCheckStatus === 'duplicate'
+                    ? 'border-rose-500 focus-visible:ring-rose-500 bg-rose-500/5'
+                    : emailCheckStatus === 'available'
+                    ? 'border-emerald-500 focus-visible:ring-emerald-500 bg-emerald-500/5'
+                    : ''
+                }`}
+              />
+              {emailCheckStatus === 'duplicate' && emailCheckResult && (
+                <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-300 flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">Cannot create duplicate user:</span> An account already exists for{' '}
+                    <strong>{emailCheckResult.name}</strong> ({emailCheckResult.role}). User accounts must have unique emails across the platform.
+                  </div>
                 </div>
+              )}
+            </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-foreground">Phone / WhatsApp</label>
-                  <Input
-                    placeholder="+91 98765 43210"
-                    value={editingClient.phone || ''}
-                    onChange={(e) => setEditingClient({ ...editingClient, phone: e.target.value })}
-                    className="text-xs rounded-xl h-9"
-                  />
-                </div>
-              </div>
+            {/* Phone */}
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-foreground">Phone / WhatsApp</label>
+              <Input
+                placeholder="+91 98765 43210"
+                value={userData.phone || ''}
+                onChange={(e) => setUserData({ ...userData, phone: e.target.value })}
+                className="text-xs rounded-xl h-9"
+              />
+            </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-foreground">Account Status</label>
-                  <Select
-                    value={editingClient.status || 'active'}
-                    onValueChange={(val: any) => setEditingClient({ ...editingClient, status: val })}
-                  >
-                    <SelectTrigger className="text-xs rounded-xl h-9">
-                      <SelectValue placeholder="Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="active">Active (Full Access)</SelectItem>
-                      <SelectItem value="pending_approval">Pending Admin Review</SelectItem>
-                      <SelectItem value="inactive">Inactive</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+            {/* Company / Brand */}
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-foreground">Company / Hospital / Brand *</label>
+              <Input
+                placeholder="e.g. ABC Super Speciality Hospital"
+                value={userData.company_name || ''}
+                onChange={(e) => setUserData({ ...userData, company_name: e.target.value })}
+                required
+                className="text-xs rounded-xl h-9"
+              />
+            </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-foreground">Selected Package</label>
-                  <Input
-                    placeholder="e.g. Growth Plan (₹39,999)"
-                    value={editingClient.selected_plan || ''}
-                    onChange={(e) => setEditingClient({ ...editingClient, selected_plan: e.target.value })}
-                    className="text-xs rounded-xl h-9"
-                  />
-                </div>
-              </div>
-
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-xs font-bold text-foreground">Location / City</label>
-                <Input
-                  placeholder="e.g. Civil Lines, Moradabad, UP"
-                  value={editingClient.address || ''}
-                  onChange={(e) => setEditingClient({ ...editingClient, address: e.target.value })}
-                  className="text-xs rounded-xl h-9"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-foreground">Onboarding Notes</label>
-                <Textarea
-                  placeholder="Requirement details, scope notes..."
-                  value={editingClient.notes || ''}
-                  onChange={(e) => setEditingClient({ ...editingClient, notes: e.target.value })}
-                  rows={2}
-                  className="text-xs rounded-xl resize-none"
-                />
-              </div>
-
-              <DialogFooter className="pt-3">
-                <Button
-                  type="submit"
-                  className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-6"
+                <label className="text-xs font-bold text-foreground">Account Status</label>
+                <Select
+                  value={userData.status}
+                  onValueChange={(val: any) => setUserData({ ...userData, status: val })}
                 >
-                  Save Client Account
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
+                  <SelectTrigger className="text-xs rounded-xl h-9">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active (Verified Access)</SelectItem>
+                    <SelectItem value="pending_approval">Pending Admin Review</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-foreground">Selected Package</label>
+                <Input
+                  placeholder="e.g. Growth Plan (₹39,999)"
+                  value={userData.selected_plan || ''}
+                  onChange={(e) => setUserData({ ...userData, selected_plan: e.target.value })}
+                  className="text-xs rounded-xl h-9"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-foreground">Location / City</label>
+              <Input
+                placeholder="e.g. Civil Lines, Moradabad, UP"
+                value={userData.address || ''}
+                onChange={(e) => setUserData({ ...userData, address: e.target.value })}
+                className="text-xs rounded-xl h-9"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-foreground">Onboarding Notes</label>
+              <Textarea
+                placeholder="Requirement details, scope notes..."
+                value={userData.notes || ''}
+                onChange={(e) => setUserData({ ...userData, notes: e.target.value })}
+                rows={2}
+                className="text-xs rounded-xl resize-none"
+              />
+            </div>
+
+            {/* Project Assignment Section for New Client */}
+            {!userData.id && (
+              <div className="p-3.5 rounded-2xl bg-surface/60 border border-border space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <FolderKanban className="h-3.5 w-3.5 text-cyan" />
+                    Assign Project(s) to this Client
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {userData.assignedProjectIds.length} Selected
+                  </span>
+                </div>
+
+                {projects.length > 0 && (
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                    <p className="text-[10px] text-muted-foreground font-semibold">
+                      Link existing agency projects:
+                    </p>
+                    {projects.map((p) => {
+                      const isChecked = userData.assignedProjectIds.includes(p.id);
+                      return (
+                        <div
+                          key={p.id}
+                          onClick={() => {
+                            if (isChecked) {
+                              setUserData({
+                                ...userData,
+                                assignedProjectIds: userData.assignedProjectIds.filter((id) => id !== p.id),
+                              });
+                            } else {
+                              setUserData({
+                                ...userData,
+                                assignedProjectIds: [...userData.assignedProjectIds, p.id],
+                              });
+                            }
+                          }}
+                          className={`p-2 rounded-xl border text-xs cursor-pointer flex items-center justify-between ${
+                            isChecked ? 'border-cyan bg-cyan/10' : 'border-border bg-card/60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            <Checkbox checked={isChecked} />
+                            <span className="font-semibold truncate">{p.project_name}</span>
+                          </div>
+                          <span className="text-[10px] font-mono text-cyan">{p.progress_percentage}%</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {userData.assignedProjectIds.length === 0 && (
+                  <div className="pt-2 border-t border-border flex items-center gap-2">
+                    <Checkbox
+                      id="autoCreateProject"
+                      checked={userData.autoCreateProject}
+                      onCheckedChange={(checked) =>
+                        setUserData({ ...userData, autoCreateProject: !!checked })
+                      }
+                    />
+                    <label
+                      htmlFor="autoCreateProject"
+                      className="text-[11px] text-muted-foreground cursor-pointer"
+                    >
+                      Auto-initialize dedicated project milestone workspace for this client
+                    </label>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <DialogFooter className="pt-3">
+              <Button
+                type="submit"
+                disabled={emailCheckStatus === 'duplicate'}
+                className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-6 w-full disabled:opacity-50"
+              >
+                {userData.id ? 'Save Changes' : 'Onboard Client & Link Workspace'}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

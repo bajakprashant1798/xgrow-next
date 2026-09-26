@@ -15,6 +15,7 @@ import {
   ChevronRight,
   ShieldCheck,
   FolderKanban,
+  Building,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
@@ -32,6 +33,17 @@ const navItems: SidebarItem[] = [
     icon: LayoutDashboard,
   },
   {
+    title: 'Users Management',
+    href: '/admin/users',
+    icon: Users,
+    badge: 'Admin',
+  },
+  {
+    title: 'Client Accounts',
+    href: '/admin/clients',
+    icon: Building,
+  },
+  {
     title: 'Services CMS',
     href: '/admin/services',
     icon: Layers,
@@ -46,11 +58,6 @@ const navItems: SidebarItem[] = [
     href: '/admin/projects',
     icon: FolderKanban,
     badge: 'Live',
-  },
-  {
-    title: 'Client Accounts',
-    href: '/admin/clients',
-    icon: Users,
   },
   {
     title: 'Team & Tasks',

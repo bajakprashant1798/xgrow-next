@@ -168,8 +168,8 @@ export default function ProjectsListPage() {
 
   const handleSaveEditedProject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingProject || !editingProject.project_name || !editingProject.client_id) {
-      toast.error('Project Name and Client are required');
+    if (!editingProject || !editingProject.project_name?.trim()) {
+      toast.error('Project Name is required');
       return;
     }
 
@@ -358,7 +358,7 @@ export default function ProjectsListPage() {
                         </span>
                         <span className="text-muted-foreground text-xs">•</span>
                         <span className="text-xs text-muted-foreground font-semibold">
-                          {project.client?.company_name || project.client?.name}
+                          {project.client?.company_name || project.client?.name || '🏢 Unassigned Client'}
                         </span>
                       </div>
                       <Link
@@ -706,13 +706,16 @@ export default function ProjectsListPage() {
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-foreground">Client *</label>
                   <Select
-                    value={editingProject.client_id || ''}
-                    onValueChange={(val) => setEditingProject({ ...editingProject, client_id: val })}
+                    value={editingProject.client_id || 'unassigned'}
+                    onValueChange={(val) =>
+                      setEditingProject({ ...editingProject, client_id: val === 'unassigned' ? '' : val })
+                    }
                   >
                     <SelectTrigger className="h-9 text-xs rounded-xl">
                       <SelectValue placeholder="Choose Client" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="unassigned">🏢 Unassigned / Internal Workspace</SelectItem>
                       {clients.map((c) => (
                         <SelectItem key={c.id} value={c.id}>
                           {c.name} ({c.company_name})

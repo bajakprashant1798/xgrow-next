@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { getSupabaseClient } from './supabase/client';
-import { getTeamMembers, getClients, getRoles, saveTeamMember, saveClient } from './db';
+import { getTeamMembers, getClients, getRoles, saveTeamMember, saveClient, checkUserEmailExists } from './db';
 import { TeamMemberModel, ClientModel, CustomRoleModel, PermissionMatrix } from './supabase/types';
 import { hasPermission as checkPermission, DEFAULT_FULL_PERMISSIONS } from './permissions';
 
@@ -16,6 +16,7 @@ export interface AuthUser {
   avatar_url?: string;
   company_name?: string;
   department?: string;
+  status?: 'active' | 'inactive' | 'pending_approval';
 }
 
 interface AuthContextType {
@@ -64,20 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         role: 'admin',
         department: 'Super Admin & Agency Director',
         avatar_url: existing?.avatar_url,
-      };
-    }
-
-    // Special client rule: rockhappy1798@gmail.com is verified Client
-    if (cleanEmail === 'rockhappy1798@gmail.com') {
-      const clients = await getClients();
-      const existing = clients.find((c) => c.email.toLowerCase() === cleanEmail);
-      return {
-        id: existing?.id || 'cli-rock',
-        email: cleanEmail,
-        name: existing?.name || 'Rock Happy',
-        role: 'client',
-        company_name: existing?.company_name || 'Rock Global Ventures',
-        avatar_url: existing?.avatar_url,
+        status: 'active',
       };
     }
 
@@ -92,6 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         role: teamMember.role,
         department: teamMember.department,
         avatar_url: teamMember.avatar_url,
+        status: teamMember.status || 'active',
       };
     }
 
@@ -106,6 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         role: 'client',
         company_name: client.company_name,
         avatar_url: client.avatar_url,
+        status: client.status || 'active',
       };
     }
 
@@ -115,6 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email: cleanEmail,
       name: cleanEmail.split('@')[0],
       role: 'client',
+      status: 'active',
     };
   }, []);
 
@@ -199,6 +190,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error) {
           const profile = await resolveUserProfile(cleanEmail);
           if (profile) {
+            if (profile.status === 'inactive') {
+              return {
+                success: false,
+                role: 'client',
+                error: 'Your account has been deactivated by the Administrator. Please contact support.',
+              };
+            }
             setUser(profile);
             localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(profile));
             if (profile.role === 'client') {
@@ -212,6 +210,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (data.user?.email) {
           const profile = await resolveUserProfile(data.user.email, data.user.id);
           if (profile) {
+            if (profile.status === 'inactive') {
+              return {
+                success: false,
+                role: 'client',
+                error: 'Your account has been deactivated by the Administrator. Please contact support.',
+              };
+            }
             setUser(profile);
             localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(profile));
             if (profile.role === 'client') {
@@ -225,6 +230,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Local / Offline store resolution
       const profile = await resolveUserProfile(cleanEmail);
       if (profile) {
+        if (profile.status === 'inactive') {
+          return {
+            success: false,
+            role: 'client',
+            error: 'Your account has been deactivated by the Administrator. Please contact support.',
+          };
+        }
         setUser(profile);
         localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(profile));
         if (profile.role === 'client') {
@@ -250,6 +262,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }): Promise<{ success: boolean; role: AppRole; message?: string; error?: string }> => {
     try {
       const cleanEmail = data.email.trim().toLowerCase();
+      
+      // Strict duplicate check across all user types
+      const duplicate = await checkUserEmailExists(cleanEmail);
+      if (duplicate.exists) {
+        return {
+          success: false,
+          role: 'client',
+          error: `An account with email "${data.email}" is already registered. Please sign in instead.`,
+        };
+      }
+
       const isSuperAdminEmail = cleanEmail === 'bajakprashant1998@gmail.com';
       const assignedRole = isSuperAdminEmail ? 'admin' : data.role || 'client';
 

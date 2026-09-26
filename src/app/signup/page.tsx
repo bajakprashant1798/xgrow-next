@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -13,6 +13,8 @@ import {
   ArrowRight,
   Sparkles,
   CheckCircle2,
+  AlertTriangle,
+  Loader2,
   Info,
   Eye,
   EyeOff,
@@ -30,6 +32,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { useAuth, AppRole } from '@/lib/auth-context';
+import { checkUserEmailExists } from '@/lib/db';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -43,6 +46,37 @@ export default function SignupPage() {
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState<AppRole>('client');
   const [loading, setLoading] = useState(false);
+
+  // Email duplicate check state
+  const [emailStatus, setEmailStatus] = useState<'idle' | 'checking' | 'available' | 'duplicate'>('idle');
+  const [duplicateRole, setDuplicateRole] = useState('');
+
+  useEffect(() => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setEmailStatus('idle');
+      setDuplicateRole('');
+      return;
+    }
+
+    setEmailStatus('checking');
+    const timer = setTimeout(async () => {
+      try {
+        const res = await checkUserEmailExists(cleanEmail);
+        if (res.exists) {
+          setEmailStatus('duplicate');
+          setDuplicateRole(res.role || 'User');
+        } else {
+          setEmailStatus('available');
+          setDuplicateRole('');
+        }
+      } catch (e) {
+        setEmailStatus('idle');
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [email]);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -130,7 +164,24 @@ export default function SignupPage() {
 
               {/* Email */}
               <div className="space-y-1">
-                <label className="text-xs font-bold text-foreground">Email Address *</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-foreground">Email Address *</label>
+                  {emailStatus === 'checking' && (
+                    <span className="text-[10px] text-cyan flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Checking...
+                    </span>
+                  )}
+                  {emailStatus === 'available' && (
+                    <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3" /> Email available
+                    </span>
+                  )}
+                  {emailStatus === 'duplicate' && (
+                    <span className="text-[10px] text-rose-400 font-bold flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3" /> Already registered
+                    </span>
+                  )}
+                </div>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
@@ -139,9 +190,23 @@ export default function SignupPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    className="pl-9 h-9 text-xs rounded-xl bg-surface/60"
+                    className={`pl-9 h-9 text-xs rounded-xl bg-surface/60 transition-colors ${
+                      emailStatus === 'duplicate'
+                        ? 'border-rose-500 focus-visible:ring-rose-500 bg-rose-500/5'
+                        : emailStatus === 'available'
+                        ? 'border-emerald-500 focus-visible:ring-emerald-500 bg-emerald-500/5'
+                        : ''
+                    }`}
                   />
                 </div>
+                {emailStatus === 'duplicate' && (
+                  <p className="text-[11px] text-rose-400 font-semibold mt-1">
+                    An account with this email already exists ({duplicateRole}). Please{' '}
+                    <Link href="/login" className="underline font-bold text-cyan">
+                      sign in instead
+                    </Link>.
+                  </p>
+                )}
               </div>
 
               {/* Password */}
@@ -211,8 +276,8 @@ export default function SignupPage() {
 
               <Button
                 type="submit"
-                disabled={loading}
-                className="w-full rounded-xl bg-cyan text-slate-950 hover:bg-cyan/90 font-black text-xs h-10 shadow-md"
+                disabled={loading || emailStatus === 'duplicate'}
+                className="w-full rounded-xl bg-cyan text-slate-950 hover:bg-cyan/90 font-black text-xs h-10 shadow-md disabled:opacity-50"
               >
                 {loading ? 'Creating Profile...' : 'Complete Registration & Enter'}
                 <ArrowRight className="h-4 w-4 ml-2" />

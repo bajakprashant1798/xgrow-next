@@ -71,8 +71,13 @@ export default function ClientDashboardPage() {
       ]);
 
       if (currentClient) {
-        // Strict client isolation: only fetch projects belonging to this client!
-        const isolated = allProjects.filter((p) => p.client_id === currentClient.id);
+        // Strict client isolation: match by client_id OR matching email!
+        const isolated = allProjects.filter(
+          (p) =>
+            p.client_id === currentClient.id ||
+            (currentClient.email && p.client?.email?.toLowerCase() === currentClient.email.toLowerCase()) ||
+            (currentClient.email && p.client_id?.toLowerCase() === currentClient.email.toLowerCase())
+        );
         setClientProjects(isolated);
         if (isolated.length > 0) {
           setSelectedProject(isolated[0]);

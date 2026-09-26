@@ -54,6 +54,7 @@ import {
   deleteRole,
   getTeamMembers,
   saveTeamMember,
+  updateUserRoleAndProfile,
   subscribeToDataChanges,
 } from '@/lib/db';
 import { CustomRoleModel, TeamMemberModel, PermissionMatrix } from '@/lib/supabase/types';
@@ -231,17 +232,22 @@ export default function RolesManagementPage() {
     if (!member) return;
 
     try {
-      await saveTeamMember({
-        ...member,
-        role: activeRoleForAssign.key || activeRoleForAssign.id,
+      await updateUserRoleAndProfile({
+        id: member.id,
+        email: member.email,
+        name: member.name,
+        phone: member.phone || '',
+        newRole: activeRoleForAssign.key || activeRoleForAssign.id,
+        department: member.department,
+        status: member.status || 'active',
       });
       toast.success(`Assigned ${member.name} to "${activeRoleForAssign.name}" role!`);
       setIsAssignDialogOpen(false);
       setSelectedMemberIdForAssign('');
       await loadData();
       await refreshUserData();
-    } catch (err) {
-      toast.error('Failed to assign role to member');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to assign role to member');
     }
   };
 
