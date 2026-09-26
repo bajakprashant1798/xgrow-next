@@ -52,6 +52,7 @@ import {
 import { toast } from 'sonner';
 import { getServices, saveService, deleteService, subscribeToDataChanges } from '@/lib/db';
 import { ServiceModel, ServiceStatus } from '@/lib/supabase/types';
+import { compressImageFile } from '@/lib/image-compressor';
 
 const CATEGORIES = ['All', 'Web', 'Creative', 'Marketing', 'AI'];
 const ICONS = ['Laptop', 'Palette', 'TrendingUp', 'Cpu', 'Sparkles'];
@@ -77,21 +78,20 @@ export default function ServicesManagementPage() {
     return subscribeToDataChanges(loadData);
   }, []);
 
-  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Image size must be less than 5MB');
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Image size must be less than 10MB');
       return;
     }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (typeof reader.result === 'string') {
-        setEditingService((prev) => (prev ? { ...prev, image_url: reader.result as string } : null));
-        toast.success('Image loaded and preview ready!');
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressedDataUrl = await compressImageFile(file, 800, 600, 0.85);
+      setEditingService((prev) => (prev ? { ...prev, image_url: compressedDataUrl } : null));
+      toast.success('Image compressed and preview ready!');
+    } catch (err) {
+      toast.error('Failed to process image');
+    }
   };
 
   const openCreateDialog = () => {

@@ -32,6 +32,7 @@ import {
 } from './seed-data';
 
 import { getSupabaseClient } from './supabase/client';
+import { compressDataUrl } from './image-compressor';
 
 const STORAGE_KEYS = {
   SERVICES: 'xgro_cms_services',
@@ -47,8 +48,8 @@ const STORAGE_KEYS = {
   TRUSTED_SECTION_TITLE: 'xgro_trusted_section_title',
 };
 
-// Clear stale legacy dummy data from browser localStorage on init
-const STORAGE_CLEAN_VERSION = 'xgro_v4_clean_db';
+// Clear stale legacy dummy data and huge uncompressed caches from browser localStorage on init
+const STORAGE_CLEAN_VERSION = 'xgro_v7_clean_db';
 if (typeof window !== 'undefined') {
   try {
     if (localStorage.getItem('xgro_cache_ver') !== STORAGE_CLEAN_VERSION) {
@@ -56,6 +57,7 @@ if (typeof window !== 'undefined') {
       localStorage.removeItem(STORAGE_KEYS.PROJECTS);
       localStorage.removeItem(STORAGE_KEYS.TEAM);
       localStorage.removeItem(STORAGE_KEYS.NOTIFICATIONS);
+      localStorage.removeItem(STORAGE_KEYS.TRUSTED_LOGOS);
       localStorage.setItem('xgro_cache_ver', STORAGE_CLEAN_VERSION);
     }
   } catch (e) {
@@ -79,7 +81,7 @@ function notifyDataChanged() {
       try {
         cb();
       } catch (err) {
-        console.error('Error executing store subscriber callback', err);
+        console.warn('Error executing store subscriber callback', err);
       }
     });
   }
@@ -96,26 +98,30 @@ function getLocalItem<T>(key: string, fallback: T): T {
   try {
     const item = localStorage.getItem(key);
     if (!item) {
-      localStorage.setItem(key, JSON.stringify(fallback));
+      try {
+        localStorage.setItem(key, JSON.stringify(fallback));
+      } catch (_) {}
       return fallback;
     }
     return JSON.parse(item) as T;
   } catch (e) {
-    console.error(`Error reading ${key} from storage`, e);
+    console.warn(`Error reading ${key} from storage, using fallback:`, e);
     return fallback;
   }
 }
 
-// Helper to write to localStorage & memory cache
+// Helper to write to localStorage & memory cache with QuotaExceeded resilience
 function setLocalItem<T>(key: string, value: T): void {
   memoryCache[key] = { data: value, timestamp: Date.now() };
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-    notifyDataChanged();
-  } catch (e) {
-    console.error(`Error writing ${key} to storage`, e);
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      // Storage quota exceeded in browser — fallback gracefully to memoryCache
+      console.warn(`LocalStorage quota exceeded while saving ${key}. Saved to in-memory state.`);
+    }
   }
+  notifyDataChanged();
 }
 
 // Ultra-fast Stale-While-Revalidate (SWR) cache fetcher
@@ -701,56 +707,10 @@ export async function getProjects(): Promise<ProjectModel[]> {
 }
 
 export async function getProjectById(id: string): Promise<ProjectModel | null> {
-  // 1. Instant check from local cache
-  const cachedProjects = getLocalItem<ProjectModel[]>(STORAGE_KEYS.PROJECTS, []);
-  const matched = cachedProjects.find(p => p.id === id);
-  if (matched) {
-    // Non-blocking single-item background sync
-    const supabase = getSupabaseClient();
-    if (supabase) {
-      (async () => {
-        try {
-          const { data, error } = await supabase
-            .from('projects')
-            .select('*, client:clients(*), milestones(*), tasks(*), updates:project_updates(*), invoices:invoices_documents(*)')
-            .eq('id', id)
-            .single();
-          if (!error && data) {
-            const current = getLocalItem<ProjectModel[]>(STORAGE_KEYS.PROJECTS, []);
-            const idx = current.findIndex(p => p.id === id);
-            if (idx >= 0) {
-              current[idx] = data as unknown as ProjectModel;
-            } else {
-              current.unshift(data as unknown as ProjectModel);
-            }
-            setLocalItem(STORAGE_KEYS.PROJECTS, current);
-          }
-        } catch (e) {}
-      })();
-    }
-    return matched;
-  }
-
-  // 2. Direct single query from Supabase with quick timeout
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('projects')
-        .select('*, client:clients(*), milestones(*), tasks(*), updates:project_updates(*), invoices:invoices_documents(*)')
-        .eq('id', id)
-        .single();
-      if (!error && data) {
-        return data as unknown as ProjectModel;
-      }
-    } catch (e) {
-      console.warn('Error fetching project by ID:', e);
-    }
-  }
-
-  // 3. Fallback to all projects list
   const allProjects = await getProjects();
-  return allProjects.find(p => p.id === id) || null;
+  const matched = allProjects.find(p => p.id === id);
+  if (matched) return matched;
+  return null;
 }
 
 export async function saveProject(project: Partial<ProjectModel> & { project_name: string; client_id: string }): Promise<ProjectModel> {
@@ -862,10 +822,11 @@ export async function updateProjectProgress(
   authorName: string = 'Admin Team'
 ): Promise<ProjectModel | null> {
   const projects = await getProjects();
-  const project = projects.find(p => p.id === projectId);
-  if (!project) return null;
+  const projectIdx = projects.findIndex(p => p.id === projectId);
+  if (projectIdx === -1) return null;
 
-  project.progress_percentage = Math.max(0, Math.min(100, progress));
+  const project = { ...projects[projectIdx] };
+  project.progress_percentage = Math.max(0, Math.min(100, Math.round(progress)));
   if (status) project.status = status;
   project.updated_at = new Date().toISOString();
 
@@ -876,9 +837,9 @@ export async function updateProjectProgress(
       project_id: projectId,
       author_name: authorName,
       author_role: 'Project Lead',
-      title: `Project Progress: ${progress}%`,
+      title: `Project Progress: ${project.progress_percentage}%`,
       message: updateMessage,
-      progress_percent: progress,
+      progress_percent: project.progress_percentage,
       is_visible_to_client: true,
       created_at: new Date().toISOString(),
     };
@@ -888,7 +849,7 @@ export async function updateProjectProgress(
     await addNotification({
       client_id: project.client_id,
       project_id: projectId,
-      title: `Project Progress Updated: ${progress}%`,
+      title: `Project Progress Updated: ${project.progress_percentage}%`,
       message: `${project.project_name}: "${updateMessage}"`,
       link: `/client`,
       is_read: false,
@@ -901,9 +862,9 @@ export async function updateProjectProgress(
           project_id: projectId,
           author_name: authorName,
           author_role: 'Project Lead',
-          title: `Project Progress: ${progress}%`,
+          title: `Project Progress: ${project.progress_percentage}%`,
           message: updateMessage,
-          progress_percent: progress,
+          progress_percent: project.progress_percentage,
           is_visible_to_client: true,
         });
       } catch (e) {
@@ -912,6 +873,7 @@ export async function updateProjectProgress(
     }
   }
 
+  projects[projectIdx] = project;
   setLocalItem(STORAGE_KEYS.PROJECTS, projects);
 
   const supabase = getSupabaseClient();
@@ -1582,7 +1544,7 @@ export async function deleteRole(id: string): Promise<boolean> {
 // ==========================================
 
 export async function getTrustedLogos(): Promise<TrustedLogoModel[]> {
-  return fetchWithSWR<TrustedLogoModel[]>(
+  const logos = await fetchWithSWR<TrustedLogoModel[]>(
     STORAGE_KEYS.TRUSTED_LOGOS,
     async () => {
       const supabase = getSupabaseClient();
@@ -1591,29 +1553,102 @@ export async function getTrustedLogos(): Promise<TrustedLogoModel[]> {
         .from('trusted_logos')
         .select('*')
         .order('display_order', { ascending: true });
-      if (!error && data && data.length > 0) return data as TrustedLogoModel[];
+      if (!error && data && data.length > 0) {
+        const seen = new Set<string>();
+        const deduped: TrustedLogoModel[] = [];
+        for (const item of data as TrustedLogoModel[]) {
+          if (!item || !item.name) continue;
+          const k = item.name.trim().toLowerCase();
+          if (!seen.has(k)) {
+            seen.add(k);
+            deduped.push(item);
+          }
+        }
+        return deduped;
+      }
       return null;
     },
     initialTrustedLogos
   );
+
+  // Strict deduplication by normalized brand name
+  const seen = new Set<string>();
+  const deduplicated: TrustedLogoModel[] = [];
+  let hadDuplicates = false;
+
+  for (const item of logos || []) {
+    if (!item || !item.name) continue;
+    const norm = item.name.trim().toLowerCase();
+    if (!seen.has(norm)) {
+      seen.add(norm);
+      deduplicated.push(item);
+    } else {
+      hadDuplicates = true;
+    }
+  }
+
+  if (hadDuplicates && typeof window !== 'undefined') {
+    setLocalItem(STORAGE_KEYS.TRUSTED_LOGOS, deduplicated);
+  }
+
+  return deduplicated;
 }
 
 export async function saveTrustedLogo(
   logo: Partial<TrustedLogoModel> & { name: string }
 ): Promise<TrustedLogoModel> {
   const current = await getTrustedLogos();
-  const existingIdx = current.findIndex(l => l.id === logo.id);
+  const trimmedName = logo.name.trim();
+  const normalizedName = trimmedName.toLowerCase();
+
+  // Compress data URL if uploaded directly to keep payload tiny (< 30KB)
+  let optimizedLogoUrl = logo.logo_url;
+  if (optimizedLogoUrl && optimizedLogoUrl.startsWith('data:image/')) {
+    try {
+      optimizedLogoUrl = await compressDataUrl(optimizedLogoUrl, 400, 200, 0.85);
+    } catch (_) {}
+  }
+
+  // 1. If creating a new logo (no ID provided), reject if name already exists
+  if (!logo.id) {
+    const duplicate = current.find(
+      (l) => l.name.trim().toLowerCase() === normalizedName
+    );
+    if (duplicate) {
+      console.warn(`saveTrustedLogo: Duplicate brand name rejected: "${trimmedName}"`);
+      return duplicate;
+    }
+  } else {
+    // 2. If editing existing logo with ID, reject if renamed to another existing brand
+    const duplicateOther = current.find(
+      (l) => l.id !== logo.id && l.name.trim().toLowerCase() === normalizedName
+    );
+    if (duplicateOther) {
+      console.warn(`saveTrustedLogo: Cannot rename logo to already existing brand: "${trimmedName}"`);
+      return duplicateOther;
+    }
+  }
+
+  // Find exact item to update ONLY by matching ID
+  const existingIdx = logo.id ? current.findIndex((l) => l.id === logo.id) : -1;
+
   let saved: TrustedLogoModel;
 
   if (existingIdx >= 0) {
-    saved = { ...current[existingIdx], ...logo, updated_at: new Date().toISOString() };
+    saved = {
+      ...current[existingIdx],
+      ...logo,
+      name: trimmedName,
+      logo_url: optimizedLogoUrl,
+      updated_at: new Date().toISOString(),
+    };
     current[existingIdx] = saved;
   } else {
     saved = {
       id: logo.id || `brand-${Date.now()}`,
-      name: logo.name,
+      name: trimmedName,
       note: logo.note || '',
-      logo_url: logo.logo_url || '',
+      logo_url: optimizedLogoUrl || '',
       icon: logo.icon || 'Building2',
       website_url: logo.website_url || '',
       status: logo.status || 'published',
@@ -1624,16 +1659,42 @@ export async function saveTrustedLogo(
     current.push(saved);
   }
 
-  setLocalItem(STORAGE_KEYS.TRUSTED_LOGOS, current);
+  // Deduplicate array before saving
+  const seen = new Set<string>();
+  const cleanList: TrustedLogoModel[] = [];
+  for (const l of current) {
+    const key = l.name.trim().toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      cleanList.push(l);
+    }
+  }
+
+  setLocalItem(STORAGE_KEYS.TRUSTED_LOGOS, cleanList);
 
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
-      const isUUID = saved.id && saved.id.includes('-') && saved.id.length > 30;
+      let targetId = saved.id;
+      const isUUID = targetId && targetId.includes('-') && targetId.length > 30;
+
+      // If we don't have a UUID id, check if a row with this name already exists in Supabase to reuse its ID
+      if (!isUUID) {
+        const { data: existingRows } = await supabase
+          .from('trusted_logos')
+          .select('id')
+          .ilike('name', trimmedName)
+          .limit(1);
+        if (existingRows && existingRows.length > 0) {
+          targetId = existingRows[0].id;
+          saved.id = targetId;
+        }
+      }
+
       const { data: upserted, error } = await supabase
         .from('trusted_logos')
         .upsert({
-          id: isUUID ? saved.id : undefined,
+          id: (targetId && targetId.length > 30) ? targetId : undefined,
           name: saved.name,
           note: saved.note,
           logo_url: saved.logo_url,
@@ -1648,7 +1709,16 @@ export async function saveTrustedLogo(
 
       if (!error && upserted) {
         saved.id = upserted.id;
-        const updatedList = current.map(l => l.id === saved.id ? (upserted as TrustedLogoModel) : l);
+        // Purge any other duplicate rows with this name in Supabase
+        await supabase
+          .from('trusted_logos')
+          .delete()
+          .ilike('name', trimmedName)
+          .neq('id', upserted.id);
+
+        const updatedList = cleanList.map((l) =>
+          l.name.trim().toLowerCase() === normalizedName ? (upserted as TrustedLogoModel) : l
+        );
         setLocalItem(STORAGE_KEYS.TRUSTED_LOGOS, updatedList);
       }
     } catch (e) {
@@ -1661,12 +1731,28 @@ export async function saveTrustedLogo(
 
 export async function deleteTrustedLogo(id: string): Promise<void> {
   const current = await getTrustedLogos();
-  setLocalItem(STORAGE_KEYS.TRUSTED_LOGOS, current.filter(l => l.id !== id));
+  const target = current.find((l) => l.id === id);
+  const targetName = target?.name?.trim().toLowerCase();
+
+  // Filter out by ID AND matching brand name
+  const filtered = current.filter((l) => {
+    if (l.id === id) return false;
+    if (targetName && l.name?.trim().toLowerCase() === targetName) return false;
+    return true;
+  });
+
+  setLocalItem(STORAGE_KEYS.TRUSTED_LOGOS, filtered);
 
   const supabase = getSupabaseClient();
-  if (supabase && id.length > 30) {
+  if (supabase) {
     try {
+      // 1. Delete by ID
       await supabase.from('trusted_logos').delete().eq('id', id);
+
+      // 2. Also delete by name to clear any duplicate ghost rows in Supabase
+      if (target?.name) {
+        await supabase.from('trusted_logos').delete().ilike('name', target.name.trim());
+      }
     } catch (e) {
       console.warn('Error deleting trusted logo from Supabase:', e);
     }

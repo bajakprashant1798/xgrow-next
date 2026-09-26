@@ -62,9 +62,7 @@ export function TrustedBy() {
     const loadData = async () => {
       const [data, title] = await Promise.all([getTrustedLogos(), getTrustedSectionTitle()]);
       const published = data.filter((l) => l.status === "published");
-      if (published.length > 0) {
-        setLogos(published);
-      }
+      setLogos(published);
       if (title) {
         setSectionTitle(title);
       }

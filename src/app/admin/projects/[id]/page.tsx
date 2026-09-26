@@ -27,6 +27,10 @@ import {
   Pencil,
   AlertTriangle,
   Sparkles,
+  Save,
+  RotateCcw,
+  Zap,
+  Link2,
 } from 'lucide-react';
 import {
   Card,
@@ -40,6 +44,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
@@ -89,18 +94,142 @@ import {
   TaskPriority,
 } from '@/lib/supabase/types';
 
-const STATUS_CONFIG: Record<ProjectStatus, { label: string; color: string }> = {
-  not_started: { label: 'Not Started', color: 'border-slate-500 text-slate-500 bg-slate-500/10' },
-  requirement: { label: 'Requirement Phase', color: 'border-cyan text-cyan bg-cyan/10' },
-  planning: { label: 'Planning & Specs', color: 'border-blue-500 text-blue-500 bg-blue-500/10' },
-  design: { label: 'UI/UX Design', color: 'border-purple-500 text-purple-500 bg-purple-500/10' },
-  development: { label: 'Development Build', color: 'border-amber-500 text-amber-500 bg-amber-500/10' },
-  testing: { label: 'QA & Testing', color: 'border-orange-500 text-orange-500 bg-orange-500/10' },
-  revision: { label: 'Client Revision', color: 'border-rose-500 text-rose-500 bg-rose-500/10' },
-  completed: { label: 'Completed', color: 'border-emerald-500 text-emerald-500 bg-emerald-500/10' },
-  delivered: { label: 'Delivered Live', color: 'border-green-600 text-green-600 bg-green-600/10' },
-  on_hold: { label: 'On Hold', color: 'border-destructive text-destructive bg-destructive/10' },
+export const STATUS_CONFIG: Record<
+  ProjectStatus,
+  {
+    label: string;
+    defaultProgress: number;
+    minProgress: number;
+    maxProgress: number;
+    color: string;
+    activeBg: string;
+    border: string;
+    dotColor: string;
+  }
+> = {
+  not_started: {
+    label: 'Not Started',
+    defaultProgress: 0,
+    minProgress: 0,
+    maxProgress: 0,
+    color: 'border-slate-500 text-slate-400 bg-slate-500/10',
+    activeBg: 'bg-slate-700 text-white border-slate-500 shadow-slate-500/20',
+    border: 'border-slate-600',
+    dotColor: 'bg-slate-400',
+  },
+  requirement: {
+    label: 'Requirement Phase',
+    defaultProgress: 15,
+    minProgress: 1,
+    maxProgress: 20,
+    color: 'border-cyan text-cyan bg-cyan/10',
+    activeBg: 'bg-cyan text-slate-950 font-black border-cyan shadow-cyan/30',
+    border: 'border-cyan/40',
+    dotColor: 'bg-cyan',
+  },
+  planning: {
+    label: 'Planning & Specs',
+    defaultProgress: 30,
+    minProgress: 21,
+    maxProgress: 35,
+    color: 'border-blue-500 text-blue-400 bg-blue-500/10',
+    activeBg: 'bg-blue-600 text-white border-blue-500 shadow-blue-500/30',
+    border: 'border-blue-500/40',
+    dotColor: 'bg-blue-400',
+  },
+  design: {
+    label: 'UI/UX Design',
+    defaultProgress: 45,
+    minProgress: 36,
+    maxProgress: 55,
+    color: 'border-purple-500 text-purple-400 bg-purple-500/10',
+    activeBg: 'bg-purple-600 text-white border-purple-500 shadow-purple-500/30',
+    border: 'border-purple-500/40',
+    dotColor: 'bg-purple-400',
+  },
+  development: {
+    label: 'Development Build',
+    defaultProgress: 65,
+    minProgress: 56,
+    maxProgress: 75,
+    color: 'border-amber-500 text-amber-400 bg-amber-500/10',
+    activeBg: 'bg-amber-500 text-slate-950 font-black border-amber-500 shadow-amber-500/30',
+    border: 'border-amber-500/40',
+    dotColor: 'bg-amber-400',
+  },
+  testing: {
+    label: 'QA & Testing',
+    defaultProgress: 80,
+    minProgress: 76,
+    maxProgress: 88,
+    color: 'border-orange-500 text-orange-400 bg-orange-500/10',
+    activeBg: 'bg-orange-500 text-white border-orange-500 shadow-orange-500/30',
+    border: 'border-orange-500/40',
+    dotColor: 'bg-orange-400',
+  },
+  revision: {
+    label: 'Client Revision',
+    defaultProgress: 90,
+    minProgress: 89,
+    maxProgress: 99,
+    color: 'border-rose-500 text-rose-400 bg-rose-500/10',
+    activeBg: 'bg-rose-600 text-white border-rose-500 shadow-rose-500/30',
+    border: 'border-rose-500/40',
+    dotColor: 'bg-rose-400',
+  },
+  completed: {
+    label: 'Completed',
+    defaultProgress: 100,
+    minProgress: 100,
+    maxProgress: 100,
+    color: 'border-emerald-500 text-emerald-400 bg-emerald-500/10',
+    activeBg: 'bg-emerald-500 text-slate-950 font-black border-emerald-500 shadow-emerald-500/30',
+    border: 'border-emerald-500/40',
+    dotColor: 'bg-emerald-400',
+  },
+  delivered: {
+    label: 'Delivered Live',
+    defaultProgress: 100,
+    minProgress: 100,
+    maxProgress: 100,
+    color: 'border-green-600 text-green-400 bg-green-600/10',
+    activeBg: 'bg-green-600 text-white font-black border-green-500 shadow-green-600/30',
+    border: 'border-green-600/40',
+    dotColor: 'bg-green-400',
+  },
+  on_hold: {
+    label: 'On Hold',
+    defaultProgress: 0,
+    minProgress: 0,
+    maxProgress: 100,
+    color: 'border-destructive text-destructive bg-destructive/10',
+    activeBg: 'bg-destructive text-white border-destructive shadow-destructive/30',
+    border: 'border-destructive/40',
+    dotColor: 'bg-destructive',
+  },
 };
+
+export function getRecommendedStageForProgress(progress: number, currentStage?: ProjectStatus): ProjectStatus {
+  if (currentStage === 'on_hold') return 'on_hold';
+  if (progress === 0) return 'not_started';
+  if (progress <= 20) return 'requirement';
+  if (progress <= 35) return 'planning';
+  if (progress <= 55) return 'design';
+  if (progress <= 75) return 'development';
+  if (progress <= 88) return 'testing';
+  if (progress < 100) return 'revision';
+  if (currentStage === 'delivered') return 'delivered';
+  return 'completed';
+}
+
+const PROGRESS_PRESETS: { label: string; value: number; stage: ProjectStatus }[] = [
+  { label: '0% Not Started', value: 0, stage: 'not_started' },
+  { label: '25% Planning', value: 25, stage: 'planning' },
+  { label: '45% UI Design', value: 45, stage: 'design' },
+  { label: '65% Development', value: 65, stage: 'development' },
+  { label: '80% QA Testing', value: 80, stage: 'testing' },
+  { label: '100% Delivered', value: 100, stage: 'delivered' },
+];
 
 export default function ProjectWorkspacePage({
   params,
@@ -115,10 +244,12 @@ export default function ProjectWorkspacePage({
   const [clients, setClients] = useState<ClientModel[]>([]);
   const [services, setServices] = useState<ServiceModel[]>([]);
   const [loading, setLoading] = useState(true);
+  const [savingProgress, setSavingProgress] = useState(false);
 
-  // Progress state
+  // Progress & Stage state
   const [currentProgress, setCurrentProgress] = useState<number>(0);
   const [currentStatus, setCurrentStatus] = useState<ProjectStatus>('requirement');
+  const [autoSync, setAutoSync] = useState<boolean>(true);
   const [updateLogMessage, setUpdateLogMessage] = useState('');
 
   // Modals state
@@ -148,7 +279,7 @@ export default function ProjectWorkspacePage({
   const [newInvoiceAmount, setNewInvoiceAmount] = useState<number>(24000);
   const [newInvoiceType, setNewInvoiceType] = useState<'quotation' | 'invoice'>('invoice');
 
-  const loadProject = async () => {
+  const loadProject = async (isInitial = false) => {
     try {
       const [proj, t, c, s] = await Promise.all([
         getProjectById(projectId),
@@ -158,8 +289,10 @@ export default function ProjectWorkspacePage({
       ]);
       if (proj) {
         setProject(proj);
-        setCurrentProgress(proj.progress_percentage);
-        setCurrentStatus(proj.status);
+        if (isInitial) {
+          setCurrentProgress(proj.progress_percentage);
+          setCurrentStatus(proj.status);
+        }
       }
       setTeam(t);
       setClients(c);
@@ -170,8 +303,8 @@ export default function ProjectWorkspacePage({
   };
 
   useEffect(() => {
-    loadProject();
-    return subscribeToDataChanges(loadProject);
+    loadProject(true);
+    return subscribeToDataChanges(() => loadProject(false));
   }, [projectId]);
 
   if (loading && !project) {
@@ -226,19 +359,99 @@ export default function ProjectWorkspacePage({
     return 'Prashant Bajak (Super Admin & Lead)';
   };
 
+  const totalMilestones = (project.milestones || []).length;
+  const completedMilestones = (project.milestones || []).filter((m) => m.status === 'completed').length;
+  const calculatedMilestonePercent = totalMilestones > 0
+    ? Math.round((completedMilestones / totalMilestones) * 100)
+    : 0;
+
+  // Handle stage selection with intelligent progress alignment
+  const handleSelectStage = (stage: ProjectStatus) => {
+    setCurrentStatus(stage);
+    if (autoSync) {
+      if (stage === 'not_started') {
+        setCurrentProgress(0);
+      } else if (stage === 'completed' || stage === 'delivered') {
+        setCurrentProgress(100);
+      } else if (stage !== 'on_hold') {
+        const defaultProg = STATUS_CONFIG[stage]?.defaultProgress ?? 15;
+        setCurrentProgress(defaultProg);
+      }
+    } else {
+      // Basic sanity fix even if autoSync is off
+      if (stage === 'not_started' && currentProgress > 0) {
+        setCurrentProgress(0);
+      } else if ((stage === 'completed' || stage === 'delivered') && currentProgress < 100) {
+        setCurrentProgress(100);
+      }
+    }
+  };
+
+  // Handle progress slider / direct number change
+  const handleProgressChange = (newVal: number) => {
+    const clamped = Math.max(0, Math.min(100, newVal));
+    setCurrentProgress(clamped);
+    if (autoSync && currentStatus !== 'on_hold') {
+      const recStage = getRecommendedStageForProgress(clamped, currentStatus);
+      if (recStage !== currentStatus) {
+        setCurrentStatus(recStage);
+      }
+    }
+  };
+
+  // Handle preset click
+  const handleSelectPreset = (preset: { label: string; value: number; stage: ProjectStatus }) => {
+    setCurrentProgress(preset.value);
+    setCurrentStatus(preset.stage);
+  };
+
+  // Sync progress directly with deliverable milestones
+  const handleSyncWithMilestones = () => {
+    setCurrentProgress(calculatedMilestonePercent);
+    if (autoSync || calculatedMilestonePercent === 0 || calculatedMilestonePercent === 100) {
+      const recStage = getRecommendedStageForProgress(calculatedMilestonePercent, currentStatus);
+      setCurrentStatus(recStage);
+    }
+    toast.info(`Progress aligned to milestones (${calculatedMilestonePercent}%) & Stage updated to "${STATUS_CONFIG[getRecommendedStageForProgress(calculatedMilestonePercent, currentStatus)]?.label}".`);
+  };
+
+  // Detect logical conflict / mismatch between stage and progress
+  const isMismatched = (() => {
+    if (currentStatus === 'on_hold') return false;
+    if (currentStatus === 'not_started' && currentProgress > 0) return true;
+    if ((currentStatus === 'completed' || currentStatus === 'delivered') && currentProgress < 100) return true;
+    const config = STATUS_CONFIG[currentStatus];
+    if (!config) return false;
+    return currentProgress < config.minProgress - 15 || currentProgress > config.maxProgress + 15;
+  })();
+
   // Handle live progress update & client notification
   const handleSaveProgress = async () => {
-    await updateProjectProgress(
-      project.id,
-      currentProgress,
-      currentStatus,
-      updateLogMessage.trim() || undefined,
-      getManagerName()
-    );
+    setSavingProgress(true);
+    try {
+      const updated = await updateProjectProgress(
+        project.id,
+        currentProgress,
+        currentStatus,
+        updateLogMessage.trim() || undefined,
+        getManagerName()
+      );
 
-    toast.success(`Progress saved (${currentProgress}%) & Stage set to ${currentStatus}!`);
-    setUpdateLogMessage('');
-    loadProject();
+      if (updated) {
+        setProject(updated);
+        setCurrentProgress(updated.progress_percentage);
+        setCurrentStatus(updated.status);
+      }
+
+      toast.success(
+        `Progress saved (${currentProgress}%) & Stage set to "${STATUS_CONFIG[currentStatus]?.label || currentStatus}"!`
+      );
+      setUpdateLogMessage('');
+    } catch (err) {
+      toast.error('Failed to save project progress');
+    } finally {
+      setSavingProgress(false);
+    }
   };
 
   // Edit Project Details
@@ -257,10 +470,13 @@ export default function ProjectWorkspacePage({
     }
 
     try {
-      await saveProject(editingProjectForm as any);
+      const saved = await saveProject(editingProjectForm as any);
+      setProject(saved);
+      setCurrentProgress(saved.progress_percentage);
+      setCurrentStatus(saved.status);
       toast.success('Project details updated successfully!');
       setIsEditProjectModalOpen(false);
-      loadProject();
+      loadProject(false);
     } catch (err) {
       toast.error('Failed to update project');
     }
@@ -292,8 +508,15 @@ export default function ProjectWorkspacePage({
 
     const updated = await toggleMilestoneStatus(project.id, milestone.id, nextStatus);
     if (updated) {
-      toast.success(`Milestone set to ${nextStatus}`);
-      loadProject();
+      setProject(updated);
+      setCurrentProgress(updated.progress_percentage);
+      if (autoSync) {
+        const recStage = getRecommendedStageForProgress(updated.progress_percentage, updated.status);
+        setCurrentStatus(recStage);
+      } else {
+        setCurrentStatus(updated.status);
+      }
+      toast.success(`Milestone set to ${nextStatus.replace('_', ' ')} (${updated.progress_percentage}% completed)`);
     }
   };
 
@@ -301,12 +524,15 @@ export default function ProjectWorkspacePage({
     e.preventDefault();
     if (!newMilestoneTitle.trim()) return;
 
-    await addMilestone(project.id, newMilestoneTitle, newMilestoneDesc);
+    const updated = await addMilestone(project.id, newMilestoneTitle, newMilestoneDesc);
+    if (updated) {
+      setProject(updated);
+      setCurrentProgress(updated.progress_percentage);
+    }
     toast.success('Milestone added!');
     setNewMilestoneTitle('');
     setNewMilestoneDesc('');
     setIsMilestoneModalOpen(false);
-    loadProject();
   };
 
   const handleOpenEditMilestone = (ms: MilestoneModel, e: React.MouseEvent) => {
@@ -322,24 +548,31 @@ export default function ProjectWorkspacePage({
       return;
     }
 
-    await editMilestone(project.id, editingMilestone.id, {
+    const updated = await editMilestone(project.id, editingMilestone.id, {
       title: editingMilestone.title,
       description: editingMilestone.description,
       status: editingMilestone.status,
     });
 
+    if (updated) {
+      setProject(updated);
+      setCurrentProgress(updated.progress_percentage);
+    }
+
     toast.success('Milestone updated successfully!');
     setIsEditMilestoneModalOpen(false);
     setEditingMilestone(null);
-    loadProject();
   };
 
   const handleDeleteMilestone = async (milestoneId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (confirm('Are you sure you want to delete this milestone? Project progress percentage will be recalculated.')) {
-      await deleteMilestone(project.id, milestoneId);
+      const updated = await deleteMilestone(project.id, milestoneId);
+      if (updated) {
+        setProject(updated);
+        setCurrentProgress(updated.progress_percentage);
+      }
       toast.success('Milestone deleted');
-      loadProject();
     }
   };
 
@@ -352,14 +585,14 @@ export default function ProjectWorkspacePage({
     toast.success('Task assigned to employee!');
     setNewTaskTitle('');
     setIsTaskModalOpen(false);
-    loadProject();
+    loadProject(false);
   };
 
   const handleToggleTaskStatus = async (task: TaskModel) => {
     const nextStatus: TaskStatus = task.status === 'done' ? 'in_progress' : 'done';
     await updateTaskStatus(project.id, task.id, nextStatus);
     toast.success(nextStatus === 'done' ? 'Task marked complete!' : 'Task reopened');
-    loadProject();
+    loadProject(false);
   };
 
   // Quick Post Update
@@ -381,7 +614,7 @@ export default function ProjectWorkspacePage({
 
     toast.success('Update published & notification sent to client portal!');
     setUpdateLogMessage('');
-    loadProject();
+    loadProject(false);
   };
 
   // Invoice / Document action
@@ -402,7 +635,7 @@ export default function ProjectWorkspacePage({
     toast.success(`${newInvoiceType === 'quotation' ? 'Quotation' : 'Invoice'} added!`);
     setNewInvoiceTitle('');
     setIsInvoiceModalOpen(false);
-    loadProject();
+    loadProject(false);
   };
 
   const statusInfo = STATUS_CONFIG[currentStatus] || STATUS_CONFIG.requirement;
@@ -423,8 +656,11 @@ export default function ProjectWorkspacePage({
                 Projects / {project.client?.company_name || project.client?.name}
               </span>
               <span className="text-muted-foreground text-xs">•</span>
-              <Badge variant="outline" className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full ${statusInfo.color}`}>
-                {statusInfo.label}
+              <Badge
+                variant="outline"
+                className={`text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full transition-colors ${statusInfo.color}`}
+              >
+                ● {statusInfo.label}
               </Badge>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground mt-0.5">
@@ -459,7 +695,7 @@ export default function ProjectWorkspacePage({
         </div>
       </div>
 
-      {/* Project Manager Banner Card */}
+      {/* Project Manager & Meta Banner Card */}
       <div className="p-4 sm:p-5 rounded-3xl bg-cyan/5 border border-cyan/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-2xl bg-cyan text-slate-950 font-black text-sm flex items-center justify-center shadow-sm">
@@ -471,7 +707,7 @@ export default function ProjectWorkspacePage({
                 Assigned Project Manager
               </span>
               <Badge variant="outline" className="text-[9px] bg-card border-border font-bold">
-                Team Lead
+                Lead In-Charge
               </Badge>
             </div>
             <p className="text-sm font-black text-foreground mt-0.5">
@@ -480,94 +716,234 @@ export default function ProjectWorkspacePage({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Calendar className="h-3.5 w-3.5 text-cyan" />
-          <span>Timeline: {project.start_date || 'Feb 2026'} → {project.expected_completion_date || 'Ongoing'}</span>
+        <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5">
+            <Calendar className="h-3.5 w-3.5 text-cyan" />
+            <span>Timeline: {project.start_date || 'Feb 2026'} → {project.expected_completion_date || 'Ongoing'}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <DollarSign className="h-3.5 w-3.5 text-emerald-400" />
+            <span className="font-bold text-emerald-400">
+              ₹{(project.project_value || 0).toLocaleString('en-IN')}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Progress Controller Bar */}
-      <Card className="rounded-3xl border-border bg-gradient-to-r from-card via-surface/80 to-card shadow-sm p-6 sm:p-8">
-        <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <TrendingUp className="h-4 w-4 text-cyan" />
-                <h3 className="font-extrabold text-base text-foreground">
-                  Live Project Progress & Stage Controller
-                </h3>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Update progress percentage and stage (e.g. Planning → Design → Development → Delivered).
-              </p>
+      {/* LIVE PROGRESS & STAGE CONTROLLER CARD */}
+      <Card className="rounded-3xl border-border bg-gradient-to-r from-card via-surface/80 to-card shadow-sm p-6 sm:p-8 space-y-6">
+        {/* Section Top Header & Auto-Sync Toggle */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-cyan" />
+              <h3 className="font-extrabold text-base sm:text-lg text-foreground">
+                Live Project Progress &amp; Stage Controller
+              </h3>
             </div>
-
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <span className="text-3xl font-black text-foreground">{currentProgress}%</span>
-                <span className="text-[10px] text-muted-foreground block uppercase font-bold tracking-widest">
-                  Completed
-                </span>
-              </div>
-              <Button
-                onClick={handleSaveProgress}
-                className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-black text-xs px-6 shadow-md h-10"
-              >
-                Save & Notify Client
-              </Button>
-            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Smartly synchronized with automatic stage detection and client portal alerts.
+            </p>
           </div>
 
-          {/* Slider */}
-          <div className="space-y-2">
-            <Slider
-              value={[currentProgress]}
-              max={100}
-              step={5}
-              onValueChange={(vals) => setCurrentProgress(vals[0])}
-              className="py-2"
-            />
-            <div className="flex justify-between text-[11px] text-muted-foreground font-mono">
-              <span>0% Kickoff</span>
-              <span>25% Planning</span>
-              <span>50% Design/Dev</span>
-              <span>75% Testing</span>
-              <span>100% Delivered</span>
-            </div>
-          </div>
-
-          {/* Stage Dropdown & Update Note */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-border/60">
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground">Current Stage Status</label>
-              <Select
-                value={currentStatus}
-                onValueChange={(val: ProjectStatus) => setCurrentStatus(val)}
-              >
-                <SelectTrigger className="h-9 text-xs rounded-xl bg-card">
-                  <SelectValue placeholder="Stage" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(STATUS_CONFIG).map(([key, config]) => (
-                    <SelectItem key={key} value={key}>
-                      {config.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="sm:col-span-2 space-y-1.5">
-              <label className="text-xs font-bold text-foreground">
-                Optional Update Note to Client (e.g. "Services and pricing modules implemented")
-              </label>
-              <Input
-                placeholder="Type update message sent directly to client notifications feed..."
-                value={updateLogMessage}
-                onChange={(e) => setUpdateLogMessage(e.target.value)}
-                className="h-9 text-xs rounded-xl bg-card"
+          <div className="flex flex-wrap items-center gap-4 self-start sm:self-auto">
+            {/* Auto-Sync Switch */}
+            <div className="flex items-center gap-2 bg-surface/70 px-3 py-1.5 rounded-full border border-border">
+              <Link2 className={`h-3.5 w-3.5 ${autoSync ? 'text-cyan' : 'text-muted-foreground'}`} />
+              <span className="text-[11px] font-bold text-foreground">Auto-Link Stage &amp; %</span>
+              <Switch
+                checked={autoSync}
+                onCheckedChange={setAutoSync}
+                className="scale-90"
               />
             </div>
+
+            {/* Percentage Display & Input */}
+            <div className="text-right flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={currentProgress}
+                  onChange={(e) => {
+                    const num = parseInt(e.target.value, 10);
+                    handleProgressChange(isNaN(num) ? 0 : num);
+                  }}
+                  className="w-16 h-10 text-xl font-black text-center rounded-xl bg-card border-border font-mono px-1 text-cyan"
+                />
+                <span className="text-2xl font-black text-foreground">%</span>
+              </div>
+            </div>
+
+            <Button
+              onClick={handleSaveProgress}
+              disabled={savingProgress}
+              className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-black text-xs px-6 shadow-md h-10 transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
+            >
+              {savingProgress ? (
+                <span className="animate-spin">⏳</span>
+              ) : (
+                <Save className="h-4 w-4 stroke-[2.5]" />
+              )}
+              {savingProgress ? 'Saving...' : 'Save & Notify Client'}
+            </Button>
+          </div>
+        </div>
+
+        {/* Visual Progress Bar & Slider */}
+        <div className="space-y-3 bg-surface/50 p-4 sm:p-5 rounded-2xl border border-border/80">
+          <div className="flex items-center justify-between text-xs font-bold text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-cyan animate-pulse" />
+              Completion Progress Slider
+            </span>
+            <span className="text-foreground font-mono font-bold text-sm">
+              {currentProgress}% / 100% · Stage: <strong className="text-cyan">{statusInfo.label}</strong>
+            </span>
+          </div>
+
+          <Slider
+            value={[currentProgress]}
+            max={100}
+            step={1}
+            onValueChange={(vals) => handleProgressChange(vals[0])}
+            className="py-2"
+          />
+
+          {/* Quick Preset Buttons & Milestone Sync */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+            <div className="flex flex-wrap gap-1.5">
+              {PROGRESS_PRESETS.map((preset) => {
+                const isCurrent = currentProgress === preset.value && currentStatus === preset.stage;
+                return (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => handleSelectPreset(preset)}
+                    className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-all cursor-pointer ${
+                      isCurrent
+                        ? 'bg-cyan text-slate-950 border-cyan font-black shadow-sm'
+                        : 'bg-card border-border/80 text-muted-foreground hover:border-cyan hover:text-foreground'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSyncWithMilestones}
+              title="Align progress to completed deliverable milestones"
+              className="px-3 py-1 rounded-full text-[11px] font-bold border border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 transition-all cursor-pointer flex items-center gap-1"
+            >
+              <Zap className="h-3 w-3" />
+              Auto-Sync from Milestones ({calculatedMilestonePercent}%)
+            </button>
+          </div>
+        </div>
+
+        {/* Status Mismatch Warning Banner */}
+        {isMismatched && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs animate-in fade-in-50">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />
+              <span>
+                <strong>Stage &amp; Progress Mismatch:</strong> Stage is set to <strong>&ldquo;{statusInfo.label}&rdquo;</strong> but progress is <strong>{currentProgress}%</strong>.
+              </span>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const config = STATUS_CONFIG[currentStatus];
+                if (config) setCurrentProgress(config.defaultProgress);
+              }}
+              className="rounded-full text-[11px] h-7 px-3 border-amber-500/40 text-amber-300 hover:bg-amber-500/20 self-start sm:self-auto"
+            >
+              <RotateCcw className="h-3 w-3 mr-1" /> Auto-Fix to {STATUS_CONFIG[currentStatus]?.defaultProgress}%
+            </Button>
+          </div>
+        )}
+
+        {/* 1-Click Interactive Stage Status Pills Selector */}
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-cyan" />
+              Select Current Project Stage Status
+            </label>
+            <span className="text-xs text-muted-foreground font-semibold">
+              Currently: <strong className="text-foreground">{statusInfo.label}</strong> ({currentProgress}%)
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+            {Object.entries(STATUS_CONFIG).map(([key, config]) => {
+              const isSelected = currentStatus === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => handleSelectStage(key as ProjectStatus)}
+                  className={`p-2.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                    isSelected
+                      ? `${config.activeBg} shadow-md ring-1 ring-cyan scale-[1.02]`
+                      : 'bg-card/70 border-border hover:border-cyan/50 hover:bg-surface text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <span
+                      className={`h-2 w-2 rounded-full shrink-0 ${
+                        isSelected ? 'bg-current ring-2 ring-current/40' : config.dotColor
+                      }`}
+                    />
+                    <span className="text-xs font-bold truncate">{config.label}</span>
+                  </div>
+                  {isSelected && <Check className="h-3.5 w-3.5 shrink-0 stroke-[3]" />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Stage Dropdown (Alternative) & Optional Update Note to Client */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-border/60">
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-foreground">Stage Dropdown</label>
+            <Select
+              value={currentStatus}
+              onValueChange={(val: ProjectStatus) => handleSelectStage(val)}
+            >
+              <SelectTrigger className="h-9 text-xs rounded-xl bg-card border-border">
+                <SelectValue placeholder="Choose Stage" />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(STATUS_CONFIG).map(([key, config]) => (
+                  <SelectItem key={key} value={key}>
+                    <div className="flex items-center gap-2">
+                      <span className={`h-2 w-2 rounded-full ${config.dotColor}`} />
+                      <span>{config.label}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="sm:col-span-2 space-y-1.5">
+            <label className="text-xs font-bold text-foreground">
+              Optional Live Update Message to Client Portal
+            </label>
+            <Input
+              placeholder="e.g. Services and pricing modules implemented. Moving to QA testing..."
+              value={updateLogMessage}
+              onChange={(e) => setUpdateLogMessage(e.target.value)}
+              className="h-9 text-xs rounded-xl bg-card border-border"
+            />
           </div>
         </div>
       </Card>
@@ -591,20 +967,35 @@ export default function ProjectWorkspacePage({
 
         {/* 1. MILESTONES TAB */}
         <TabsContent value="milestones" className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card/40 p-4 rounded-2xl border border-border">
             <div>
-              <h3 className="font-bold text-base text-foreground">Project Milestones Timeline</h3>
-              <p className="text-xs text-muted-foreground">
-                Click status circle to cycle status. Use edit or delete buttons on any milestone to adjust deliverables.
+              <h3 className="font-bold text-base text-foreground flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-cyan" />
+                Project Milestones Timeline ({completedMilestones}/{totalMilestones} Done · {calculatedMilestonePercent}%)
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Click the status circle or badge to cycle status. Use edit or delete buttons on any milestone to adjust deliverables.
               </p>
             </div>
-            <Button
-              onClick={() => setIsMilestoneModalOpen(true)}
-              size="sm"
-              className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4"
-            >
-              <Plus className="h-3.5 w-3.5 mr-1" /> Add Milestone
-            </Button>
+            <div className="flex items-center gap-2">
+              {totalMilestones > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSyncWithMilestones}
+                  className="rounded-full text-xs font-bold border-cyan/40 text-cyan hover:bg-cyan/10"
+                >
+                  <Zap className="h-3.5 w-3.5 mr-1" /> Sync Progress ({calculatedMilestonePercent}%)
+                </Button>
+              )}
+              <Button
+                onClick={() => setIsMilestoneModalOpen(true)}
+                size="sm"
+                className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4 shadow-sm"
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" /> Add Milestone
+              </Button>
+            </div>
           </div>
 
           <div className="space-y-3">
@@ -641,25 +1032,25 @@ export default function ProjectWorkspacePage({
                     <button
                       type="button"
                       onClick={() => handleToggleMilestone(ms)}
-                      title="Click to change status"
-                      className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-transform hover:scale-105 ${
+                      title="Click to change status (Pending → In Progress → Completed)"
+                      className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-transform hover:scale-105 active:scale-95 ${
                         isDone
-                          ? 'bg-emerald-500 text-slate-950 font-black'
+                          ? 'bg-emerald-500 text-slate-950 font-black shadow-emerald-500/20 shadow-md'
                           : isInProgress
-                          ? 'bg-cyan text-slate-950 font-black animate-pulse'
-                          : 'border border-muted-foreground/40 text-muted-foreground hover:border-cyan'
+                          ? 'bg-cyan text-slate-950 font-black animate-pulse shadow-cyan/20 shadow-md'
+                          : 'border border-muted-foreground/40 text-muted-foreground hover:border-cyan hover:text-cyan'
                       }`}
                     >
                       {isDone ? (
-                        <Check className="h-4 w-4" />
+                        <Check className="h-4 w-4 stroke-[3]" />
                       ) : isInProgress ? (
-                        <PlayCircle className="h-4 w-4" />
+                        <PlayCircle className="h-4 w-4 fill-slate-950 text-cyan" />
                       ) : (
                         <span className="text-xs font-bold">{index + 1}</span>
                       )}
                     </button>
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <h4 className={`text-sm font-bold ${isDone ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
                           {ms.title}
                         </h4>
@@ -679,15 +1070,15 @@ export default function ProjectWorkspacePage({
                     <Badge
                       variant="outline"
                       onClick={() => handleToggleMilestone(ms)}
-                      className={`text-[10px] uppercase font-extrabold tracking-wider px-2.5 py-0.5 rounded-full cursor-pointer select-none ${
+                      className={`text-[10px] uppercase font-extrabold tracking-wider px-2.5 py-0.5 rounded-full cursor-pointer select-none transition-colors ${
                         isDone
-                          ? 'border-emerald-500/40 text-emerald-500 bg-emerald-500/10'
+                          ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10'
                           : isInProgress
                           ? 'border-cyan/40 text-cyan bg-cyan/10'
-                          : 'border-border text-muted-foreground'
+                          : 'border-border text-muted-foreground hover:border-cyan'
                       }`}
                     >
-                      {ms.status.replace('_', ' ')}
+                      ● {ms.status.replace('_', ' ')}
                     </Badge>
 
                     <Button
@@ -695,7 +1086,7 @@ export default function ProjectWorkspacePage({
                       size="icon"
                       onClick={(e) => handleOpenEditMilestone(ms, e)}
                       title="Edit milestone"
-                      className="h-7 w-7 rounded-lg text-muted-foreground hover:text-cyan hover:bg-cyan/10"
+                      className="h-8 w-8 rounded-lg text-muted-foreground hover:text-cyan hover:bg-cyan/10"
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
@@ -705,7 +1096,7 @@ export default function ProjectWorkspacePage({
                       size="icon"
                       onClick={(e) => handleDeleteMilestone(ms.id, e)}
                       title="Delete milestone"
-                      className="h-7 w-7 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                      className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -750,7 +1141,7 @@ export default function ProjectWorkspacePage({
                     <button
                       type="button"
                       onClick={() => handleToggleTaskStatus(task)}
-                      className={`h-5 w-5 rounded-md mt-0.5 flex items-center justify-center border transition-colors ${
+                      className={`h-5 w-5 rounded-md mt-0.5 flex items-center justify-center border transition-colors cursor-pointer ${
                         isDone
                           ? 'bg-cyan border-cyan text-slate-950'
                           : 'border-border bg-surface hover:border-cyan'
@@ -822,7 +1213,7 @@ export default function ProjectWorkspacePage({
                 <div className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-foreground">{upd.title}</span>
-                    {upd.progress_percent && (
+                    {upd.progress_percent !== undefined && (
                       <Badge className="bg-cyan/15 text-cyan border border-cyan/30 text-[10px]">
                         {upd.progress_percent}%
                       </Badge>
@@ -838,7 +1229,7 @@ export default function ProjectWorkspacePage({
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  "{upd.message}"
+                  &ldquo;{upd.message}&rdquo;
                 </p>
                 <p className="text-[10px] text-cyan font-semibold">
                   By {upd.author_name} ({upd.author_role || 'Lead'})
@@ -916,7 +1307,7 @@ export default function ProjectWorkspacePage({
           </DialogHeader>
           <form onSubmit={handleAddMilestone} className="space-y-3 mt-2">
             <div className="space-y-1">
-              <label className="text-xs font-bold">Milestone Title</label>
+              <label className="text-xs font-bold">Milestone Title *</label>
               <Input
                 placeholder="e.g. Services Page Completed"
                 value={newMilestoneTitle}
@@ -1080,7 +1471,14 @@ export default function ProjectWorkspacePage({
                 <label className="text-xs font-bold text-foreground">Project Stage Status</label>
                 <Select
                   value={editingProjectForm.status || 'requirement'}
-                  onValueChange={(val: ProjectStatus) => setEditingProjectForm({ ...editingProjectForm, status: val })}
+                  onValueChange={(val: ProjectStatus) => {
+                    const defaultProg = STATUS_CONFIG[val]?.defaultProgress ?? 15;
+                    setEditingProjectForm({
+                      ...editingProjectForm,
+                      status: val,
+                      progress_percentage: val === 'not_started' ? 0 : val === 'completed' || val === 'delivered' ? 100 : (editingProjectForm.progress_percentage === 0 ? defaultProg : editingProjectForm.progress_percentage),
+                    });
+                  }}
                 >
                   <SelectTrigger className="h-9 text-xs rounded-xl bg-card">
                     <SelectValue placeholder="Choose Status" />
@@ -1107,7 +1505,7 @@ export default function ProjectWorkspacePage({
                   onChange={(e) =>
                     setEditingProjectForm({
                       ...editingProjectForm,
-                      progress_percentage: Math.min(100, Math.max(0, parseInt(e.target.value) || 0)),
+                      progress_percentage: Math.min(100, Math.max(0, parseInt(e.target.value, 10) || 0)),
                     })
                   }
                   className="h-9 text-xs rounded-xl font-bold"
@@ -1150,7 +1548,7 @@ export default function ProjectWorkspacePage({
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-foreground">Assigned Project Manager</label>
               <Select
-                value={editingProjectForm.assigned_manager_id || 'team-2'}
+                value={editingProjectForm.assigned_manager_id || 'team-admin-1'}
                 onValueChange={(val) => setEditingProjectForm({ ...editingProjectForm, assigned_manager_id: val })}
               >
                 <SelectTrigger className="h-9 text-xs rounded-xl">

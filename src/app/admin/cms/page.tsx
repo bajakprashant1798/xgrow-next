@@ -38,6 +38,7 @@ import {
   Upload,
   X,
   Link2,
+  AlertCircle,
 } from 'lucide-react';
 import {
   Card,
@@ -75,6 +76,7 @@ import {
   subscribeToDataChanges,
 } from '@/lib/db';
 import { TestimonialModel, FaqModel, TrustedLogoModel } from '@/lib/supabase/types';
+import { compressImageFile } from '@/lib/image-compressor';
 
 const PRESET_ICONS = [
   { name: 'Building2', icon: Building2, label: 'Building / Corporate' },
@@ -117,27 +119,30 @@ CREATE TABLE IF NOT EXISTS public.trusted_logos (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 2. Enable Row Level Security (RLS)
+-- 2. Prevent duplicate brand names at database level
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trusted_logos_name_lower ON public.trusted_logos (lower(trim(name)));
+
+-- 3. Enable Row Level Security (RLS)
 ALTER TABLE public.trusted_logos ENABLE ROW LEVEL SECURITY;
 
--- 3. Public Read Policy
+-- 4. Public Read Policy
 CREATE POLICY "Allow public read access to published trusted logos"
 ON public.trusted_logos
 FOR SELECT
 USING (true);
 
--- 4. Admin / Service Role Full Access Policy
+-- 5. Admin / Service Role Full Access Policy
 CREATE POLICY "Allow all access for authenticated users or service role"
 ON public.trusted_logos
 FOR ALL
 USING (true)
 WITH CHECK (true);
 
--- 5. Helpful Indexing
+-- 6. Helpful Indexing
 CREATE INDEX IF NOT EXISTS idx_trusted_logos_order ON public.trusted_logos (display_order ASC);
 CREATE INDEX IF NOT EXISTS idx_trusted_logos_status ON public.trusted_logos (status);
 
--- 6. Seed Initial Data
+-- 7. Seed Initial Data
 INSERT INTO public.trusted_logos (id, name, note, icon, logo_url, status, display_order)
 VALUES
   ('brand-1', 'Minds Eye', 'Education & Learning', 'GraduationCap', '/trustedByLogos/Minds eye.png', 'published', 1),
@@ -171,8 +176,53 @@ export default function CmsManagementPage() {
 
   const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
   const [editingLogo, setEditingLogo] = useState<Partial<TrustedLogoModel> | null>(null);
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
+  const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
+  const [isNameAvailable, setIsNameAvailable] = useState(false);
 
   const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
+
+  // Real-time debounced duplicate check when user stops typing
+  useEffect(() => {
+    if (!isLogoModalOpen) {
+      setDuplicateError(null);
+      setIsCheckingDuplicate(false);
+      setIsNameAvailable(false);
+      return;
+    }
+
+    const rawName = editingLogo?.name || '';
+    const cleanName = rawName.trim();
+
+    if (!cleanName) {
+      setDuplicateError(null);
+      setIsCheckingDuplicate(false);
+      setIsNameAvailable(false);
+      return;
+    }
+
+    setIsCheckingDuplicate(true);
+    setIsNameAvailable(false);
+
+    const timer = setTimeout(() => {
+      const normalized = cleanName.toLowerCase();
+      const duplicate = trustedLogos.find((l) => {
+        if (editingLogo?.id && l.id === editingLogo.id) return false;
+        return l.name.trim().toLowerCase() === normalized;
+      });
+
+      if (duplicate) {
+        setDuplicateError(`Brand name "${cleanName}" already exists!`);
+        setIsNameAvailable(false);
+      } else {
+        setDuplicateError(null);
+        setIsNameAvailable(true);
+      }
+      setIsCheckingDuplicate(false);
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [editingLogo?.name, editingLogo?.id, isLogoModalOpen, trustedLogos]);
 
   const loadData = async () => {
     const [t, f, l, title] = await Promise.all([
@@ -198,24 +248,23 @@ export default function CmsManagementPage() {
   };
 
   // Image Upload Handlers
-  const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Image size must be less than 5MB');
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Image size must be less than 10MB');
       return;
     }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (typeof reader.result === 'string') {
-        setEditingLogo((prev) => (prev ? { ...prev, logo_url: reader.result as string } : null));
-        toast.success(`Logo image "${file.name}" uploaded successfully!`);
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressedDataUrl = await compressImageFile(file, 400, 200, 0.85);
+      setEditingLogo((prev) => (prev ? { ...prev, logo_url: compressedDataUrl } : null));
+      toast.success(`Logo image "${file.name}" compressed and ready!`);
+    } catch (err) {
+      toast.error('Failed to process image file');
+    }
   };
 
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
@@ -224,18 +273,17 @@ export default function CmsManagementPage() {
       toast.error('Please upload an image file (PNG, JPG, SVG, WebP)');
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Image size must be less than 5MB');
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Image size must be less than 10MB');
       return;
     }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (typeof reader.result === 'string') {
-        setEditingLogo((prev) => (prev ? { ...prev, logo_url: reader.result as string } : null));
-        toast.success(`Logo image "${file.name}" uploaded successfully!`);
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressedDataUrl = await compressImageFile(file, 400, 200, 0.85);
+      setEditingLogo((prev) => (prev ? { ...prev, logo_url: compressedDataUrl } : null));
+      toast.success(`Logo image "${file.name}" compressed and ready!`);
+    } catch (err) {
+      toast.error('Failed to process image file');
+    }
   };
 
   // Testimonial Handlers
@@ -284,26 +332,69 @@ export default function CmsManagementPage() {
     }
   };
 
+  // Helper: check if brand name is already used by another entry
+  const isBrandNameDuplicate = (name?: string, currentId?: string): boolean => {
+    if (!name || !name.trim()) return false;
+    const normalized = name.trim().toLowerCase();
+    return trustedLogos.some((l) => {
+      if (currentId && l.id === currentId) return false;
+      return l.name.trim().toLowerCase() === normalized;
+    });
+  };
+
   // Trusted Logo Handlers
   const handleSaveLogo = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingLogo?.name) {
+    const cleanName = (editingLogo?.name || '').trim();
+    if (!cleanName) {
       toast.error('Brand / Business Name is required');
       return;
     }
 
-    await saveTrustedLogo(editingLogo as any);
-    toast.success(editingLogo.id ? 'Brand logo updated!' : 'Brand logo added!');
+    if (isBrandNameDuplicate(cleanName, editingLogo?.id) || duplicateError) {
+      toast.error(`Cannot save: Brand "${cleanName}" already exists! Duplicate brands are not allowed.`);
+      return;
+    }
+
+    // Fresh verification to prevent race conditions
+    const latestLogos = await getTrustedLogos();
+    const isDuplicateFresh = latestLogos.some((l) => {
+      if (editingLogo?.id && l.id === editingLogo.id) return false;
+      return l.name.trim().toLowerCase() === cleanName.toLowerCase();
+    });
+
+    if (isDuplicateFresh) {
+      toast.error(`Cannot save: Brand "${cleanName}" already exists in database.`);
+      setDuplicateError(`Brand name "${cleanName}" already exists!`);
+      return;
+    }
+
+    await saveTrustedLogo({
+      ...editingLogo,
+      name: cleanName,
+    } as any);
+
+    toast.success(editingLogo?.id ? 'Brand logo updated!' : 'Brand logo added!');
     setIsLogoModalOpen(false);
     setEditingLogo(null);
-    loadData();
+    setDuplicateError(null);
+    setIsNameAvailable(false);
+    await loadData();
   };
 
   const handleDeleteLogo = async (id: string) => {
-    if (confirm('Delete this partner brand logo from the homepage?')) {
+    const target = trustedLogos.find((l) => l.id === id);
+    const brandName = target?.name || 'this brand logo';
+    if (confirm(`Delete "${brandName}" from the homepage? This action cannot be undone.`)) {
+      // Optimistic update so UI updates immediately
+      setTrustedLogos((prev) =>
+        prev.filter(
+          (l) => l.id !== id && (target ? l.name.trim().toLowerCase() !== target.name.trim().toLowerCase() : true)
+        )
+      );
       await deleteTrustedLogo(id);
-      toast.success('Brand logo removed');
-      loadData();
+      toast.success(`"${brandName}" removed from homepage`);
+      await loadData();
     }
   };
 
@@ -461,29 +552,49 @@ export default function CmsManagementPage() {
               <Sparkles className="h-3 w-3 text-cyan" /> Quick-Add from Local Assets (Click to Autofill):
             </span>
             <div className="flex flex-wrap gap-1.5">
-              {PRESET_LOCAL_LOGOS.map((tmpl) => (
-                <Button
-                  key={tmpl.label}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setEditingLogo({
-                      name: tmpl.label,
-                      note: tmpl.note,
-                      logo_url: tmpl.path,
-                      icon: 'Building2',
-                      status: 'published',
-                      display_order: trustedLogos.length + 1,
-                    });
-                    setIsLogoModalOpen(true);
-                    toast.info(`Loaded preset logo for ${tmpl.label}`);
-                  }}
-                  className="rounded-xl text-[11px] h-7 border-border hover:border-cyan/40 bg-card/60"
-                >
-                  {tmpl.label}
-                </Button>
-              ))}
+              {PRESET_LOCAL_LOGOS.map((tmpl) => {
+                const alreadyAdded = trustedLogos.some(
+                  (l) => l.name.trim().toLowerCase() === tmpl.label.trim().toLowerCase()
+                );
+                return (
+                  <Button
+                    key={tmpl.label}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={alreadyAdded}
+                    onClick={() => {
+                      if (alreadyAdded) {
+                        toast.warning(`"${tmpl.label}" is already in your trusted logos list.`);
+                        return;
+                      }
+                      setEditingLogo({
+                        name: tmpl.label,
+                        note: tmpl.note,
+                        logo_url: tmpl.path,
+                        icon: 'Building2',
+                        status: 'published',
+                        display_order: trustedLogos.length + 1,
+                      });
+                      setIsLogoModalOpen(true);
+                      toast.info(`Loaded preset logo for ${tmpl.label}`);
+                    }}
+                    className={`rounded-xl text-[11px] h-7 border-border transition-all ${
+                      alreadyAdded
+                        ? 'opacity-60 bg-muted/30 text-muted-foreground border-dashed cursor-not-allowed'
+                        : 'hover:border-cyan/40 bg-card/60'
+                    }`}
+                  >
+                    {alreadyAdded ? (
+                      <>
+                        <Check className="h-3 w-3 mr-1 text-emerald-500" /> {tmpl.label} (Added)
+                      </>
+                    ) : (
+                      tmpl.label
+                    )}
+                  </Button>
+                );
+              })}
             </div>
           </div>
 
@@ -846,14 +957,60 @@ export default function CmsManagementPage() {
               {/* Form Fields */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-foreground">Brand / Client Name *</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-foreground">Brand / Client Name *</label>
+                    {isCheckingDuplicate && (
+                      <span className="text-[10px] text-muted-foreground animate-pulse flex items-center gap-1 font-medium">
+                        <span className="h-1.5 w-1.5 rounded-full bg-cyan animate-ping inline-block" /> Checking...
+                      </span>
+                    )}
+                    {!isCheckingDuplicate && isNameAvailable && (
+                      <span className="text-[10px] text-emerald-500 font-bold flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3" /> Name available
+                      </span>
+                    )}
+                    {!isCheckingDuplicate && duplicateError && (
+                      <span className="text-[10px] text-rose-500 font-bold flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3" /> Duplicate name
+                      </span>
+                    )}
+                  </div>
+
                   <Input
                     placeholder="e.g. Bio90 or SP Jewellers"
                     value={editingLogo.name || ''}
                     onChange={(e) => setEditingLogo({ ...editingLogo, name: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (duplicateError || isBrandNameDuplicate(editingLogo.name, editingLogo.id)) {
+                          toast.error(`Brand "${editingLogo.name?.trim()}" already exists! Duplicates are not allowed.`);
+                        } else {
+                          handleSaveLogo(e as any);
+                        }
+                      }
+                    }}
                     required
-                    className="text-xs rounded-xl h-9"
+                    className={`text-xs rounded-xl h-9 transition-all ${
+                      duplicateError
+                        ? 'border-rose-500 focus-visible:ring-rose-500 bg-rose-500/10 text-rose-300 shadow-sm'
+                        : isNameAvailable
+                        ? 'border-emerald-500/40 focus-visible:ring-emerald-500 bg-emerald-500/5'
+                        : ''
+                    }`}
                   />
+
+                  {duplicateError && (
+                    <div className="flex items-start gap-2 p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-400 text-xs font-semibold mt-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                      <AlertCircle className="h-4 w-4 shrink-0 text-rose-400 mt-0.5" />
+                      <div>
+                        <p className="font-bold">Duplicate Brand Name</p>
+                        <p className="text-[11px] opacity-90 mt-0.5">
+                          &quot;{editingLogo.name?.trim()}&quot; is already registered in your trusted partner logos. Please choose a unique name to avoid duplicates.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-1">
@@ -1016,8 +1173,24 @@ export default function CmsManagementPage() {
                 >
                   Cancel
                 </Button>
-                <Button type="submit" className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-5">
-                  Save Brand Logo
+                <Button
+                  type="submit"
+                  disabled={
+                    !editingLogo.name?.trim() ||
+                    Boolean(duplicateError) ||
+                    isCheckingDuplicate ||
+                    isBrandNameDuplicate(editingLogo.name, editingLogo.id)
+                  }
+                  onClick={(e) => {
+                    if (duplicateError || isBrandNameDuplicate(editingLogo.name, editingLogo.id)) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toast.error(`Cannot save: Brand "${editingLogo.name?.trim()}" already exists! Duplicates are not allowed.`);
+                    }
+                  }}
+                  className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-5 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {editingLogo.id ? 'Save Changes' : 'Add Brand Logo'}
                 </Button>
               </DialogFooter>
             </form>

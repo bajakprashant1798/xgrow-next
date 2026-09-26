@@ -622,7 +622,14 @@ export default function ProjectsListPage() {
                 <label className="text-xs font-bold text-foreground">Initial Status / Stage</label>
                 <Select
                   value={newProject.status || 'requirement'}
-                  onValueChange={(val: ProjectStatus) => setNewProject({ ...newProject, status: val })}
+                  onValueChange={(val: ProjectStatus) => {
+                    const defaultProg = val === 'not_started' ? 0 : val === 'completed' || val === 'delivered' ? 100 : val === 'planning' ? 30 : val === 'design' ? 45 : val === 'development' ? 65 : val === 'testing' ? 80 : val === 'revision' ? 90 : 15;
+                    setNewProject({
+                      ...newProject,
+                      status: val,
+                      progress_percentage: defaultProg,
+                    });
+                  }}
                 >
                   <SelectTrigger className="h-9 text-xs rounded-xl">
                     <SelectValue placeholder="Choose Status" />
@@ -740,7 +747,14 @@ export default function ProjectsListPage() {
                   <label className="text-xs font-bold text-foreground">Project Stage / Status</label>
                   <Select
                     value={editingProject.status}
-                    onValueChange={(val: ProjectStatus) => setEditingProject({ ...editingProject, status: val })}
+                    onValueChange={(val: ProjectStatus) => {
+                      const defaultProg = val === 'not_started' ? 0 : val === 'completed' || val === 'delivered' ? 100 : val === 'planning' ? 30 : val === 'design' ? 45 : val === 'development' ? 65 : val === 'testing' ? 80 : val === 'revision' ? 90 : 15;
+                      setEditingProject({
+                        ...editingProject,
+                        status: val,
+                        progress_percentage: val === 'not_started' ? 0 : val === 'completed' || val === 'delivered' ? 100 : (editingProject.progress_percentage === 0 ? defaultProg : editingProject.progress_percentage),
+                      });
+                    }}
                   >
                     <SelectTrigger className="h-9 text-xs rounded-xl bg-card">
                       <SelectValue placeholder="Change Status" />
