@@ -1552,7 +1552,8 @@ export async function getTrustedLogos(): Promise<TrustedLogoModel[]> {
       const { data, error } = await supabase
         .from('trusted_logos')
         .select('*')
-        .order('display_order', { ascending: true });
+        .order('display_order', { ascending: true })
+        .order('created_at', { ascending: true });
       if (!error && data && data.length > 0) {
         const seen = new Set<string>();
         const deduped: TrustedLogoModel[] = [];
@@ -1586,6 +1587,19 @@ export async function getTrustedLogos(): Promise<TrustedLogoModel[]> {
       hadDuplicates = true;
     }
   }
+
+  // Stable deterministic sorting:
+  // Primary: display_order ascending
+  // Secondary tie-breaker: created_at ascending (first created shows first, then second)
+  // Tertiary: name alphabetical
+  // Ensures ALL items are shown sequentially even if two items share the same display_order number
+  deduplicated.sort((a, b) => {
+    const orderA = typeof a.display_order === 'number' ? a.display_order : 9999;
+    const orderB = typeof b.display_order === 'number' ? b.display_order : 9999;
+    if (orderA !== orderB) return orderA - orderB;
+    if (a.created_at && b.created_at) return a.created_at.localeCompare(b.created_at);
+    return (a.name || '').localeCompare(b.name || '');
+  });
 
   if (hadDuplicates && typeof window !== 'undefined') {
     setLocalItem(STORAGE_KEYS.TRUSTED_LOGOS, deduplicated);

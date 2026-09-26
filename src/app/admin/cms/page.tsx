@@ -412,17 +412,25 @@ export default function CmsManagementPage() {
     const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
     if (targetIndex < 0 || targetIndex >= trustedLogos.length) return;
 
-    const targetLogo = trustedLogos[targetIndex];
-    const currentOrder = logo.display_order ?? currentIndex + 1;
-    const targetOrder = targetLogo.display_order ?? targetIndex + 1;
+    // Create array copy and swap position
+    const newLogos = [...trustedLogos];
+    const [movedItem] = newLogos.splice(currentIndex, 1);
+    newLogos.splice(targetIndex, 0, movedItem);
 
-    await Promise.all([
-      saveTrustedLogo({ ...logo, display_order: targetOrder }),
-      saveTrustedLogo({ ...targetLogo, display_order: currentOrder }),
-    ]);
+    // Re-index all display_orders sequentially (1, 2, 3...) to eliminate any collisions
+    const updatedWithOrders = newLogos.map((item, idx) => ({
+      ...item,
+      display_order: idx + 1,
+    }));
+
+    setTrustedLogos(updatedWithOrders);
+
+    await Promise.all(
+      updatedWithOrders.map((l) => saveTrustedLogo(l))
+    );
 
     toast.success('Reordered brand logos');
-    loadData();
+    await loadData();
   };
 
   const filteredLogos = trustedLogos.filter(
