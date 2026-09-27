@@ -11,6 +11,7 @@ import {
   Users,
   Eye,
   EyeOff,
+  AlertCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,11 +28,21 @@ export default function UniversalLoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage(null);
+
     if (!email.trim()) {
+      setErrorMessage('Please enter your email address.');
       toast.error('Please enter your email address');
+      return;
+    }
+
+    if (!password.trim()) {
+      setErrorMessage('Please enter your account password.');
+      toast.error('Please enter your password');
       return;
     }
 
@@ -39,7 +50,15 @@ export default function UniversalLoginPage() {
     try {
       const res = await signIn(email, password);
       if (res.success) {
-        if (res.role === 'admin' || res.role === 'manager' || res.role === 'developer' || res.role === 'designer' || res.role === 'marketer' || res.role === 'seo_specialist') {
+        setErrorMessage(null);
+        if (
+          res.role === 'admin' ||
+          res.role === 'manager' ||
+          res.role === 'developer' ||
+          res.role === 'designer' ||
+          res.role === 'marketer' ||
+          res.role === 'seo_specialist'
+        ) {
           toast.success('Welcome back to XGRO Admin Control Center!');
           router.push('/admin');
         } else {
@@ -47,10 +66,14 @@ export default function UniversalLoginPage() {
           router.push('/client');
         }
       } else {
-        toast.error(res.error || 'Authentication failed. Please check your credentials.');
+        const errorText = res.error || 'Authentication failed. Please check your credentials.';
+        setErrorMessage(errorText);
+        toast.error(errorText);
       }
-    } catch (err) {
-      toast.error('Sign in encountered an error');
+    } catch (err: any) {
+      const errorText = err.message || 'Sign in encountered an error. Please try again.';
+      setErrorMessage(errorText);
+      toast.error(errorText);
     } finally {
       setLoading(false);
     }
@@ -90,6 +113,17 @@ export default function UniversalLoginPage() {
           </CardHeader>
 
           <CardContent className="space-y-4">
+            {/* Inline Error Alert */}
+            {errorMessage && (
+              <div className="p-3.5 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-start gap-3 text-xs text-red-400 animate-in fade-in slide-in-from-top-1 duration-200">
+                <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+                <div className="flex-1 leading-relaxed">
+                  <span className="font-bold block text-red-300">Sign-in Error</span>
+                  {errorMessage}
+                </div>
+              </div>
+            )}
+
             <form onSubmit={handleLogin} className="space-y-3.5">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-foreground">Email Address</label>
@@ -99,7 +133,10 @@ export default function UniversalLoginPage() {
                     type="email"
                     placeholder="e.g. name@company.com"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (errorMessage) setErrorMessage(null);
+                    }}
                     required
                     className="pl-10 h-10 text-xs rounded-xl bg-surface/60"
                   />
@@ -119,7 +156,10 @@ export default function UniversalLoginPage() {
                     type={showPassword ? 'text' : 'password'}
                     placeholder="••••••••••••"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (errorMessage) setErrorMessage(null);
+                    }}
                     required
                     className="pl-10 pr-10 h-10 text-xs rounded-xl bg-surface/60"
                   />
@@ -141,7 +181,7 @@ export default function UniversalLoginPage() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-xl bg-cyan text-slate-950 hover:bg-cyan/90 font-black text-xs h-10 shadow-md"
+                className="w-full rounded-xl bg-cyan text-slate-950 hover:bg-cyan/90 font-black text-xs h-10 shadow-md transition-all active:scale-[0.99]"
               >
                 {loading ? 'Authenticating...' : 'Sign In to Dashboard'}
                 <ArrowRight className="h-4 w-4 ml-2" />

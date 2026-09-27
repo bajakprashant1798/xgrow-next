@@ -95,6 +95,9 @@ const inflightRequests: Record<string, Promise<any>> = {};
 
 // Helper to safely read from localStorage
 function getLocalItem<T>(key: string, fallback: T): T {
+  if (memoryCache[key]?.data !== undefined) {
+    return memoryCache[key].data as T;
+  }
   if (typeof window === 'undefined') return fallback;
   try {
     const item = localStorage.getItem(key);
@@ -104,7 +107,9 @@ function getLocalItem<T>(key: string, fallback: T): T {
       } catch (_) {}
       return fallback;
     }
-    return JSON.parse(item) as T;
+    const parsed = JSON.parse(item) as T;
+    memoryCache[key] = { data: parsed, timestamp: Date.now() };
+    return parsed;
   } catch (e) {
     console.warn(`Error reading ${key} from storage, using fallback:`, e);
     return fallback;
@@ -1070,6 +1075,26 @@ export async function createUserWithRole(data: {
   }
 
   const generatedPassword = data.password?.trim() || generateSecurePassword(12);
+
+  // Sync to Supabase Auth if connected
+  const supabase = getSupabaseClient();
+  if (supabase && generatedPassword) {
+    try {
+      await supabase.auth.signUp({
+        email: cleanEmail,
+        password: generatedPassword,
+        options: {
+          data: {
+            full_name: data.name,
+            role: data.role,
+            company_name: data.company_name,
+          },
+        },
+      });
+    } catch (e) {
+      console.warn('Supabase auth signup attempt note:', e);
+    }
+  }
 
   if (data.role === 'client') {
     const newClient = await saveClient({

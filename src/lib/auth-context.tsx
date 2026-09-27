@@ -2,7 +2,16 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { getSupabaseClient } from './supabase/client';
-import { getTeamMembers, getClients, getRoles, saveTeamMember, saveClient, checkUserEmailExists } from './db';
+import {
+  getTeamMembers,
+  getClients,
+  getRoles,
+  saveTeamMember,
+  saveClient,
+  checkUserEmailExists,
+  getUserCredential,
+  saveUserCredential,
+} from './db';
 import { TeamMemberModel, ClientModel, CustomRoleModel, PermissionMatrix } from './supabase/types';
 import { hasPermission as checkPermission, DEFAULT_FULL_PERMISSIONS } from './permissions';
 
@@ -172,82 +181,144 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initAuth();
   }, [resolveUserProfile]);
 
-  // Sign In function
+  // Strict Secure Sign In function
   const signIn = async (
     email: string,
     password?: string
   ): Promise<{ success: boolean; role: AppRole; error?: string }> => {
     try {
       const cleanEmail = email.trim().toLowerCase();
-      const supabase = getSupabaseClient();
+      const enteredPassword = (password || '').trim();
 
-      if (supabase && password) {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password: password,
-        });
-
-        if (error) {
-          const profile = await resolveUserProfile(cleanEmail);
-          if (profile) {
-            if (profile.status === 'inactive') {
-              return {
-                success: false,
-                role: 'client',
-                error: 'Your account has been deactivated by the Administrator. Please contact support.',
-              };
-            }
-            setUser(profile);
-            localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(profile));
-            if (profile.role === 'client') {
-              localStorage.setItem('xgro_active_client_id', profile.id);
-            }
-            return { success: true, role: profile.role };
-          }
-          return { success: false, role: 'client', error: error.message };
-        }
-
-        if (data.user?.email) {
-          const profile = await resolveUserProfile(data.user.email, data.user.id);
-          if (profile) {
-            if (profile.status === 'inactive') {
-              return {
-                success: false,
-                role: 'client',
-                error: 'Your account has been deactivated by the Administrator. Please contact support.',
-              };
-            }
-            setUser(profile);
-            localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(profile));
-            if (profile.role === 'client') {
-              localStorage.setItem('xgro_active_client_id', profile.id);
-            }
-            return { success: true, role: profile.role };
-          }
-        }
+      if (!cleanEmail) {
+        return { success: false, role: 'client', error: 'Please enter your email address.' };
+      }
+      if (!enteredPassword) {
+        return { success: false, role: 'client', error: 'Please enter your password.' };
       }
 
-      // Local / Offline store resolution
-      const profile = await resolveUserProfile(cleanEmail);
-      if (profile) {
-        if (profile.status === 'inactive') {
+      const supabase = getSupabaseClient();
+      let isAuthenticated = false;
+      let authenticatedUserId: string | undefined = undefined;
+
+      // 1. First attempt verification with Supabase Auth if client is configured
+      if (supabase) {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: enteredPassword,
+        });
+
+        if (!error && data?.user) {
+          isAuthenticated = true;
+          authenticatedUserId = data.user.id;
+        } else {
+          // Supabase authentication failed.
+          // Check if this user has an admin-generated/saved password in credentials store
+          const localCred = getUserCredential(cleanEmail);
+          if (localCred && localCred.temporaryPassword) {
+            if (localCred.temporaryPassword === enteredPassword) {
+              isAuthenticated = true;
+            } else {
+              // Password was explicitly wrong
+              return {
+                success: false,
+                role: 'client',
+                error: 'Invalid password. Please verify your credentials and try again.',
+              };
+            }
+          } else {
+            // Neither Supabase nor local credentials validated the password
+            const userCheck = await checkUserEmailExists(cleanEmail);
+            if (userCheck.exists) {
+              return {
+                success: false,
+                role: 'client',
+                error: 'The password you entered is incorrect. Please double-check your password and try again.',
+              };
+            } else {
+              return {
+                success: false,
+                role: 'client',
+                error: `No registered account found with email "${cleanEmail}". Please check your email address or contact an administrator.`,
+              };
+            }
+          }
+        }
+      } else {
+        // Offline / Local mode (No Supabase client configured)
+        const localCred = getUserCredential(cleanEmail);
+        if (localCred && localCred.temporaryPassword) {
+          if (localCred.temporaryPassword === enteredPassword) {
+            isAuthenticated = true;
+          } else {
+            return {
+              success: false,
+              role: 'client',
+              error: 'The password you entered is incorrect. Please double-check your password and try again.',
+            };
+          }
+        } else {
+          const userExists = await checkUserEmailExists(cleanEmail);
+          if (!userExists.exists) {
+            return {
+              success: false,
+              role: 'client',
+              error: `No registered account found with email "${cleanEmail}". Please check your email address or sign up.`,
+            };
+          }
           return {
             success: false,
             role: 'client',
-            error: 'Your account has been deactivated by the Administrator. Please contact support.',
+            error: 'No password recorded for this account. Please contact an administrator to set your password.',
           };
         }
-        setUser(profile);
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(profile));
-        if (profile.role === 'client') {
-          localStorage.setItem('xgro_active_client_id', profile.id);
-        }
-        return { success: true, role: profile.role };
       }
 
-      return { success: false, role: 'client', error: 'User account not found' };
+      if (!isAuthenticated) {
+        return {
+          success: false,
+          role: 'client',
+          error: 'Authentication failed. Invalid login credentials.',
+        };
+      }
+
+      // 2. Resolve Profile and enforce Account Status
+      const profile = await resolveUserProfile(cleanEmail, authenticatedUserId);
+      if (!profile) {
+        return { success: false, role: 'client', error: 'User account profile not found.' };
+      }
+
+      if (profile.status === 'inactive') {
+        if (supabase) {
+          await supabase.auth.signOut().catch(() => {});
+        }
+        return {
+          success: false,
+          role: profile.role,
+          error: 'Your account has been deactivated by the Administrator. Please contact support.',
+        };
+      }
+
+      if (profile.status === 'pending_approval') {
+        if (supabase) {
+          await supabase.auth.signOut().catch(() => {});
+        }
+        return {
+          success: false,
+          role: profile.role,
+          error: 'Your account is pending administrator approval.',
+        };
+      }
+
+      // 3. Set Active Authenticated Session
+      setUser(profile);
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(profile));
+      if (profile.role === 'client') {
+        localStorage.setItem('xgro_active_client_id', profile.id);
+      }
+      return { success: true, role: profile.role };
     } catch (err: any) {
-      return { success: false, role: 'client', error: err.message || 'Login error' };
+      return { success: false, role: 'client', error: err.message || 'Login error occurred.' };
     }
   };
 
@@ -297,6 +368,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else if (authData.user) {
           createdUserId = authData.user.id;
         }
+      }
+
+      // Save credential locally for offline support
+      if (data.password) {
+        saveUserCredential(cleanEmail, data.password, false);
       }
 
       if (assignedRole === 'client') {
