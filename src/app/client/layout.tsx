@@ -134,26 +134,32 @@ export default function ClientLayout({
             Dashboard
           </Link>
           <a
+            href="#services"
+            className="px-4 py-1.5 rounded-full text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Our Services
+          </a>
+          <a
             href="#milestones"
-            className="px-4 py-1.5 rounded-full text-xs font-semibold text-muted-foreground hover:text-foreground"
+            className="px-4 py-1.5 rounded-full text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
           >
             Milestones
           </a>
           <a
             href="#updates"
-            className="px-4 py-1.5 rounded-full text-xs font-semibold text-muted-foreground hover:text-foreground"
+            className="px-4 py-1.5 rounded-full text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
           >
             Project Updates
           </a>
           <a
             href="#invoices"
-            className="px-4 py-1.5 rounded-full text-xs font-semibold text-muted-foreground hover:text-foreground"
+            className="px-4 py-1.5 rounded-full text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
           >
             Invoices & Quotes
           </a>
           <a
             href="#support"
-            className="px-4 py-1.5 rounded-full text-xs font-semibold text-muted-foreground hover:text-foreground"
+            className="px-4 py-1.5 rounded-full text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
           >
             Assigned Team
           </a>

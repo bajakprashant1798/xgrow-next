@@ -370,8 +370,28 @@ export const initialClients: ClientModel[] = [
     address: 'Cyber City, Gurugram, HR',
     status: 'active',
     selected_plan: 'Scale Growth Plan (Active Workspace)',
-    created_at: '2026-02-01T10:00:00Z'
-  }
+    services: ['website', 'ai_automation', 'seo', 'google_business'],
+    billing_cycle: 'monthly',
+    subscription_tier: 'Growth',
+    retainer_amount: 39999,
+    created_at: '2026-02-01T10:00:00Z',
+  },
+  {
+    id: 'cli-vasu',
+    name: 'Mr. Vasu Arora',
+    email: 'vasu@softedit.in',
+    phone: '+91 98112 34567',
+    company_name: 'Soft Edit Cosmetics',
+    avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+    address: 'Connaught Place, New Delhi, DL',
+    status: 'active',
+    selected_plan: 'Yearly Brand Retainer & E-Commerce Platform',
+    services: ['website', 'graphic_design', 'video_editing', 'google_business', 'seo'],
+    billing_cycle: 'yearly',
+    subscription_tier: 'Premium Enterprise',
+    retainer_amount: 14000,
+    created_at: '2026-01-15T09:00:00Z',
+  },
 ];
 
 export const initialTeamMembers: TeamMemberModel[] = [

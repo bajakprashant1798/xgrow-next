@@ -47,6 +47,7 @@ import { getActiveClient } from '@/lib/client-auth';
 import { getProjects, getTeamMembers, getPricingPlans, saveClient, subscribeToDataChanges } from '@/lib/db';
 import { ProjectModel, ClientModel, TeamMemberModel, PricingPlanModel, InvoiceDocumentModel } from '@/lib/supabase/types';
 import { InvoiceViewModal } from '@/components/invoices/InvoiceViewModal';
+import { ClientServicesWidget } from '@/components/clients/ClientServicesWidget';
 
 export default function ClientDashboardPage() {
   const [client, setClient] = useState<ClientModel | null>(null);
@@ -566,7 +567,14 @@ export default function ClientDashboardPage() {
           </div>
         </Card>
 
-        {/* 3. Milestones Checklist Timeline */}
+        {/* 3. Subscribed Services & Retainer Deliverables */}
+        <ClientServicesWidget
+          client={client}
+          onUpdateClient={(upd) => setClient(upd)}
+          isClientView={true}
+        />
+
+        {/* 4. Milestones Checklist Timeline */}
         <section id="milestones" className="space-y-4">
           <div className="flex items-center justify-between">
             <div>

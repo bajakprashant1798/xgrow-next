@@ -99,6 +99,12 @@ export interface ClientModel {
   address?: string;
   status: 'active' | 'pending_approval' | 'inactive';
   selected_plan?: string;
+  services?: string[]; // e.g. ['website', 'graphic_design', 'ai_automation', 'google_business', 'seo', 'video_editing']
+  billing_cycle?: 'monthly' | 'yearly' | 'one_time' | 'quarterly';
+  subscription_tier?: 'Standard' | 'Growth' | 'Premium Enterprise';
+  retainer_amount?: number;
+  contract_start_date?: string;
+  contract_end_date?: string;
   notes?: string;
   created_at?: string;
 }

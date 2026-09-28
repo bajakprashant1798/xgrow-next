@@ -74,6 +74,14 @@ import {
   EmailCheckResult,
 } from '@/lib/db';
 import { ClientModel, ProjectModel, CustomRoleModel, ProjectStatus } from '@/lib/supabase/types';
+import {
+  AVAILABLE_AGENCY_SERVICES,
+  BILLING_CYCLES,
+  PLAN_SERVICE_PRESETS,
+  getServiceDefinition,
+  getBillingCycleDefinition,
+  getServicesForPlan,
+} from '@/lib/client-services';
 
 interface OnboardUserData {
   id?: string;
@@ -86,6 +94,10 @@ interface OnboardUserData {
   address?: string;
   status: 'active' | 'pending_approval' | 'inactive';
   selected_plan?: string;
+  services: string[];
+  billing_cycle: 'monthly' | 'yearly' | 'one_time' | 'quarterly';
+  subscription_tier: 'Standard' | 'Growth' | 'Premium Enterprise';
+  retainer_amount?: number;
   notes?: string;
   assignedProjectIds: string[];
   autoCreateProject?: boolean;
@@ -99,6 +111,7 @@ export default function ClientsManagementPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'active'>('all');
+  const [serviceFilter, setServiceFilter] = useState<string>('all');
 
   // Unified Onboard User/Client Dialog state
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -111,7 +124,11 @@ export default function ClientsManagementPage() {
     department: 'Engineering',
     address: '',
     status: 'active',
-    selected_plan: 'Growth Plan (₹39,999)',
+    selected_plan: 'Scale Growth Plan (₹39,999/mo)',
+    services: ['website', 'seo'],
+    billing_cycle: 'monthly',
+    subscription_tier: 'Growth',
+    retainer_amount: 39999,
     notes: '',
     assignedProjectIds: [],
     autoCreateProject: true,
@@ -188,7 +205,11 @@ export default function ClientsManagementPage() {
       department: 'Engineering',
       address: '',
       status: 'active',
-      selected_plan: 'Growth Plan (₹39,999)',
+      selected_plan: 'Growth Engine Retainer (₹39,999/mo)',
+      services: getServicesForPlan('Growth'),
+      billing_cycle: 'monthly',
+      subscription_tier: 'Growth',
+      retainer_amount: 39999,
       notes: '',
       assignedProjectIds: [],
       autoCreateProject: true,
@@ -220,7 +241,14 @@ export default function ClientsManagementPage() {
       department: 'Engineering',
       address: client.address || '',
       status: client.status || 'active',
-      selected_plan: client.selected_plan || 'Growth Plan (₹39,999)',
+      selected_plan: client.selected_plan || 'Scale Growth Retainer (₹39,999/mo)',
+      services:
+        client.services && client.services.length > 0
+          ? client.services
+          : getServicesForPlan(client.selected_plan),
+      billing_cycle: client.billing_cycle || 'monthly',
+      subscription_tier: client.subscription_tier || 'Growth',
+      retainer_amount: client.retainer_amount || 39999,
       notes: client.notes || '',
       assignedProjectIds: clientProjects,
       autoCreateProject: false,
@@ -249,8 +277,6 @@ export default function ClientsManagementPage() {
     setIsAssignProjectDialogOpen(true);
   };
 
-
-
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userData.name.trim() || !userData.email.trim()) {
@@ -274,6 +300,10 @@ export default function ClientsManagementPage() {
           address: userData.address || '',
           status: userData.status,
           selected_plan: userData.selected_plan,
+          services: userData.services,
+          billing_cycle: userData.billing_cycle,
+          subscription_tier: userData.subscription_tier,
+          retainer_amount: userData.retainer_amount,
           notes: userData.notes,
         });
 
@@ -440,12 +470,20 @@ export default function ClientsManagementPage() {
     const matchesSearch =
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (c.company_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.email.toLowerCase().includes(searchQuery.toLowerCase());
+      c.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (c.services || []).some((s) => s.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (c.billing_cycle || '').toLowerCase().includes(searchQuery.toLowerCase());
 
     if (!matchesSearch) return false;
 
     if (statusFilter === 'pending') return c.status === 'pending_approval';
     if (statusFilter === 'active') return c.status === 'active';
+
+    if (serviceFilter !== 'all') {
+      const clientServices = c.services && c.services.length > 0 ? c.services : ['website', 'seo'];
+      if (!clientServices.includes(serviceFilter)) return false;
+    }
+
     return true;
   });
 
@@ -477,17 +515,17 @@ export default function ClientsManagementPage() {
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-foreground flex items-center gap-2.5">
             <Users className="h-6 w-6 text-cyan" />
-            Client Accounts & User Management
+            Client Accounts & Retainer Services
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            Admin can onboard new clients or staff users (any role), manage project assignments, review pending signups, and link active workspaces.
+            Manage client subscriptions, active deliverables (Website, SEO, AI Automation, Graphic Design, GBP), monthly/yearly retainers & project workspaces.
           </p>
         </div>
         <Button
           onClick={openCreateDialog}
           className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-5 shadow-sm self-start sm:self-auto"
         >
-          <UserPlus className="h-3.5 w-3.5 mr-1.5" /> Onboard New User / Client
+          <UserPlus className="h-3.5 w-3.5 mr-1.5" /> Onboard New Client
         </Button>
       </div>
 
@@ -515,8 +553,8 @@ export default function ClientsManagementPage() {
         </div>
       )}
 
-      {/* Filter Tabs & Search */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-card/60 p-4 rounded-2xl border border-border">
+      {/* Filter Tabs & Search & Service Dropdown */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-card/60 p-4 rounded-2xl border border-border">
         <Tabs
           value={statusFilter}
           onValueChange={(val: any) => setStatusFilter(val)}
@@ -535,14 +573,31 @@ export default function ClientsManagementPage() {
           </TabsList>
         </Tabs>
 
-        <div className="relative max-w-sm w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by client name, company, email..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 h-9 text-xs rounded-full bg-surface"
-          />
+        <div className="flex items-center gap-2.5 flex-1 max-w-lg w-full justify-end">
+          {/* Service Filter */}
+          <Select value={serviceFilter} onValueChange={setServiceFilter}>
+            <SelectTrigger className="h-9 text-xs rounded-full bg-surface border-border w-44 shrink-0">
+              <SelectValue placeholder="Filter by Service" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Services & Products</SelectItem>
+              {AVAILABLE_AGENCY_SERVICES.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.shortName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by client, company, email..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 h-9 text-xs rounded-full bg-surface"
+            />
+          </div>
         </div>
       </div>
 
@@ -649,10 +704,51 @@ export default function ClientsManagementPage() {
                       </div>
                     )}
 
+                    {/* Subscribed Agency Services & Products */}
+                    <div className="p-3 rounded-2xl bg-surface/60 border border-border/80 space-y-2">
+                      <div className="flex items-center justify-between text-[10px] font-bold text-muted-foreground uppercase">
+                        <span>Services & Deliverables</span>
+                        <Badge
+                          className={`text-[9px] font-black uppercase tracking-wider ${
+                            getBillingCycleDefinition(client.billing_cycle).tagClass
+                          }`}
+                        >
+                          {getBillingCycleDefinition(client.billing_cycle).badge}
+                        </Badge>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {(client.services && client.services.length > 0
+                          ? client.services
+                          : ['website', 'seo']
+                        ).map((sId) => {
+                          const sDef = getServiceDefinition(sId);
+                          return (
+                            <span
+                              key={sId}
+                              className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg border ${sDef.badgeClass}`}
+                            >
+                              {sDef.shortName}
+                            </span>
+                          );
+                        })}
+                      </div>
+
+                      {client.retainer_amount ? (
+                        <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-border/50 text-muted-foreground">
+                          <span>Contract Retainer Fee:</span>
+                          <span className="font-mono font-bold text-foreground">
+                            ₹{Number(client.retainer_amount).toLocaleString('en-IN')}
+                            {client.billing_cycle === 'yearly' ? ' / yr' : ' / mo'}
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
+
                     {client.selected_plan && (
-                      <div className="p-2.5 rounded-xl bg-surface/60 border border-border text-[11px] space-y-0.5">
+                      <div className="p-2.5 rounded-xl bg-surface/40 border border-border text-[11px] space-y-0.5">
                         <span className="text-[10px] font-bold text-muted-foreground uppercase">
-                          Plan Scope:
+                          Package Scope:
                         </span>
                         <p className="font-semibold text-foreground">{client.selected_plan}</p>
                       </div>
@@ -1071,6 +1167,142 @@ export default function ClientsManagementPage() {
               />
             </div>
 
+            {/* Subscribed Agency Services & Products Multi-select */}
+            <div className="space-y-2.5 p-3.5 rounded-2xl bg-surface/60 border border-border">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-cyan" />
+                  Subscribed Services & Products *
+                </label>
+                <span className="text-[10px] text-cyan font-bold">
+                  {userData.services.length} Selected
+                </span>
+              </div>
+
+              {/* Quick Plan Preset Loader */}
+              <div className="space-y-1">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground block">
+                  Quick Load Plan Preset:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(PLAN_SERVICE_PRESETS).map(([key, preset]) => (
+                    <Button
+                      key={key}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setUserData({
+                          ...userData,
+                          selected_plan: preset.name,
+                          services: [...preset.services],
+                          billing_cycle: preset.billing_cycle,
+                          subscription_tier: preset.tier,
+                          retainer_amount: preset.defaultAmount,
+                        });
+                        toast.info(`Loaded "${preset.name}" template services!`);
+                      }}
+                      className="h-7 text-[10px] font-bold rounded-lg px-2.5 bg-card/60 hover:bg-cyan/15 hover:text-cyan hover:border-cyan/40 border-border transition-colors"
+                    >
+                      {preset.name.split('(')[0].trim()}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <p className="text-[11px] text-muted-foreground pt-1">
+                Select or customize any agency deliverables for this client:
+              </p>
+
+              <div className="grid grid-cols-2 gap-2 pt-0.5">
+                {AVAILABLE_AGENCY_SERVICES.map((svc) => {
+                  const isChecked = userData.services.includes(svc.id);
+                  return (
+                    <button
+                      key={svc.id}
+                      type="button"
+                      onClick={() => {
+                        if (isChecked) {
+                          setUserData({
+                            ...userData,
+                            services: userData.services.filter((id) => id !== svc.id),
+                          });
+                        } else {
+                          setUserData({
+                            ...userData,
+                            services: [...userData.services, svc.id],
+                          });
+                        }
+                      }}
+                      className={`p-2.5 rounded-xl border text-left text-xs transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                        isChecked
+                          ? 'border-cyan bg-cyan/15 font-bold text-cyan shadow-sm'
+                          : 'border-border bg-card/60 text-muted-foreground hover:border-cyan/30'
+                      }`}
+                    >
+                      <span className="truncate">{svc.shortName}</span>
+                      <Checkbox checked={isChecked} className="shrink-0 pointer-events-none" />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Retainer & Billing Model Details */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-foreground">Billing / Retainer</label>
+                <Select
+                  value={userData.billing_cycle}
+                  onValueChange={(val: any) => setUserData({ ...userData, billing_cycle: val })}
+                >
+                  <SelectTrigger className="text-xs rounded-xl h-9">
+                    <SelectValue placeholder="Billing Cycle" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BILLING_CYCLES.map((bc) => (
+                      <SelectItem key={bc.id} value={bc.id}>
+                        {bc.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-foreground">Retainer Tier</label>
+                <Select
+                  value={userData.subscription_tier}
+                  onValueChange={(val: any) => setUserData({ ...userData, subscription_tier: val })}
+                >
+                  <SelectTrigger className="text-xs rounded-xl h-9">
+                    <SelectValue placeholder="Tier" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Standard">Standard Client</SelectItem>
+                    <SelectItem value="Growth">Growth Partner</SelectItem>
+                    <SelectItem value="Premium Enterprise">Premium Enterprise</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-foreground">Retainer Fee (₹)</label>
+                <Input
+                  type="number"
+                  placeholder="e.g. 39999"
+                  value={userData.retainer_amount !== undefined ? userData.retainer_amount : ''}
+                  onChange={(e) =>
+                    setUserData({
+                      ...userData,
+                      retainer_amount: e.target.value ? Number(e.target.value) : undefined,
+                    })
+                  }
+                  className="text-xs rounded-xl h-9"
+                />
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-foreground">Account Status</label>
@@ -1090,9 +1322,9 @@ export default function ClientsManagementPage() {
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-foreground">Selected Package</label>
+                <label className="text-xs font-bold text-foreground">Package Scope Title</label>
                 <Input
-                  placeholder="e.g. Growth Plan (₹39,999)"
+                  placeholder="e.g. Scale Growth Retainer (₹39,999/mo)"
                   value={userData.selected_plan || ''}
                   onChange={(e) => setUserData({ ...userData, selected_plan: e.target.value })}
                   className="text-xs rounded-xl h-9"
