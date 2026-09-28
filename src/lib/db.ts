@@ -32,6 +32,7 @@ import {
 } from './seed-data';
 
 import { initialResources, ResourceItem, ResourceType } from './resourcesData';
+import { getServicesForPlan } from './client-services';
 
 import { getSupabaseClient } from './supabase/client';
 import { compressDataUrl } from './image-compressor';
@@ -53,7 +54,7 @@ const STORAGE_KEYS = {
 };
 
 // Clear stale legacy dummy data and huge uncompressed caches from browser localStorage on init
-const STORAGE_CLEAN_VERSION = 'xgro_v7_clean_db';
+const STORAGE_CLEAN_VERSION = 'xgro_v8_services_sync';
 if (typeof window !== 'undefined') {
   try {
     if (localStorage.getItem('xgro_cache_ver') !== STORAGE_CLEAN_VERSION) {
@@ -457,7 +458,7 @@ export async function deletePricingPlan(id: string): Promise<void> {
 // CLIENTS & TEAM MEMBERS
 // ==============================================================================
 export async function getClients(): Promise<ClientModel[]> {
-  return fetchWithSWR<ClientModel[]>(
+  const result = await fetchWithSWR<ClientModel[]>(
     STORAGE_KEYS.CLIENTS,
     async () => {
       const supabase = getSupabaseClient();
@@ -473,6 +474,14 @@ export async function getClients(): Promise<ClientModel[]> {
     },
     initialClients
   );
+
+  return (result || []).map((c) => ({
+    ...c,
+    services:
+      c.services && c.services.length > 0
+        ? c.services
+        : getServicesForPlan(c.selected_plan),
+  }));
 }
 
 export interface EmailCheckResult {
@@ -541,11 +550,24 @@ export async function saveClient(client: Partial<ClientModel> & { name: string; 
   let savedClient: ClientModel;
 
   if (existingIdx >= 0) {
+    const existing = current[existingIdx];
     savedClient = {
-      ...current[existingIdx],
+      ...existing,
       ...client,
-      id: current[existingIdx].id,
+      id: existing.id,
       email: cleanEmail,
+      services:
+        client.services !== undefined
+          ? client.services
+          : (existing.services && existing.services.length > 0
+              ? existing.services
+              : getServicesForPlan(client.selected_plan || existing.selected_plan)),
+      billing_cycle: client.billing_cycle || existing.billing_cycle || 'monthly',
+      subscription_tier: client.subscription_tier || existing.subscription_tier || 'Growth',
+      retainer_amount:
+        client.retainer_amount !== undefined
+          ? client.retainer_amount
+          : existing.retainer_amount,
     };
     current[existingIdx] = savedClient;
   } else {
@@ -558,7 +580,14 @@ export async function saveClient(client: Partial<ClientModel> & { name: string; 
       avatar_url: client.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(client.name)}`,
       address: client.address || '',
       status: client.status || 'active',
-      selected_plan: client.selected_plan,
+      selected_plan: client.selected_plan || 'Growth Engine Retainer (₹39,999/mo)',
+      services:
+        client.services && client.services.length > 0
+          ? client.services
+          : getServicesForPlan(client.selected_plan),
+      billing_cycle: client.billing_cycle || 'monthly',
+      subscription_tier: client.subscription_tier || 'Growth',
+      retainer_amount: client.retainer_amount || 39999,
       notes: client.notes,
       created_at: new Date().toISOString(),
     };

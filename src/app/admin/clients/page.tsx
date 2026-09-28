@@ -195,7 +195,32 @@ export default function ClientsManagementPage() {
     return () => clearTimeout(timer);
   }, [userData.email, userData.id]);
 
+  const handleApplyPlanPreset = (presetKey: string) => {
+    const preset = PLAN_SERVICE_PRESETS[presetKey];
+    if (!preset) return;
+    setUserData((prev) => ({
+      ...prev,
+      selected_plan: preset.name,
+      services: [...preset.services],
+      billing_cycle: preset.billing_cycle,
+      subscription_tier: preset.tier,
+      retainer_amount: preset.defaultAmount,
+    }));
+    toast.success(`Applied "${preset.name.split('(')[0].trim()}" package! Automatically checkmarked ${preset.services.length} services.`);
+  };
+
+  const toggleService = (serviceId: string) => {
+    setUserData((prev) => {
+      const exists = prev.services.includes(serviceId);
+      const nextServices = exists
+        ? prev.services.filter((id) => id !== serviceId)
+        : [...prev.services, serviceId];
+      return { ...prev, services: nextServices };
+    });
+  };
+
   const openCreateDialog = () => {
+    const defaultPreset = PLAN_SERVICE_PRESETS.growth;
     setUserData({
       name: '',
       email: '',
@@ -205,11 +230,11 @@ export default function ClientsManagementPage() {
       department: 'Engineering',
       address: '',
       status: 'active',
-      selected_plan: 'Growth Engine Retainer (₹39,999/mo)',
-      services: getServicesForPlan('Growth'),
-      billing_cycle: 'monthly',
-      subscription_tier: 'Growth',
-      retainer_amount: 39999,
+      selected_plan: defaultPreset.name,
+      services: [...defaultPreset.services],
+      billing_cycle: defaultPreset.billing_cycle,
+      subscription_tier: defaultPreset.tier,
+      retainer_amount: defaultPreset.defaultAmount,
       notes: '',
       assignedProjectIds: [],
       autoCreateProject: true,
@@ -231,6 +256,13 @@ export default function ClientsManagementPage() {
               p.client_id?.toLowerCase() === cleanEmail))
       )
       .map((p) => p.id);
+
+    const effectivePlan = client.selected_plan || 'Growth Engine Retainer (₹39,999/mo)';
+    const effectiveServices =
+      client.services && client.services.length > 0
+        ? client.services
+        : getServicesForPlan(effectivePlan);
+
     setUserData({
       id: client.id,
       name: client.name,
@@ -241,14 +273,11 @@ export default function ClientsManagementPage() {
       department: 'Engineering',
       address: client.address || '',
       status: client.status || 'active',
-      selected_plan: client.selected_plan || 'Scale Growth Retainer (₹39,999/mo)',
-      services:
-        client.services && client.services.length > 0
-          ? client.services
-          : getServicesForPlan(client.selected_plan),
+      selected_plan: effectivePlan,
+      services: [...effectiveServices],
       billing_cycle: client.billing_cycle || 'monthly',
       subscription_tier: client.subscription_tier || 'Growth',
-      retainer_amount: client.retainer_amount || 39999,
+      retainer_amount: client.retainer_amount !== undefined ? client.retainer_amount : 39999,
       notes: client.notes || '',
       assignedProjectIds: clientProjects,
       autoCreateProject: false,
@@ -480,7 +509,10 @@ export default function ClientsManagementPage() {
     if (statusFilter === 'active') return c.status === 'active';
 
     if (serviceFilter !== 'all') {
-      const clientServices = c.services && c.services.length > 0 ? c.services : ['website', 'seo'];
+      const clientServices =
+        c.services && c.services.length > 0
+          ? c.services
+          : getServicesForPlan(c.selected_plan);
       if (!clientServices.includes(serviceFilter)) return false;
     }
 
@@ -720,7 +752,7 @@ export default function ClientsManagementPage() {
                       <div className="flex flex-wrap gap-1.5 pt-0.5">
                         {(client.services && client.services.length > 0
                           ? client.services
-                          : ['website', 'seo']
+                          : getServicesForPlan(client.selected_plan)
                         ).map((sId) => {
                           const sDef = getServiceDefinition(sId);
                           return (
@@ -1168,83 +1200,94 @@ export default function ClientsManagementPage() {
             </div>
 
             {/* Subscribed Agency Services & Products Multi-select */}
-            <div className="space-y-2.5 p-3.5 rounded-2xl bg-surface/60 border border-border">
+            <div className="space-y-3 p-4 rounded-2xl bg-surface/60 border border-border">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
                   <Sparkles className="h-3.5 w-3.5 text-cyan" />
-                  Subscribed Services & Products *
+                  Growth Plan & Subscribed Deliverables *
                 </label>
-                <span className="text-[10px] text-cyan font-bold">
-                  {userData.services.length} Selected
-                </span>
+                <Badge variant="outline" className="text-[10px] text-cyan border-cyan/40 bg-cyan/10 font-bold">
+                  {userData.services.length} Services Selected
+                </Badge>
               </div>
 
               {/* Quick Plan Preset Loader */}
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 <span className="text-[10px] uppercase font-bold text-muted-foreground block">
-                  Quick Load Plan Preset:
+                  Select Plan Template (Auto-checks Respective Services):
                 </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {Object.entries(PLAN_SERVICE_PRESETS).map(([key, preset]) => (
-                    <Button
-                      key={key}
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setUserData({
-                          ...userData,
-                          selected_plan: preset.name,
-                          services: [...preset.services],
-                          billing_cycle: preset.billing_cycle,
-                          subscription_tier: preset.tier,
-                          retainer_amount: preset.defaultAmount,
-                        });
-                        toast.info(`Loaded "${preset.name}" template services!`);
-                      }}
-                      className="h-7 text-[10px] font-bold rounded-lg px-2.5 bg-card/60 hover:bg-cyan/15 hover:text-cyan hover:border-cyan/40 border-border transition-colors"
-                    >
-                      {preset.name.split('(')[0].trim()}
-                    </Button>
-                  ))}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                  {Object.entries(PLAN_SERVICE_PRESETS).map(([key, preset]) => {
+                    const isCurrent = userData.selected_plan === preset.name;
+                    return (
+                      <Button
+                        key={key}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleApplyPlanPreset(key)}
+                        className={`h-8 text-[10px] font-bold rounded-xl px-2 transition-all justify-start truncate ${
+                          isCurrent
+                            ? 'bg-cyan text-slate-950 border-cyan shadow-sm font-black'
+                            : 'bg-card/60 hover:bg-cyan/15 hover:text-cyan hover:border-cyan/40 border-border'
+                        }`}
+                      >
+                        <Zap className="h-3 w-3 mr-1 shrink-0" />
+                        <span className="truncate">{preset.name.split('(')[0].trim()}</span>
+                      </Button>
+                    );
+                  })}
                 </div>
               </div>
 
-              <p className="text-[11px] text-muted-foreground pt-1">
-                Select or customize any agency deliverables for this client:
-              </p>
+              <div className="pt-1">
+                <div className="flex items-center justify-between pb-1.5">
+                  <p className="text-[11px] text-muted-foreground">
+                    Check or customize any active services for this client:
+                  </p>
+                  <span className="text-[10px] text-muted-foreground italic">Click to toggle</span>
+                </div>
 
-              <div className="grid grid-cols-2 gap-2 pt-0.5">
-                {AVAILABLE_AGENCY_SERVICES.map((svc) => {
-                  const isChecked = userData.services.includes(svc.id);
-                  return (
-                    <button
-                      key={svc.id}
-                      type="button"
-                      onClick={() => {
-                        if (isChecked) {
-                          setUserData({
-                            ...userData,
-                            services: userData.services.filter((id) => id !== svc.id),
-                          });
-                        } else {
-                          setUserData({
-                            ...userData,
-                            services: [...userData.services, svc.id],
-                          });
-                        }
-                      }}
-                      className={`p-2.5 rounded-xl border text-left text-xs transition-all flex items-center justify-between gap-2 cursor-pointer ${
-                        isChecked
-                          ? 'border-cyan bg-cyan/15 font-bold text-cyan shadow-sm'
-                          : 'border-border bg-card/60 text-muted-foreground hover:border-cyan/30'
-                      }`}
-                    >
-                      <span className="truncate">{svc.shortName}</span>
-                      <Checkbox checked={isChecked} className="shrink-0 pointer-events-none" />
-                    </button>
-                  );
-                })}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {AVAILABLE_AGENCY_SERVICES.map((svc) => {
+                    const isChecked = userData.services.includes(svc.id);
+                    return (
+                      <div
+                        key={svc.id}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === ' ' || e.key === 'Enter') {
+                            e.preventDefault();
+                            toggleService(svc.id);
+                          }
+                        }}
+                        onClick={() => toggleService(svc.id)}
+                        className={`p-2.5 rounded-xl border text-left text-xs transition-all flex items-center justify-between gap-2 cursor-pointer select-none ${
+                          isChecked
+                            ? 'border-cyan bg-cyan/15 font-bold text-cyan shadow-sm ring-1 ring-cyan/40'
+                            : 'border-border bg-card/60 text-muted-foreground hover:border-cyan/30 hover:text-foreground'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <div
+                            className={`h-4 w-4 rounded-md border flex items-center justify-center transition-colors shrink-0 ${
+                              isChecked
+                                ? 'bg-cyan border-cyan text-slate-950'
+                                : 'border-muted-foreground/40 bg-surface'
+                            }`}
+                          >
+                            {isChecked && <Check className="h-3 w-3 stroke-[3]" />}
+                          </div>
+                          <span className="truncate">{svc.shortName}</span>
+                        </div>
+                        <span className="text-[9px] uppercase tracking-wider opacity-75 truncate shrink-0">
+                          {svc.category}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 

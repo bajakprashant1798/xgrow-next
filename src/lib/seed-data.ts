@@ -370,7 +370,7 @@ export const initialClients: ClientModel[] = [
     address: 'Cyber City, Gurugram, HR',
     status: 'active',
     selected_plan: 'Scale Growth Plan (Active Workspace)',
-    services: ['website', 'ai_automation', 'seo', 'google_business'],
+    services: ['website', 'graphic_design', 'ai_automation', 'seo', 'google_business'],
     billing_cycle: 'monthly',
     subscription_tier: 'Growth',
     retainer_amount: 39999,

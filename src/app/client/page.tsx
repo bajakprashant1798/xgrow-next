@@ -48,6 +48,7 @@ import { getProjects, getTeamMembers, getPricingPlans, saveClient, subscribeToDa
 import { ProjectModel, ClientModel, TeamMemberModel, PricingPlanModel, InvoiceDocumentModel } from '@/lib/supabase/types';
 import { InvoiceViewModal } from '@/components/invoices/InvoiceViewModal';
 import { ClientServicesWidget } from '@/components/clients/ClientServicesWidget';
+import { getServicesForPlan } from '@/lib/client-services';
 
 export default function ClientDashboardPage() {
   const [client, setClient] = useState<ClientModel | null>(null);
@@ -107,9 +108,16 @@ export default function ClientDashboardPage() {
   const handleSelectPlan = async (plan: PricingPlanModel) => {
     if (!client) return;
     try {
+      const planServices = getServicesForPlan(plan.name);
       const updatedClient: ClientModel = {
         ...client,
         selected_plan: `${plan.name} Plan (${plan.price})`,
+        services: planServices,
+        subscription_tier: plan.name.toLowerCase().includes('scale')
+          ? 'Premium Enterprise'
+          : plan.name.toLowerCase().includes('growth')
+          ? 'Growth'
+          : 'Standard',
       };
       await saveClient(updatedClient);
       setClient(updatedClient);

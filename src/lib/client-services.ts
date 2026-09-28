@@ -207,20 +207,24 @@ export const PLAN_SERVICE_PRESETS: Record<
   },
 };
 
-export function getServicesForPlan(planName?: string): string[] {
-  if (!planName) return PLAN_SERVICE_PRESETS.growth.services;
+export function getPresetForPlan(planName?: string) {
+  if (!planName) return PLAN_SERVICE_PRESETS.growth;
   const lower = planName.toLowerCase();
   if (lower.includes('starter') || lower.includes('basic') || lower.includes('14,999')) {
-    return PLAN_SERVICE_PRESETS.starter.services;
+    return PLAN_SERVICE_PRESETS.starter;
   }
   if (lower.includes('annual') || lower.includes('yearly') || lower.includes('brand partner')) {
-    return PLAN_SERVICE_PRESETS.annual_brand.services;
+    return PLAN_SERVICE_PRESETS.annual_brand;
   }
   if (lower.includes('scale') || lower.includes('enterprise') || lower.includes('79,999')) {
-    return PLAN_SERVICE_PRESETS.scale.services;
+    return PLAN_SERVICE_PRESETS.scale;
   }
   if (lower.includes('growth') || lower.includes('39,999') || lower.includes('cosmetics') || lower.includes('platform')) {
-    return PLAN_SERVICE_PRESETS.growth.services;
+    return PLAN_SERVICE_PRESETS.growth;
   }
-  return PLAN_SERVICE_PRESETS.growth.services;
+  return PLAN_SERVICE_PRESETS.growth;
+}
+
+export function getServicesForPlan(planName?: string): string[] {
+  return getPresetForPlan(planName).services;
 }
