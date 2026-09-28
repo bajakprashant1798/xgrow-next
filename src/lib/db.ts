@@ -1536,12 +1536,108 @@ export async function addProjectUpdate(
   return project;
 }
 
+export async function updateProjectUpdate(
+  projectId: string,
+  updateId: string,
+  updates: Partial<ProjectUpdateModel>
+): Promise<ProjectModel | null> {
+  const projects = await getProjects();
+  const project = projects.find((p) => p.id === projectId);
+  if (!project) return null;
+
+  project.updates = (project.updates || []).map((u) => {
+    if (u.id === updateId) {
+      return {
+        ...u,
+        ...updates,
+        updated_at: new Date().toISOString(),
+      };
+    }
+    return u;
+  });
+
+  setLocalItem(STORAGE_KEYS.PROJECTS, projects);
+
+  const supabase = getSupabaseClient();
+  if (supabase && updateId.length > 30) {
+    try {
+      await supabase
+        .from('project_updates')
+        .update({
+          ...(updates.title !== undefined ? { title: updates.title } : {}),
+          ...(updates.message !== undefined ? { message: updates.message } : {}),
+          ...(updates.progress_percent !== undefined ? { progress_percent: updates.progress_percent } : {}),
+          ...(updates.is_visible_to_client !== undefined ? { is_visible_to_client: updates.is_visible_to_client } : {}),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', updateId);
+    } catch (e) {
+      console.warn('Error updating project update in Supabase:', e);
+    }
+  }
+
+  return project;
+}
+
+export async function deleteProjectUpdate(
+  projectId: string,
+  updateId: string
+): Promise<ProjectModel | null> {
+  const projects = await getProjects();
+  const project = projects.find((p) => p.id === projectId);
+  if (!project) return null;
+
+  project.updates = (project.updates || []).filter((u) => u.id !== updateId);
+
+  setLocalItem(STORAGE_KEYS.PROJECTS, projects);
+
+  const supabase = getSupabaseClient();
+  if (supabase && updateId.length > 30) {
+    try {
+      await supabase.from('project_updates').delete().eq('id', updateId);
+    } catch (e) {
+      console.warn('Error deleting project update in Supabase:', e);
+    }
+  }
+
+  return project;
+}
+
+export async function getAllInvoices(): Promise<InvoiceDocumentModel[]> {
+  const [projects, clients] = await Promise.all([getProjects(), getClients()]);
+  const allInvoices: InvoiceDocumentModel[] = [];
+
+  for (const proj of projects) {
+    if (proj.invoices && Array.isArray(proj.invoices)) {
+      const client = clients.find((c) => c.id === proj.client_id);
+      for (const inv of proj.invoices) {
+        allInvoices.push({
+          ...inv,
+          project_id: proj.id,
+          project_name: proj.project_name,
+          client_id: proj.client_id,
+          client_name: client?.name || inv.client_name,
+          client_email: client?.email || inv.client_email,
+          client_company: client?.company_name || inv.client_company,
+        });
+      }
+    }
+  }
+
+  // Sort by created_at or issue_date descending
+  return allInvoices.sort((a, b) => {
+    const dateA = new Date(a.issue_date || a.created_at || '').getTime();
+    const dateB = new Date(b.issue_date || b.created_at || '').getTime();
+    return dateB - dateA;
+  });
+}
+
 export async function addProjectInvoice(
   projectId: string,
   invoice: Omit<InvoiceDocumentModel, 'id' | 'created_at'>
 ): Promise<ProjectModel | null> {
   const projects = await getProjects();
-  const project = projects.find(p => p.id === projectId);
+  const project = projects.find((p) => p.id === projectId);
   if (!project) return null;
 
   const newDoc: InvoiceDocumentModel = {
@@ -1574,6 +1670,64 @@ export async function addProjectInvoice(
 
   return project;
 }
+
+export async function updateProjectInvoice(
+  projectId: string,
+  invoiceId: string,
+  updates: Partial<InvoiceDocumentModel>
+): Promise<ProjectModel | null> {
+  const projects = await getProjects();
+  const project = projects.find((p) => p.id === projectId);
+  if (!project) return null;
+
+  project.invoices = (project.invoices || []).map((inv) =>
+    inv.id === invoiceId
+      ? { ...inv, ...updates, updated_at: new Date().toISOString() }
+      : inv
+  );
+  setLocalItem(STORAGE_KEYS.PROJECTS, projects);
+
+  const supabase = getSupabaseClient();
+  if (supabase && invoiceId.length > 30) {
+    try {
+      await supabase.from('invoices_documents').update({
+        title: updates.title,
+        amount: updates.amount,
+        status: updates.status,
+        notes: updates.notes,
+        due_date: updates.due_date,
+      }).eq('id', invoiceId);
+    } catch (e) {
+      console.warn('Error updating invoice in Supabase:', e);
+    }
+  }
+
+  return project;
+}
+
+export async function deleteProjectInvoice(
+  projectId: string,
+  invoiceId: string
+): Promise<ProjectModel | null> {
+  const projects = await getProjects();
+  const project = projects.find((p) => p.id === projectId);
+  if (!project) return null;
+
+  project.invoices = (project.invoices || []).filter((inv) => inv.id !== invoiceId);
+  setLocalItem(STORAGE_KEYS.PROJECTS, projects);
+
+  const supabase = getSupabaseClient();
+  if (supabase && invoiceId.length > 30) {
+    try {
+      await supabase.from('invoices_documents').delete().eq('id', invoiceId);
+    } catch (e) {
+      console.warn('Error deleting invoice from Supabase:', e);
+    }
+  }
+
+  return project;
+}
+
 
 // ==============================================================================
 // NOTIFICATIONS

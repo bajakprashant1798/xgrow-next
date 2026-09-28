@@ -68,6 +68,11 @@ const navItems: SidebarItem[] = [
     badge: 'Live',
   },
   {
+    title: 'Invoices & Billing',
+    href: '/admin/invoices',
+    icon: FileText,
+  },
+  {
     title: 'Team & Tasks',
     href: '/admin/team',
     icon: UserCheck,

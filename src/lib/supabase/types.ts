@@ -156,22 +156,43 @@ export interface ProjectUpdateModel {
   attachments?: { name: string; url: string }[];
   is_visible_to_client: boolean;
   created_at: string;
+  updated_at?: string;
+}
+
+export interface InvoiceLineItem {
+  id?: string;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  total: number;
 }
 
 export interface InvoiceDocumentModel {
   id: string;
   project_id?: string;
+  project_name?: string;
   client_id: string;
+  client_name?: string;
+  client_email?: string;
+  client_company?: string;
+  client_address?: string;
   type: DocumentType;
   title: string;
   reference_number?: string;
   file_url?: string;
   amount: number;
+  subtotal?: number;
+  tax_rate?: number;
+  tax_amount?: number;
+  discount_amount?: number;
   status: InvoiceStatus;
   issue_date: string;
   due_date?: string;
   notes?: string;
+  payment_terms?: string;
+  items?: InvoiceLineItem[];
   created_at?: string;
+  updated_at?: string;
 }
 
 export interface NotificationModel {

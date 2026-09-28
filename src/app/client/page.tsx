@@ -45,7 +45,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { getActiveClient } from '@/lib/client-auth';
 import { getProjects, getTeamMembers, getPricingPlans, saveClient, subscribeToDataChanges } from '@/lib/db';
-import { ProjectModel, ClientModel, TeamMemberModel, PricingPlanModel } from '@/lib/supabase/types';
+import { ProjectModel, ClientModel, TeamMemberModel, PricingPlanModel, InvoiceDocumentModel } from '@/lib/supabase/types';
+import { InvoiceViewModal } from '@/components/invoices/InvoiceViewModal';
 
 export default function ClientDashboardPage() {
   const [client, setClient] = useState<ClientModel | null>(null);
@@ -54,6 +55,10 @@ export default function ClientDashboardPage() {
   const [team, setTeam] = useState<TeamMemberModel[]>([]);
   const [pricingPlans, setPricingPlans] = useState<PricingPlanModel[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Invoices Modal state
+  const [selectedInvoice, setSelectedInvoice] = useState<InvoiceDocumentModel | null>(null);
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
 
   // Support message form
   const [supportMessage, setSupportMessage] = useState('');
@@ -688,34 +693,85 @@ export default function ClientDashboardPage() {
           <div className="space-y-8">
             {/* Invoices */}
             <section id="invoices" className="space-y-4">
-              <h3 className="text-lg font-extrabold tracking-tight text-foreground flex items-center gap-2">
-                <FileText className="h-5 w-5 text-cyan" />
-                Invoices & Quotations
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-extrabold tracking-tight text-foreground flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-cyan" />
+                  Invoices & Quotations
+                </h3>
+                {(activeProj.invoices || []).length > 0 && (
+                  <Badge variant="outline" className="text-[10px] border-cyan/30 text-cyan">
+                    {activeProj.invoices?.length} {activeProj.invoices?.length === 1 ? 'Document' : 'Documents'}
+                  </Badge>
+                )}
+              </div>
 
               <div className="space-y-3">
                 {(activeProj.invoices || []).length === 0 ? (
                   <Card className="rounded-3xl border-border bg-card/60 p-6 text-center text-xs text-muted-foreground">
-                    No billing documents issued for this project.
+                    No billing documents issued for this project yet.
                   </Card>
                 ) : (
                   activeProj.invoices?.map((inv) => (
-                    <Card key={inv.id} className="rounded-2xl border-border bg-card/60 p-4 space-y-2">
+                    <Card
+                      key={inv.id}
+                      onClick={() => {
+                        setSelectedInvoice(inv);
+                        setIsInvoiceModalOpen(true);
+                      }}
+                      className="group rounded-2xl border-border bg-card/60 p-4 space-y-3 hover:border-cyan/40 hover:bg-card/90 transition-all cursor-pointer shadow-sm hover:shadow-cyan/5"
+                    >
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-foreground uppercase">{inv.title}</span>
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-8 w-8 rounded-xl bg-cyan/10 text-cyan flex items-center justify-center group-hover:bg-cyan group-hover:text-slate-950 transition-colors">
+                            <FileText className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="font-bold text-xs text-foreground uppercase block group-hover:text-cyan transition-colors">
+                              {inv.title}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground font-mono">
+                              #{inv.reference_number || inv.id}
+                            </span>
+                          </div>
+                        </div>
                         <Badge
                           className={`text-[9px] uppercase font-black ${
                             inv.status === 'paid'
                               ? 'bg-emerald-500 text-slate-950'
+                              : inv.status === 'overdue'
+                              ? 'bg-red-500 text-white'
                               : 'bg-amber-400 text-slate-950'
                           }`}
                         >
                           {inv.status}
                         </Badge>
                       </div>
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-mono text-muted-foreground">₹{Number(inv.amount).toLocaleString('en-IN')}</span>
-                        <span className="text-[10px] text-muted-foreground">Issued: {inv.issue_date}</span>
+
+                      <div className="flex items-center justify-between text-xs pt-2 border-t border-border/60">
+                        <div>
+                          <span className="font-mono font-bold text-foreground text-sm">
+                            ₹{Number(inv.amount).toLocaleString('en-IN')}
+                          </span>
+                          {inv.issue_date && (
+                            <span className="text-[10px] text-muted-foreground block">
+                              Date: {inv.issue_date}
+                            </span>
+                          )}
+                        </div>
+
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="h-8 px-3 text-[11px] font-bold rounded-xl bg-cyan/15 hover:bg-cyan/25 text-cyan border border-cyan/30 flex items-center gap-1.5 transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedInvoice(inv);
+                            setIsInvoiceModalOpen(true);
+                          }}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          <span>View & Download</span>
+                        </Button>
                       </div>
                     </Card>
                   ))
@@ -787,6 +843,16 @@ export default function ClientDashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Invoice Viewer & PDF Modal */}
+      <InvoiceViewModal
+        invoice={selectedInvoice}
+        client={client}
+        project={activeProj}
+        open={isInvoiceModalOpen}
+        onOpenChange={setIsInvoiceModalOpen}
+        isAdminView={false}
+      />
     </div>
   );
 }

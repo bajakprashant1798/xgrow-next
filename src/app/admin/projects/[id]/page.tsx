@@ -31,6 +31,8 @@ import {
   RotateCcw,
   Zap,
   Link2,
+  Download,
+  Mail,
 } from 'lucide-react';
 import {
   Card,
@@ -75,7 +77,11 @@ import {
   addTask,
   updateTaskStatus,
   addProjectUpdate,
+  updateProjectUpdate,
+  deleteProjectUpdate,
   addProjectInvoice,
+  updateProjectInvoice,
+  deleteProjectInvoice,
   getTeamMembers,
   getClients,
   getServices,
@@ -92,7 +98,11 @@ import {
   ProjectStatus,
   TaskStatus,
   TaskPriority,
+  InvoiceDocumentModel,
 } from '@/lib/supabase/types';
+import { InvoiceViewModal } from '@/components/invoices/InvoiceViewModal';
+import { CreateInvoiceModal } from '@/components/invoices/CreateInvoiceModal';
+import { sendInvoiceEmail } from '@/lib/email-service';
 
 export const STATUS_CONFIG: Record<
   ProjectStatus,
@@ -275,9 +285,18 @@ export default function ProjectWorkspacePage({
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>('medium');
 
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
-  const [newInvoiceTitle, setNewInvoiceTitle] = useState('');
-  const [newInvoiceAmount, setNewInvoiceAmount] = useState<number>(24000);
-  const [newInvoiceType, setNewInvoiceType] = useState<'quotation' | 'invoice'>('invoice');
+  const [viewingInvoice, setViewingInvoice] = useState<InvoiceDocumentModel | null>(null);
+
+  // Activity Update Edit & Delete Modal
+  const [isEditUpdateModalOpen, setIsEditUpdateModalOpen] = useState(false);
+  const [editingUpdate, setEditingUpdate] = useState<ProjectUpdateModel | null>(null);
+  const [editUpdateTitle, setEditUpdateTitle] = useState('');
+  const [editUpdateMessage, setEditUpdateMessage] = useState('');
+  const [editUpdateProgress, setEditUpdateProgress] = useState<number | undefined>(undefined);
+  const [editUpdateVisibleToClient, setEditUpdateVisibleToClient] = useState(true);
+
+  const [isDeleteUpdateModalOpen, setIsDeleteUpdateModalOpen] = useState(false);
+  const [deletingUpdateId, setDeletingUpdateId] = useState<string | null>(null);
 
   const loadProject = async (isInitial = false) => {
     try {
@@ -617,24 +636,78 @@ export default function ProjectWorkspacePage({
     loadProject(false);
   };
 
-  // Invoice / Document action
-  const handleAddInvoice = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newInvoiceTitle.trim()) return;
+  // Edit and Delete Activity Updates
+  const handleOpenEditUpdate = (upd: ProjectUpdateModel) => {
+    setEditingUpdate(upd);
+    setEditUpdateTitle(upd.title || '');
+    setEditUpdateMessage(upd.message || '');
+    setEditUpdateProgress(upd.progress_percent);
+    setEditUpdateVisibleToClient(upd.is_visible_to_client ?? true);
+    setIsEditUpdateModalOpen(true);
+  };
 
-    await addProjectInvoice(project.id, {
-      client_id: project.client_id,
-      type: newInvoiceType,
-      title: newInvoiceTitle,
-      amount: newInvoiceAmount,
-      status: 'sent',
-      issue_date: new Date().toISOString().split('T')[0],
-      reference_number: `${newInvoiceType.toUpperCase().slice(0, 3)}-2026-${Math.floor(100 + Math.random() * 900)}`,
+  const handleSaveEditUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!project || !editingUpdate) return;
+    if (!editUpdateMessage.trim()) {
+      toast.error('Please enter an update message');
+      return;
+    }
+
+    await updateProjectUpdate(project.id, editingUpdate.id, {
+      title: editUpdateTitle.trim() || `Progress Update (${editUpdateProgress ?? project.progress_percentage}%)`,
+      message: editUpdateMessage.trim(),
+      progress_percent: typeof editUpdateProgress === 'number' ? editUpdateProgress : undefined,
+      is_visible_to_client: editUpdateVisibleToClient,
     });
 
-    toast.success(`${newInvoiceType === 'quotation' ? 'Quotation' : 'Invoice'} added!`);
-    setNewInvoiceTitle('');
-    setIsInvoiceModalOpen(false);
+    toast.success('Activity update successfully saved!');
+    setIsEditUpdateModalOpen(false);
+    setEditingUpdate(null);
+    loadProject(false);
+  };
+
+  const handleDeleteUpdate = async (updateId: string) => {
+    if (!project) return;
+    await deleteProjectUpdate(project.id, updateId);
+    toast.success('Activity update deleted');
+    setIsDeleteUpdateModalOpen(false);
+    setDeletingUpdateId(null);
+    loadProject(false);
+  };
+
+  // Invoice / Document actions
+  const handleStatusChangeInvoice = async (invoiceId: string, newStatus: any) => {
+    if (!project) return;
+    await updateProjectInvoice(project.id, invoiceId, { status: newStatus });
+    toast.success(`Invoice marked as ${newStatus}`);
+    if (viewingInvoice && viewingInvoice.id === invoiceId) {
+      setViewingInvoice({ ...viewingInvoice, status: newStatus });
+    }
+    loadProject(false);
+  };
+
+  const handleSendInvoiceEmail = async (inv: InvoiceDocumentModel) => {
+    if (!project) return;
+    const client = clients.find((c) => c.id === project.client_id);
+    const result = await sendInvoiceEmail({
+      invoice: inv,
+      client,
+      project,
+    });
+    if (result.simulated) {
+      toast.success(`📧 Invoice #${inv.reference_number || inv.id} queued for ${result.recipient}!`, {
+        description: 'Ready for live delivery when email API keys are connected.',
+      });
+    } else {
+      toast.success(`Invoice emailed directly to ${result.recipient}!`);
+    }
+  };
+
+  const handleDeleteInvoice = async (invoiceId: string) => {
+    if (!project) return;
+    await deleteProjectInvoice(project.id, invoiceId);
+    toast.success('Invoice deleted');
     loadProject(false);
   };
 
@@ -1208,93 +1281,193 @@ export default function ProjectWorkspacePage({
 
           {/* Timeline */}
           <div className="space-y-3 mt-6">
-            {(project.updates || []).map((upd) => (
-              <div key={upd.id} className="p-4 rounded-2xl border border-border bg-card/40 space-y-1.5">
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-foreground">{upd.title}</span>
-                    {upd.progress_percent !== undefined && (
-                      <Badge className="bg-cyan/15 text-cyan border border-cyan/30 text-[10px]">
-                        {upd.progress_percent}%
-                      </Badge>
-                    )}
+            {(project.updates || []).length === 0 ? (
+              <Card className="rounded-2xl border border-dashed border-border p-6 text-center bg-card/30">
+                <Send className="mx-auto h-6 w-6 text-muted-foreground/50 mb-2" />
+                <p className="text-xs font-semibold text-foreground">No activity updates posted yet</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Post live milestones or announcements to keep the client informed.
+                </p>
+              </Card>
+            ) : (
+              (project.updates || []).map((upd) => (
+                <div
+                  key={upd.id}
+                  className="group p-4 rounded-2xl border border-border bg-card/40 hover:border-cyan/30 hover:bg-card/70 transition-all space-y-2 relative"
+                >
+                  <div className="flex items-start justify-between gap-2 text-xs">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-bold text-foreground">{upd.title}</span>
+                      {upd.progress_percent !== undefined && (
+                        <Badge className="bg-cyan/15 text-cyan border border-cyan/30 text-[10px]">
+                          {upd.progress_percent}%
+                        </Badge>
+                      )}
+                      {!upd.is_visible_to_client && (
+                        <Badge variant="outline" className="text-[9px] border-amber-500/40 text-amber-400 bg-amber-500/10">
+                          Internal Only
+                        </Badge>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="text-[11px] text-muted-foreground font-mono mr-1">
+                        {new Date(upd.created_at).toLocaleString('en-IN', {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                        {upd.updated_at && (
+                          <span className="text-[9px] text-cyan block text-right font-sans">
+                            (edited)
+                          </span>
+                        )}
+                      </span>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleOpenEditUpdate(upd)}
+                        title="Edit update"
+                        className="h-7 w-7 rounded-lg text-muted-foreground hover:text-cyan hover:bg-cyan/10"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setDeletingUpdateId(upd.id);
+                          setIsDeleteUpdateModalOpen(true);
+                        }}
+                        title="Delete update"
+                        className="h-7 w-7 rounded-lg text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
-                  <span className="text-[11px] text-muted-foreground font-mono">
-                    {new Date(upd.created_at).toLocaleString('en-IN', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </span>
+
+                  <p className="text-xs text-foreground/90 whitespace-pre-line leading-relaxed pl-1 border-l-2 border-cyan/40">
+                    &ldquo;{upd.message}&rdquo;
+                  </p>
+
+                  <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1">
+                    <span className="text-cyan font-semibold">
+                      By {upd.author_name} ({upd.author_role || 'Lead'})
+                    </span>
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  &ldquo;{upd.message}&rdquo;
-                </p>
-                <p className="text-[10px] text-cyan font-semibold">
-                  By {upd.author_name} ({upd.author_role || 'Lead'})
-                </p>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </TabsContent>
 
         {/* 4. INVOICES TAB */}
         <TabsContent value="invoices" className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="font-bold text-base text-foreground">Quotations & Invoices</h3>
               <p className="text-xs text-muted-foreground">
-                Attach billing and scope documents visible on the client portal.
+                Attach billing and scope documents visible on the client portal with PDF download and email dispatch.
               </p>
             </div>
             <Button
               onClick={() => setIsInvoiceModalOpen(true)}
               size="sm"
-              className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4"
+              className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4 shadow-sm gap-1.5"
             >
-              <Plus className="h-3.5 w-3.5 mr-1" /> Add Invoice / Quote
+              <Plus className="h-3.5 w-3.5" /> Add Invoice / Quote
             </Button>
           </div>
 
           <div className="space-y-3">
-            {(project.invoices || []).map((inv) => (
-              <div
-                key={inv.id}
-                className="p-4 rounded-2xl border border-border bg-card/60 flex items-center justify-between"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-2xl bg-cyan/15 text-cyan flex items-center justify-center">
-                    <FileText className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-foreground">{inv.title}</span>
-                      <span className="text-xs text-muted-foreground font-mono">({inv.reference_number})</span>
+            {(project.invoices || []).length === 0 ? (
+              <Card className="rounded-3xl border border-dashed border-border p-8 text-center bg-card/30">
+                <FileText className="mx-auto h-8 w-8 text-cyan mb-2" />
+                <p className="text-xs font-bold text-foreground">No invoices or quotations yet</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Create a new invoice or quotation to issue to the client.
+                </p>
+                <Button
+                  onClick={() => setIsInvoiceModalOpen(true)}
+                  size="sm"
+                  variant="outline"
+                  className="mt-3 rounded-full text-xs font-bold"
+                >
+                  <Plus className="h-3 w-3 mr-1" /> Create First Invoice
+                </Button>
+              </Card>
+            ) : (
+              (project.invoices || []).map((inv) => (
+                <div
+                  key={inv.id}
+                  className="p-4 rounded-2xl border border-border bg-card/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-cyan/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-2xl bg-cyan/15 text-cyan flex items-center justify-center shrink-0">
+                      <FileText className="h-5 w-5" />
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Issued: {inv.issue_date} {inv.due_date && `· Due: ${inv.due_date}`}
-                    </p>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm text-foreground">{inv.title}</span>
+                        <span className="text-xs text-muted-foreground font-mono">({inv.reference_number || inv.id})</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Issued: {inv.issue_date || '28 Sep 2026'} {inv.due_date && `· Due: ${inv.due_date}`}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between sm:justify-end gap-3 flex-wrap">
+                    <span className="text-base font-extrabold text-foreground font-mono">
+                      ₹{Number(inv.amount).toLocaleString('en-IN')}
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full ${
+                        inv.status === 'paid'
+                          ? 'border-emerald-500/40 text-emerald-500 bg-emerald-500/10'
+                          : 'border-cyan/40 text-cyan bg-cyan/10'
+                      }`}
+                    >
+                      {inv.status}
+                    </Badge>
+
+                    <div className="flex items-center gap-1.5 ml-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setViewingInvoice(inv)}
+                        className="h-8 rounded-xl text-xs font-bold border-cyan/30 text-cyan hover:bg-cyan/10 gap-1"
+                      >
+                        <Download className="h-3 w-3" /> View / PDF
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => handleSendInvoiceEmail(inv)}
+                        title="Email Invoice"
+                        className="h-8 w-8 rounded-lg text-muted-foreground hover:text-cyan hover:bg-cyan/10"
+                      >
+                        <Mail className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => handleDeleteInvoice(inv.id)}
+                        title="Delete Invoice"
+                        className="h-8 w-8 rounded-lg text-rose-400 hover:bg-rose-500/10"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-4">
-                  <span className="text-base font-extrabold text-foreground">
-                    ₹{inv.amount.toLocaleString('en-IN')}
-                  </span>
-                  <Badge
-                    variant="outline"
-                    className={`text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full ${
-                      inv.status === 'paid'
-                        ? 'border-emerald-500/40 text-emerald-500 bg-emerald-500/10'
-                        : 'border-cyan/40 text-cyan bg-cyan/10'
-                    }`}
-                  >
-                    {inv.status}
-                  </Badge>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </TabsContent>
       </Tabs>
@@ -1703,51 +1876,154 @@ export default function ProjectWorkspacePage({
         </DialogContent>
       </Dialog>
 
-      {/* 6. Add Invoice Modal */}
-      <Dialog open={isInvoiceModalOpen} onOpenChange={setIsInvoiceModalOpen}>
-        <DialogContent className="max-w-md rounded-3xl p-6">
+      {/* 6. Create Invoice Modal */}
+      <CreateInvoiceModal
+        open={isInvoiceModalOpen}
+        onOpenChange={setIsInvoiceModalOpen}
+        defaultProjectId={project.id}
+        onInvoiceCreated={() => loadProject(false)}
+      />
+
+      {/* 7. View & Print Invoice Modal */}
+      <InvoiceViewModal
+        invoice={viewingInvoice}
+        client={clients.find((c) => c.id === project.client_id)}
+        project={project}
+        open={Boolean(viewingInvoice)}
+        onOpenChange={(open) => {
+          if (!open) setViewingInvoice(null);
+        }}
+        isAdminView={true}
+        onStatusChange={(newStatus) => {
+          if (viewingInvoice) handleStatusChangeInvoice(viewingInvoice.id, newStatus);
+        }}
+      />
+
+      {/* 8. Edit Activity Update Modal */}
+      <Dialog open={isEditUpdateModalOpen} onOpenChange={setIsEditUpdateModalOpen}>
+        <DialogContent className="max-w-md rounded-3xl p-6 bg-card border border-border text-foreground">
           <DialogHeader>
-            <DialogTitle className="text-lg font-bold">Add Quotation / Invoice</DialogTitle>
+            <DialogTitle className="text-base font-bold flex items-center gap-2">
+              <Pencil className="h-4 w-4 text-cyan" />
+              Edit Activity Update
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Modify the headline, progress milestone, or message for this live update.
+            </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleAddInvoice} className="space-y-3 mt-2">
-            <div className="space-y-1">
-              <label className="text-xs font-bold">Document Type</label>
-              <Select value={newInvoiceType} onValueChange={(v: any) => setNewInvoiceType(v)}>
-                <SelectTrigger className="text-xs rounded-xl">
-                  <SelectValue placeholder="Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="invoice">Invoice</SelectItem>
-                  <SelectItem value="quotation">Quotation / Estimate</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-bold">Title</label>
+
+          <form onSubmit={handleSaveEditUpdate} className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-foreground">Update Headline / Title</label>
               <Input
-                placeholder="e.g. Final Phase 2 Invoice"
-                value={newInvoiceTitle}
-                onChange={(e) => setNewInvoiceTitle(e.target.value)}
-                required
+                value={editUpdateTitle}
+                onChange={(e) => setEditUpdateTitle(e.target.value)}
+                placeholder="e.g. Progress Update (45%)"
                 className="text-xs rounded-xl"
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-xs font-bold">Amount (₹)</label>
-              <Input
-                type="number"
-                value={newInvoiceAmount}
-                onChange={(e) => setNewInvoiceAmount(parseFloat(e.target.value) || 0)}
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-foreground">
+                Update Message <span className="text-rose-400">*</span>
+              </label>
+              <Textarea
+                rows={4}
+                value={editUpdateMessage}
+                onChange={(e) => setEditUpdateMessage(e.target.value)}
+                placeholder="Detailed explanation of deliverables, testing completed, or next steps..."
+                className="text-xs rounded-xl"
                 required
-                className="text-xs rounded-xl font-bold"
               />
             </div>
-            <DialogFooter className="pt-2">
-              <Button type="submit" className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-5">
-                Create & Send
+
+            <div className="grid grid-cols-2 gap-3 items-center">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-foreground">Progress Milestone %</label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={editUpdateProgress !== undefined ? editUpdateProgress : ''}
+                  onChange={(e) =>
+                    setEditUpdateProgress(e.target.value !== '' ? Number(e.target.value) : undefined)
+                  }
+                  placeholder="e.g. 50"
+                  className="text-xs rounded-xl"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-foreground">Client Portal</label>
+                <div className="flex items-center gap-2 pt-1">
+                  <Switch
+                    checked={editUpdateVisibleToClient}
+                    onCheckedChange={setEditUpdateVisibleToClient}
+                  />
+                  <span className="text-[11px] text-muted-foreground">
+                    {editUpdateVisibleToClient ? 'Public to Client' : 'Internal Note'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsEditUpdateModalOpen(false)}
+                className="rounded-xl text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                className="rounded-xl bg-cyan text-slate-950 font-bold text-xs px-4"
+              >
+                Save Changes
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* 9. Delete Activity Update Confirmation Modal */}
+      <Dialog open={isDeleteUpdateModalOpen} onOpenChange={setIsDeleteUpdateModalOpen}>
+        <DialogContent className="max-w-sm rounded-3xl p-6 bg-card border border-border text-foreground">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold flex items-center gap-2 text-rose-400">
+              <Trash2 className="h-4 w-4" />
+              Delete Activity Update?
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Are you sure you want to permanently delete this update from the project timeline and client history?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0 pt-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsDeleteUpdateModalOpen(false);
+                setDeletingUpdateId(null);
+              }}
+              className="rounded-xl text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={() => deletingUpdateId && handleDeleteUpdate(deletingUpdateId)}
+              className="rounded-xl text-xs font-bold"
+            >
+              Confirm Delete
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
