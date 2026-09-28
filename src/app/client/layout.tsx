@@ -111,7 +111,7 @@ export default function ClientLayout({
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Top Header */}
-      <header className="h-20 border-b border-border bg-card/60 backdrop-blur-xl px-4 sm:px-8 flex items-center justify-between sticky top-0 z-30">
+      <header className="h-20 border-b border-border bg-card/90 backdrop-blur-xl px-4 sm:px-8 flex items-center justify-between sticky top-0 z-40 transition-colors">
         {/* Brand Logo & Client Badge */}
         <div className="flex items-center gap-4">
           <Logo
@@ -239,7 +239,7 @@ export default function ClientLayout({
           </Button>
 
           {/* Client Account Menu */}
-          <DropdownMenu>
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <button className="flex items-center gap-2 pl-2 focus:outline-none">
                 <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-cyan to-indigo-500 p-0.5 shadow-sm">
@@ -258,7 +258,7 @@ export default function ClientLayout({
                 <ChevronDown className="h-3 w-3 text-muted-foreground hidden lg:block" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-60 rounded-2xl p-1.5 shadow-xl">
+            <DropdownMenuContent align="end" className="w-60 rounded-2xl p-1.5 shadow-xl bg-card/95 backdrop-blur-xl z-50 border-border">
               <DropdownMenuLabel>
                 <p className="text-xs font-bold text-foreground">{activeClient?.name || user?.name}</p>
                 <p className="text-[10px] text-muted-foreground">{activeClient?.email || user?.email}</p>

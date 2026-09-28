@@ -55,7 +55,7 @@ export function AdminTopbar() {
   };
 
   return (
-    <header className="h-20 border-b border-border bg-card/40 backdrop-blur-xl px-6 flex items-center justify-between sticky top-0 z-30">
+    <header className="h-20 border-b border-border bg-card/90 backdrop-blur-xl px-4 sm:px-6 flex items-center justify-between sticky top-0 z-40 transition-colors">
       {/* Search Input */}
       <div className="relative w-full max-w-md hidden sm:block">
         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -68,7 +68,7 @@ export function AdminTopbar() {
       {/* Right Controls */}
       <div className="flex items-center gap-3 ml-auto">
         {/* Quick Action Button */}
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
               size="sm"
@@ -77,7 +77,7 @@ export function AdminTopbar() {
               <Plus className="h-3.5 w-3.5 mr-1.5" /> Quick Create
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52 rounded-2xl p-1.5">
+          <DropdownMenuContent align="end" className="w-52 rounded-2xl p-1.5 shadow-xl bg-card/95 backdrop-blur-xl z-50 border-border">
             <DropdownMenuLabel className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
               Add New
             </DropdownMenuLabel>
@@ -100,12 +100,13 @@ export function AdminTopbar() {
         </DropdownMenu>
 
         {/* Notifications Dropdown */}
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
               variant="outline"
               size="icon"
-              className="relative h-9 w-9 rounded-full border-border bg-surface/60"
+              className="relative h-9 w-9 rounded-full border-border bg-surface/60 hover:bg-surface focus:outline-none"
+              aria-label="View notifications"
             >
               <Bell className="h-4 w-4 text-foreground" />
               {unreadCount > 0 && (
@@ -115,7 +116,7 @@ export function AdminTopbar() {
               )}
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-80 rounded-2xl p-2 shadow-2xl border-border">
+          <DropdownMenuContent align="end" className="w-80 rounded-2xl p-2 shadow-2xl border-border bg-card/95 backdrop-blur-xl z-50">
             <div className="flex items-center justify-between px-3 py-2 border-b border-border">
               <span className="text-xs font-bold text-foreground">Notifications</span>
               {unreadCount > 0 && (
@@ -179,7 +180,7 @@ export function AdminTopbar() {
         </Button>
 
         {/* User Profile Avatar Dropdown */}
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-2 pl-2 focus:outline-none">
               <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-cyan to-indigo-500 p-0.5 shadow-sm">
@@ -197,7 +198,7 @@ export function AdminTopbar() {
               </div>
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-60 rounded-2xl p-1.5 shadow-xl">
+          <DropdownMenuContent align="end" className="w-60 rounded-2xl p-1.5 shadow-xl bg-card/95 backdrop-blur-xl z-50 border-border">
             <DropdownMenuLabel>
               <p className="text-xs font-bold">{user?.name || 'Prashant Bajak'}</p>
               <p className="text-[10px] text-muted-foreground font-mono">{user?.email || 'bajakprashant1998@gmail.com'}</p>

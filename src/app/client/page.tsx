@@ -457,8 +457,8 @@ export default function ClientDashboardPage() {
                   {activeProj.project_name}
                 </h2>
                 <div className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground">
-                  <User className="h-3.5 w-3.5 text-cyan" />
-                  <span>
+                  <User className="h-3.5 w-3.5 text-cyan shrink-0" />
+                  <span className="truncate">
                     Project Manager:{' '}
                     <strong className="text-foreground">
                       {activeProj.assigned_manager?.name ||
@@ -469,18 +469,21 @@ export default function ClientDashboardPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <span className="text-3xl sm:text-4xl font-black text-cyan">
-                    {activeProj.progress_percentage}%
-                  </span>
+              <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 pt-3 sm:pt-0 border-t border-border/40 sm:border-0">
+                <div className="text-left sm:text-right">
+                  <div className="flex items-baseline gap-1.5 sm:justify-end">
+                    <span className="text-3xl sm:text-4xl font-black text-cyan">
+                      {activeProj.progress_percentage}%
+                    </span>
+                    <span className="text-xs font-bold text-muted-foreground">Complete</span>
+                  </div>
                   <span className="text-[10px] text-muted-foreground block uppercase font-bold tracking-widest">
                     Current Stage: <span className="text-foreground uppercase font-black">{activeProj.status.replace('_', ' ')}</span>
                   </span>
                 </div>
                 <Badge
                   variant="outline"
-                  className="text-xs uppercase font-extrabold tracking-wider px-3 py-1 rounded-full border-cyan/40 text-cyan bg-cyan/10"
+                  className="text-xs uppercase font-extrabold tracking-wider px-3 py-1.5 rounded-full border-cyan/40 text-cyan bg-cyan/10 shrink-0"
                 >
                   ● {activeProj.status.replace('_', ' ')}
                 </Badge>
@@ -488,20 +491,71 @@ export default function ClientDashboardPage() {
             </div>
 
             {/* Progress Visual Bar */}
-            <div>
-              <div className="w-full bg-surface rounded-full h-3.5 overflow-hidden p-0.5 border border-border">
+            <div className="space-y-3 pt-2">
+              {/* Progress Track */}
+              <div className="w-full bg-surface/80 rounded-full h-3 sm:h-3.5 overflow-hidden p-0.5 border border-border shadow-inner">
                 <div
-                  className="bg-gradient-to-r from-cyan via-indigo-500 to-cyan h-full rounded-full transition-all duration-700 shadow-sm"
-                  style={{ width: `${activeProj.progress_percentage}%` }}
-                />
+                  className="bg-gradient-to-r from-cyan via-indigo-500 to-cyan h-full rounded-full transition-all duration-700 shadow-sm relative overflow-hidden"
+                  style={{ width: `${Math.max(4, activeProj.progress_percentage)}%` }}
+                >
+                  <div className="absolute inset-0 bg-white/20 animate-pulse" />
+                </div>
               </div>
-              <div className="flex items-center justify-between text-[11px] text-muted-foreground mt-2 font-mono">
-                <span>0% Kickoff</span>
-                <span>Requirement</span>
-                <span>UI Design</span>
-                <span>Development</span>
-                <span>Testing</span>
-                <span>100% Live Delivery</span>
+
+              {/* Desktop Timeline Stage Labels (>= 640px) */}
+              <div className="hidden sm:flex items-center justify-between text-[11px] text-muted-foreground font-mono">
+                <span className={activeProj.progress_percentage >= 0 ? 'text-cyan font-bold' : ''}>0% Kickoff</span>
+                <span className={activeProj.progress_percentage >= 20 ? 'text-cyan font-bold' : ''}>Requirements</span>
+                <span className={activeProj.progress_percentage >= 40 ? 'text-cyan font-bold' : ''}>UI Design</span>
+                <span className={activeProj.progress_percentage >= 65 ? 'text-cyan font-bold' : ''}>Development</span>
+                <span className={activeProj.progress_percentage >= 85 ? 'text-cyan font-bold' : ''}>Testing</span>
+                <span className={activeProj.progress_percentage >= 100 ? 'text-cyan font-bold' : ''}>100% Live Delivery</span>
+              </div>
+
+              {/* Mobile Responsive Step Badges (< 640px) */}
+              <div className="sm:hidden space-y-2.5">
+                <div className="flex items-center justify-between text-[10px] font-mono text-muted-foreground px-0.5">
+                  <span>0% Start</span>
+                  <span className="text-cyan font-bold font-sans text-xs">
+                    Stage: {activeProj.status.replace('_', ' ').toUpperCase()} ({activeProj.progress_percentage}%)
+                  </span>
+                  <span>100% Live</span>
+                </div>
+
+                {/* 3x2 Grid of Clean Stage Chips for Mobile */}
+                <div className="grid grid-cols-3 gap-1.5 pt-1">
+                  {[
+                    { name: 'Kickoff', min: 0 },
+                    { name: 'Design', min: 30 },
+                    { name: 'Develop', min: 55 },
+                    { name: 'Testing', min: 80 },
+                    { name: 'Deploy', min: 95 },
+                    { name: 'Live', min: 100 },
+                  ].map((step, sIdx) => {
+                    const isPassed = activeProj.progress_percentage >= step.min;
+                    const isCurrent =
+                      activeProj.progress_percentage >= step.min &&
+                      (sIdx === 5 || activeProj.progress_percentage < [0, 30, 55, 80, 95, 100][sIdx + 1]);
+
+                    return (
+                      <div
+                        key={step.name}
+                        className={`px-2 py-1.5 rounded-xl text-center text-[10px] font-bold border transition-colors ${
+                          isCurrent
+                            ? 'bg-cyan/15 border-cyan/50 text-cyan shadow-sm'
+                            : isPassed
+                            ? 'bg-surface/90 border-emerald-500/30 text-emerald-400'
+                            : 'bg-surface/40 border-border/60 text-muted-foreground/60'
+                        }`}
+                      >
+                        <span className="block leading-none">{step.name}</span>
+                        <span className="text-[8.5px] opacity-75 font-mono mt-0.5 block">
+                          {isPassed && !isCurrent ? '✓ done' : isCurrent ? 'active' : `${step.min}%`}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>

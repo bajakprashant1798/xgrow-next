@@ -55,7 +55,7 @@ export function Logo({
       {showSubtitle && (
         <span
           className={cn(
-            "font-bold uppercase tracking-[0.18em] text-[#00d2ff] leading-none mt-1",
+            "font-bold uppercase tracking-[0.18em] text-[#00d2ff] leading-none mt-1 truncate max-w-[130px] sm:max-w-xs block",
             size === "lg" ? "text-xs" : size === "sm" ? "text-[8.5px]" : "text-[9.5px] sm:text-[10px]"
           )}
         >
