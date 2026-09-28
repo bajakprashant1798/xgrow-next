@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
+import { Logo } from '@/components/site/Logo';
 import { useAuth } from '@/lib/auth-context';
 
 export default function ClientLoginPage() {
@@ -83,16 +84,9 @@ export default function ClientLoginPage() {
 
       <div className="w-full max-w-md space-y-6 relative z-10">
         {/* Brand Header */}
-        <div className="text-center space-y-2">
-          <Link href="/" className="inline-flex items-center gap-2">
-            <div className="h-10 w-10 rounded-xl bg-cyan/20 border border-cyan/40 flex items-center justify-center text-cyan font-black text-lg shadow-sm">
-              X
-            </div>
-            <span className="font-display font-extrabold text-2xl tracking-tight text-foreground">
-              XGRO
-            </span>
-          </Link>
-          <h1 className="text-2xl font-extrabold text-foreground">
+        <div className="flex flex-col items-center text-center space-y-2">
+          <Logo href="/" size="lg" />
+          <h1 className="text-2xl font-extrabold text-foreground pt-1">
             Sign In to Platform
           </h1>
           <p className="text-xs text-muted-foreground">

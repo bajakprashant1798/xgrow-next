@@ -28,6 +28,7 @@ import {
 import { getActiveClient, getActiveClientId } from '@/lib/client-auth';
 import { getNotifications, markAllNotificationsAsRead, getClients } from '@/lib/db';
 import { ClientModel, NotificationModel } from '@/lib/supabase/types';
+import { Logo } from '@/components/site/Logo';
 import { useAuth } from '@/lib/auth-context';
 
 export default function ClientLayout({
@@ -38,7 +39,7 @@ export default function ClientLayout({
   const router = useRouter();
   const pathname = usePathname();
   const { theme, toggle } = useTheme();
-  const { user, isLoading, signOut } = useAuth();
+  const { user, isLoading, signOut, isAdmin, isTeam } = useAuth();
 
   const [activeClient, setActiveClient] = useState<ClientModel | null>(null);
   const [notifications, setNotifications] = useState<NotificationModel[]>([]);
@@ -113,24 +114,11 @@ export default function ClientLayout({
       <header className="h-20 border-b border-border bg-card/60 backdrop-blur-xl px-4 sm:px-8 flex items-center justify-between sticky top-0 z-30">
         {/* Brand Logo & Client Badge */}
         <div className="flex items-center gap-4">
-          <Link href="/client" className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-cyan/20 border border-cyan/40 flex items-center justify-center text-cyan font-black text-lg shadow-sm">
-              X
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-display font-extrabold text-lg tracking-tight text-foreground">
-                  XGRO
-                </span>
-                <span className="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full bg-cyan/15 text-cyan border border-cyan/30">
-                  Client Portal
-                </span>
-              </div>
-              <p className="text-[11px] text-muted-foreground font-medium hidden sm:block">
-                {activeClient?.company_name || 'Project Workspace'}
-              </p>
-            </div>
-          </Link>
+          <Logo
+            href="/client"
+            badge="Client Portal"
+            subtitle={activeClient?.company_name || 'Project Workspace'}
+          />
         </div>
 
         {/* Navigation Tabs */}
@@ -272,24 +260,26 @@ export default function ClientLayout({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-60 rounded-2xl p-1.5 shadow-xl">
               <DropdownMenuLabel>
-                <p className="text-xs font-bold">{activeClient?.name}</p>
-                <p className="text-[10px] text-muted-foreground">{activeClient?.email}</p>
+                <p className="text-xs font-bold text-foreground">{activeClient?.name || user?.name}</p>
+                <p className="text-[10px] text-muted-foreground">{activeClient?.email || user?.email}</p>
+                {(activeClient?.company_name || user?.company_name) && (
+                  <p className="text-[10px] text-cyan font-medium mt-0.5">{activeClient?.company_name || user?.company_name}</p>
+                )}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href="/admin" className="flex items-center gap-2 text-xs py-2 cursor-pointer">
-                  <ShieldCheck className="h-3.5 w-3.5 text-cyan" /> Switch to Admin Dashboard
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/client/login" className="flex items-center gap-2 text-xs py-2 cursor-pointer">
-                  <ExternalLink className="h-3.5 w-3.5" /> Switch Client Account
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
+              {(isAdmin || isTeam) && user?.role !== 'client' && (
+                <>
+                  <DropdownMenuItem asChild>
+                    <Link href="/admin" className="flex items-center gap-2 text-xs py-2 cursor-pointer font-semibold text-cyan">
+                      <ShieldCheck className="h-3.5 w-3.5 text-cyan" /> Return to Admin Panel
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
               <DropdownMenuItem
                 onClick={handleLogout}
-                className="flex items-center gap-2 text-xs py-2 text-destructive cursor-pointer"
+                className="flex items-center gap-2 text-xs py-2 text-destructive cursor-pointer font-medium"
               >
                 <LogOut className="h-3.5 w-3.5" /> Log Out
               </DropdownMenuItem>

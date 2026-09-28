@@ -18,6 +18,7 @@ import {
   Building,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Logo } from '@/components/site/Logo';
 
 interface SidebarItem {
   title: string;
@@ -89,24 +90,7 @@ export function AdminSidebar() {
       <div>
         {/* Logo & Brand Header */}
         <div className="h-20 px-6 flex items-center justify-between border-b border-border">
-          <Link href="/admin" className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-cyan/20 border border-cyan/40 flex items-center justify-center text-cyan font-black text-lg shadow-sm">
-              X
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-display font-extrabold text-lg tracking-tight text-foreground">
-                  XGRO
-                </span>
-                <span className="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full bg-cyan/15 text-cyan border border-cyan/30">
-                  Admin
-                </span>
-              </div>
-              <p className="text-[11px] text-muted-foreground font-medium">
-                Agency Control Center
-              </p>
-            </div>
-          </Link>
+          <Logo href="/admin" badge="Admin" subtitle="Agency Control Center" />
         </div>
 
         {/* Navigation Items */}

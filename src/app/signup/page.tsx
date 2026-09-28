@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { Logo } from '@/components/site/Logo';
 import { useAuth, AppRole } from '@/lib/auth-context';
 import { checkUserEmailExists } from '@/lib/db';
 
@@ -119,16 +120,9 @@ export default function SignupPage() {
 
       <div className="w-full max-w-lg space-y-6 relative z-10">
         {/* Brand Header */}
-        <div className="text-center space-y-2">
-          <Link href="/" className="inline-flex items-center gap-2">
-            <div className="h-10 w-10 rounded-xl bg-cyan/20 border border-cyan/40 flex items-center justify-center text-cyan font-black text-lg shadow-sm">
-              X
-            </div>
-            <span className="font-display font-extrabold text-2xl tracking-tight text-foreground">
-              XGRO
-            </span>
-          </Link>
-          <h1 className="text-2xl font-extrabold text-foreground">
+        <div className="flex flex-col items-center text-center space-y-2">
+          <Logo href="/" size="lg" />
+          <h1 className="text-2xl font-extrabold text-foreground pt-1">
             Create Your Client Account
           </h1>
           <p className="text-xs text-muted-foreground">
