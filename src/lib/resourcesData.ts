@@ -15,19 +15,26 @@ export interface ResourceItem {
   id: string;
   title: string;
   description: string;
-  category: Exclude<ResourceCategory, "All">;
+  category: Exclude<ResourceCategory, "All"> | string;
   type: ResourceType;
   fileFormat: string;
   fileSize?: string;
+  thumbnail_url?: string;
+  thumbnailUrl?: string;
   downloadUrl?: string;
   linkUrl?: string;
   promptContent?: string;
   dateAdded: string;
   downloadCount: number;
   featured?: boolean;
-  gradient: string;
+  gradient?: string;
   tags: string[];
+  status?: "published" | "draft";
+  display_order?: number;
+  created_at?: string;
+  updated_at?: string;
 }
+
 
 export const RESOURCE_CATEGORIES: ResourceCategory[] = [
   "All",

@@ -31,6 +31,8 @@ import {
   initialTrustedLogos,
 } from './seed-data';
 
+import { initialResources, ResourceItem, ResourceType } from './resourcesData';
+
 import { getSupabaseClient } from './supabase/client';
 import { compressDataUrl } from './image-compressor';
 
@@ -43,6 +45,7 @@ const STORAGE_KEYS = {
   NOTIFICATIONS: 'xgro_notifications',
   TESTIMONIALS: 'xgro_testimonials',
   FAQS: 'xgro_faqs',
+  RESOURCES: 'xgro_cms_resources',
   ROLES: 'xgro_custom_roles',
   TRUSTED_LOGOS: 'xgro_trusted_logos',
   TRUSTED_SECTION_TITLE: 'xgro_trusted_section_title',
@@ -95,19 +98,24 @@ const inflightRequests: Record<string, Promise<any>> = {};
 
 // Helper to safely read from localStorage
 function getLocalItem<T>(key: string, fallback: T): T {
-  if (memoryCache[key]?.data !== undefined) {
+  if (memoryCache[key]?.data !== undefined && memoryCache[key]?.data !== null) {
     return memoryCache[key].data as T;
   }
   if (typeof window === 'undefined') return fallback;
   try {
     const item = localStorage.getItem(key);
-    if (!item) {
-      try {
-        localStorage.setItem(key, JSON.stringify(fallback));
-      } catch (_) {}
+    if (!item || item === 'null' || item === 'undefined') {
+      if (fallback !== null && fallback !== undefined) {
+        try {
+          localStorage.setItem(key, JSON.stringify(fallback));
+        } catch (_) {}
+      }
       return fallback;
     }
     const parsed = JSON.parse(item) as T;
+    if (parsed === null || parsed === undefined) {
+      return fallback;
+    }
     memoryCache[key] = { data: parsed, timestamp: Date.now() };
     return parsed;
   } catch (e) {
@@ -140,16 +148,16 @@ async function fetchWithSWR<T>(
   const cached = memoryCache[key];
 
   // 1. If memory cache exists and is fresh (< CACHE_TTL_MS), return immediately (0ms)
-  if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+  if (cached && cached.data !== undefined && cached.data !== null && now - cached.timestamp < CACHE_TTL_MS) {
     return cached.data as T;
   }
 
   // 2. If memory cache exists but is stale, or localStorage has data:
   // Return the cached data instantly AND trigger non-blocking background refresh
-  let immediateData: T | null = cached ? (cached.data as T) : null;
+  let immediateData: T | null = cached && cached.data !== undefined && cached.data !== null ? (cached.data as T) : null;
   if (!immediateData && typeof window !== 'undefined') {
-    const local = getLocalItem<T>(key, null as any);
-    if (local) {
+    const local = getLocalItem<T>(key, fallback);
+    if (local !== null && local !== undefined) {
       immediateData = local;
       memoryCache[key] = { data: local, timestamp: now };
     }
@@ -1767,6 +1775,191 @@ export async function deleteFaq(id: string): Promise<void> {
     }
   }
 }
+
+// ==============================================================================
+// FREE RESOURCES CRUD & SUPABASE PERSISTENCE
+// ==============================================================================
+export async function getResources(options?: { includeDrafts?: boolean }): Promise<ResourceItem[]> {
+  const items = await fetchWithSWR<ResourceItem[]>(
+    STORAGE_KEYS.RESOURCES,
+    async () => {
+      const supabase = getSupabaseClient();
+      if (!supabase) return null;
+      try {
+        const { data, error } = await supabase
+          .from('resources')
+          .select('*')
+          .order('display_order', { ascending: true });
+        if (!error && data && data.length > 0) {
+          return data.map((item: any) => ({
+            id: item.id,
+            title: item.title,
+            description: item.description || '',
+            category: item.category,
+            type: item.type,
+            fileFormat: item.file_format || item.fileFormat || 'PDF Document',
+            fileSize: item.file_size || item.fileSize || 'Instant',
+            thumbnail_url: item.thumbnail_url || item.thumbnailUrl,
+            thumbnailUrl: item.thumbnail_url || item.thumbnailUrl,
+            downloadUrl: item.download_url || item.downloadUrl,
+            linkUrl: item.link_url || item.linkUrl,
+            promptContent: item.prompt_content || item.promptContent,
+            dateAdded: item.date_added || item.dateAdded || (item.created_at ? new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }) : 'Aug 12, 2026'),
+            downloadCount: item.download_count ?? item.downloadCount ?? 0,
+            featured: !!item.featured,
+            gradient: item.gradient || 'from-purple-600 via-pink-600 to-rose-600',
+            tags: Array.isArray(item.tags) ? item.tags : typeof item.tags === 'string' ? item.tags.split(',').map((t: string) => t.trim()).filter(Boolean) : [],
+            status: (item.status as 'published' | 'draft') || 'published',
+            display_order: item.display_order ?? 0,
+            created_at: item.created_at,
+            updated_at: item.updated_at,
+          })) as ResourceItem[];
+        }
+      } catch (e) {
+        console.warn('Could not query resources from Supabase:', e);
+      }
+      return null;
+    },
+    initialResources
+  );
+
+  const safeList = Array.isArray(items) && items.length > 0 ? items : initialResources;
+  if (options?.includeDrafts) {
+    return safeList;
+  }
+  return safeList.filter((r) => r && r.status !== 'draft');
+}
+
+export async function saveResource(res: Partial<ResourceItem> & { title: string; category: string; type: ResourceType }): Promise<ResourceItem> {
+  const current = await getResources({ includeDrafts: true });
+  const existingIdx = current.findIndex((r) => r.id === res.id);
+  let saved: ResourceItem;
+
+  let thumbnail = res.thumbnail_url || res.thumbnailUrl;
+  if (thumbnail && thumbnail.startsWith('data:image/')) {
+    thumbnail = await compressDataUrl(thumbnail, 600, 400, 0.85);
+  }
+
+  if (existingIdx >= 0) {
+    saved = {
+      ...current[existingIdx],
+      ...res,
+      thumbnail_url: thumbnail,
+      thumbnailUrl: thumbnail,
+      tags: Array.isArray(res.tags) ? res.tags : [],
+      updated_at: new Date().toISOString(),
+    };
+    current[existingIdx] = saved;
+  } else {
+    saved = {
+      id: res.id || `res-${Date.now()}`,
+      title: res.title,
+      description: res.description || '',
+      category: res.category,
+      type: res.type,
+      fileFormat:
+        res.fileFormat ||
+        (res.type === 'prompt'
+          ? 'AI Prompt Pack'
+          : res.type === 'canva'
+          ? 'Canva Template'
+          : res.type === 'tool'
+          ? 'Interactive Tool'
+          : res.type === 'checklist'
+          ? 'PDF Checklist'
+          : 'PDF Document'),
+      fileSize: res.fileSize || (res.type === 'prompt' ? 'Instant Copy' : 'Instant'),
+      thumbnail_url: thumbnail,
+      thumbnailUrl: thumbnail,
+      downloadUrl: res.downloadUrl,
+      linkUrl: res.linkUrl,
+      promptContent: res.promptContent,
+      dateAdded: res.dateAdded || new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
+      downloadCount: res.downloadCount ?? 0,
+      featured: res.featured ?? false,
+      gradient: res.gradient || 'from-purple-600 via-pink-600 to-rose-600',
+      tags: Array.isArray(res.tags) ? res.tags : [],
+      status: res.status || 'published',
+      display_order: res.display_order ?? (current.length + 1),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    current.unshift(saved);
+  }
+
+  setLocalItem(STORAGE_KEYS.RESOURCES, current);
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      const isUUID = saved.id && saved.id.includes('-') && saved.id.length > 30;
+      const { data: upserted, error } = await supabase.from('resources').upsert({
+        id: isUUID ? saved.id : undefined,
+        title: saved.title,
+        description: saved.description,
+        category: saved.category,
+        type: saved.type,
+        file_format: saved.fileFormat,
+        file_size: saved.fileSize,
+        thumbnail_url: saved.thumbnail_url || saved.thumbnailUrl,
+        download_url: saved.downloadUrl,
+        link_url: saved.linkUrl,
+        prompt_content: saved.promptContent,
+        gradient: saved.gradient,
+        tags: saved.tags,
+        featured: saved.featured,
+        status: saved.status || 'published',
+        download_count: saved.downloadCount,
+        display_order: saved.display_order,
+      }).select().single();
+
+      if (!error && upserted) {
+        saved.id = upserted.id;
+        const updatedList = current.map((r) =>
+          r.id === saved.id ? { ...saved, id: upserted.id } : r
+        );
+        setLocalItem(STORAGE_KEYS.RESOURCES, updatedList);
+      }
+    } catch (e) {
+      console.warn('Error syncing resource to Supabase:', e);
+    }
+  }
+
+  return saved;
+}
+
+export async function deleteResource(id: string): Promise<void> {
+  const current = await getResources({ includeDrafts: true });
+  setLocalItem(STORAGE_KEYS.RESOURCES, current.filter((r) => r.id !== id));
+
+  const supabase = getSupabaseClient();
+  if (supabase && id.length > 30) {
+    try {
+      await supabase.from('resources').delete().eq('id', id);
+    } catch (e) {
+      console.warn('Error deleting resource from Supabase:', e);
+    }
+  }
+}
+
+export async function incrementResourceDownloads(id: string): Promise<void> {
+  const current = await getResources({ includeDrafts: true });
+  const item = current.find((r) => r.id === id);
+  if (!item) return;
+
+  item.downloadCount = (item.downloadCount || 0) + 1;
+  setLocalItem(STORAGE_KEYS.RESOURCES, current);
+
+  const supabase = getSupabaseClient();
+  if (supabase && id.length > 30) {
+    try {
+      await supabase.from('resources').update({ download_count: item.downloadCount }).eq('id', id);
+    } catch (e) {
+      console.warn('Error updating download count in Supabase:', e);
+    }
+  }
+}
+
 
 // ==============================================================================
 // ROLES & PERMISSIONS CRUD

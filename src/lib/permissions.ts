@@ -112,12 +112,12 @@ export const PERMISSION_MODULES: ModuleDefinition[] = [
   },
   {
     key: 'cms_content',
-    name: 'Website Content & FAQs',
-    description: 'Manage client testimonials, FAQ accordions, and marketing copy.',
+    name: 'Website Content & Free Resources',
+    description: 'Manage Free Resources Hub (AI Prompts, Canva templates, PDFs, tools), Trusted Logos, Testimonials, and FAQs.',
     actions: [
-      { key: 'view', label: 'View CMS Content', description: 'Preview testimonials and FAQs' },
-      { key: 'create_edit', label: 'Create & Edit', description: 'Add/edit testimonials and FAQ questions' },
-      { key: 'delete', label: 'Delete Content', description: 'Remove testimonials or FAQs' },
+      { key: 'view', label: 'View CMS Content', description: 'Browse and inspect website resources, brands, testimonials and FAQs' },
+      { key: 'create_edit', label: 'Create & Edit', description: 'Add or edit free resources, upload thumbnails, modify testimonials and FAQs' },
+      { key: 'delete', label: 'Delete Content', description: 'Permanently remove resources, testimonials or FAQs' },
     ],
   },
   {

@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   FolderKanban,
   Building,
+  Gift,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Logo } from '@/components/site/Logo';
@@ -53,6 +54,12 @@ const navItems: SidebarItem[] = [
     title: 'Pricing Plans',
     href: '/admin/pricing',
     icon: CreditCard,
+  },
+  {
+    title: 'Free Resources CMS',
+    href: '/admin/resources',
+    icon: Gift,
+    badge: 'Hub',
   },
   {
     title: 'Projects & Milestones',

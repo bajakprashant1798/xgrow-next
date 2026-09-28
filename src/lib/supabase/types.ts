@@ -245,3 +245,28 @@ export interface TrustedLogoModel {
   created_at?: string;
   updated_at?: string;
 }
+
+export interface ResourceItemModel {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  type: 'prompt' | 'canva' | 'pdf' | 'tool' | 'link' | 'checklist';
+  fileFormat: string;
+  fileSize?: string;
+  thumbnail_url?: string;
+  thumbnailUrl?: string;
+  downloadUrl?: string;
+  linkUrl?: string;
+  promptContent?: string;
+  dateAdded?: string;
+  downloadCount?: number;
+  featured?: boolean;
+  gradient?: string;
+  tags: string[];
+  status?: 'published' | 'draft';
+  display_order?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+

@@ -77,6 +77,7 @@ import {
 } from '@/lib/db';
 import { TestimonialModel, FaqModel, TrustedLogoModel } from '@/lib/supabase/types';
 import { compressImageFile } from '@/lib/image-compressor';
+import { AdminResourcesManager } from '@/components/admin/AdminResourcesManager';
 
 const PRESET_ICONS = [
   { name: 'Building2', icon: Building2, label: 'Building / Corporate' },
@@ -464,8 +465,11 @@ export default function CmsManagementPage() {
         </Button>
       </div>
 
-      <Tabs defaultValue="trusted-logos" className="space-y-6">
+      <Tabs defaultValue="resources" className="space-y-6">
         <TabsList className="bg-surface/80 p-1 rounded-2xl border border-border flex-wrap h-auto gap-1">
+          <TabsTrigger value="resources" className="rounded-xl text-xs font-bold px-4 py-2">
+            Free Resources Hub
+          </TabsTrigger>
           <TabsTrigger value="trusted-logos" className="rounded-xl text-xs font-bold px-4 py-2">
             Trusted Logos & Brands ({trustedLogos.length})
           </TabsTrigger>
@@ -476,6 +480,13 @@ export default function CmsManagementPage() {
             FAQs & Knowledge ({faqs.length})
           </TabsTrigger>
         </TabsList>
+
+        {/* ============================================================ */}
+        {/* 0. FREE RESOURCES HUB TAB                                    */}
+        {/* ============================================================ */}
+        <TabsContent value="resources" className="space-y-6">
+          <AdminResourcesManager />
+        </TabsContent>
 
         {/* ============================================================ */}
         {/* 1. TRUSTED LOGOS & BRANDS TAB                                */}
