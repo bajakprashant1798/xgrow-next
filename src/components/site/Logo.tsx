@@ -11,6 +11,7 @@ export interface LogoProps {
   showSubtitle?: boolean;
   subtitle?: string;
   size?: "sm" | "default" | "lg";
+  onClick?: () => void;
 }
 
 export function Logo({
@@ -20,6 +21,7 @@ export function Logo({
   showSubtitle = true,
   subtitle = "GROWTH STUDIO",
   size = "default",
+  onClick,
 }: LogoProps) {
   const logoImage = (
     <Image
@@ -83,6 +85,7 @@ export function Logo({
   return (
     <Link
       href={href}
+      onClick={onClick}
       className={cn("group flex items-center gap-2.5 transition-opacity hover:opacity-90 shrink-0", className)}
       aria-label="XGRO home"
     >

@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   ExternalLink,
   ChevronDown,
+  ArrowUp,
 } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
 import { Button } from '@/components/ui/button';
@@ -44,9 +45,27 @@ export default function ClientLayout({
   const [activeClient, setActiveClient] = useState<ClientModel | null>(null);
   const [notifications, setNotifications] = useState<NotificationModel[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [showScrollTop, setShowScrollTop] = useState(false);
 
   // If we're on the /client/login page, don't render portal header
   const isLoginPage = pathname === '/client/login';
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 280);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const handleScrollToTop = () => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (window.location.hash) {
+        window.history.replaceState(null, '', '/client');
+      }
+    }
+  };
 
   useEffect(() => {
     if (isLoginPage) return;
@@ -116,15 +135,17 @@ export default function ClientLayout({
         <div className="flex items-center gap-4">
           <Logo
             href="/client"
+            onClick={handleScrollToTop}
             badge="Client Portal"
             subtitle={activeClient?.company_name || 'Project Workspace'}
           />
         </div>
 
-        {/* Navigation Tabs */}
+        {/* Navigation Tabs (Desktop) */}
         <nav className="hidden md:flex items-center gap-1 bg-surface/60 p-1 rounded-full border border-border">
           <Link
             href="/client"
+            onClick={handleScrollToTop}
             className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
               pathname === '/client'
                 ? 'bg-cyan text-slate-950 shadow-sm'
@@ -294,10 +315,67 @@ export default function ClientLayout({
         </div>
       </header>
 
+      {/* Mobile Sub-Navigation Bar (Sticky & Horizontally Scrollable) */}
+      <div className="md:hidden border-b border-border bg-card/85 backdrop-blur-md px-3 py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar sticky top-20 z-30 shadow-sm">
+        <Link
+          href="/client"
+          onClick={handleScrollToTop}
+          className={`px-3 py-1 rounded-full text-[11px] font-bold shrink-0 transition-all ${
+            pathname === '/client'
+              ? 'bg-cyan text-slate-950 shadow-sm'
+              : 'bg-surface/80 text-muted-foreground hover:text-foreground border border-border'
+          }`}
+        >
+          Dashboard
+        </Link>
+        <a
+          href="#services"
+          className="px-3 py-1 rounded-full text-[11px] font-semibold bg-surface/80 text-muted-foreground hover:text-foreground border border-border shrink-0 transition-colors"
+        >
+          Our Services
+        </a>
+        <a
+          href="#milestones"
+          className="px-3 py-1 rounded-full text-[11px] font-semibold bg-surface/80 text-muted-foreground hover:text-foreground border border-border shrink-0 transition-colors"
+        >
+          Milestones
+        </a>
+        <a
+          href="#updates"
+          className="px-3 py-1 rounded-full text-[11px] font-semibold bg-surface/80 text-muted-foreground hover:text-foreground border border-border shrink-0 transition-colors"
+        >
+          Updates
+        </a>
+        <a
+          href="#invoices"
+          className="px-3 py-1 rounded-full text-[11px] font-semibold bg-surface/80 text-muted-foreground hover:text-foreground border border-border shrink-0 transition-colors"
+        >
+          Invoices
+        </a>
+        <a
+          href="#support"
+          className="px-3 py-1 rounded-full text-[11px] font-semibold bg-surface/80 text-muted-foreground hover:text-foreground border border-border shrink-0 transition-colors"
+        >
+          Team
+        </a>
+      </div>
+
       {/* Main Client Content */}
       <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
         {children}
       </main>
+
+      {/* Floating Scroll to Top Button */}
+      {showScrollTop && (
+        <button
+          onClick={handleScrollToTop}
+          className="fixed bottom-6 right-6 z-50 h-10 w-10 rounded-full bg-cyan text-slate-950 font-bold shadow-lg shadow-cyan/25 flex items-center justify-center hover:scale-110 active:scale-95 transition-all animate-in fade-in zoom-in duration-200 border border-cyan/40"
+          title="Scroll to Top"
+          aria-label="Scroll to Top"
+        >
+          <ArrowUp className="h-5 w-5" />
+        </button>
+      )}
 
       {/* Footer */}
       <footer className="border-t border-border py-6 px-4 sm:px-8 text-center text-xs text-muted-foreground bg-card/30">
