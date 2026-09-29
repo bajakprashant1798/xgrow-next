@@ -46,10 +46,14 @@ import { InvoiceViewModal } from '@/components/invoices/InvoiceViewModal';
 import { CreateInvoiceModal } from '@/components/invoices/CreateInvoiceModal';
 import { sendInvoiceEmail } from '@/lib/email-service';
 import { useAuth } from '@/lib/auth-context';
-import { hasPermission } from '@/lib/permissions';
+import { AdminAccessDenied } from '@/components/admin/AdminAccessDenied';
 
 export default function AdminInvoicesPage() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, hasPermission } = useAuth();
+  const canView = isAdmin || hasPermission('invoices', 'view');
+  const canCreateEdit = isAdmin || hasPermission('invoices', 'create_edit');
+  const canDelete = isAdmin || hasPermission('invoices', 'delete');
+
   const [invoices, setInvoices] = useState<InvoiceDocumentModel[]>([]);
   const [projects, setProjects] = useState<ProjectModel[]>([]);
   const [clients, setClients] = useState<ClientModel[]>([]);
@@ -126,6 +130,10 @@ export default function AdminInvoicesPage() {
 
   // Status Change Handler
   const handleStatusChange = async (inv: InvoiceDocumentModel, newStatus: any) => {
+    if (!canCreateEdit) {
+      toast.error('You do not have permission to modify invoice status');
+      return;
+    }
     if (!inv.project_id) return;
     try {
       await updateProjectInvoice(inv.project_id, inv.id, { status: newStatus });
@@ -165,6 +173,10 @@ export default function AdminInvoicesPage() {
 
   // Delete Handler
   const handleDeleteInvoice = async (inv: InvoiceDocumentModel) => {
+    if (!canDelete) {
+      toast.error('You do not have permission to delete invoices');
+      return;
+    }
     if (!inv.project_id) return;
     try {
       await deleteProjectInvoice(inv.project_id, inv.id);
@@ -175,6 +187,10 @@ export default function AdminInvoicesPage() {
       toast.error('Failed to delete invoice');
     }
   };
+
+  if (!canView) {
+    return <AdminAccessDenied moduleName="Invoices & Billing Hub" requiredAction="View Invoices" />;
+  }
 
   return (
     <div className="space-y-8 animate-in fade-in-50 duration-300">
@@ -194,13 +210,15 @@ export default function AdminInvoicesPage() {
           </p>
         </div>
 
-        <Button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-black text-xs px-4 h-9 shadow-md gap-1.5"
-        >
-          <Plus className="h-4 w-4 stroke-[3]" />
-          Create Invoice / Quote
-        </Button>
+        {canCreateEdit && (
+          <Button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-black text-xs px-4 h-9 shadow-md gap-1.5"
+          >
+            <Plus className="h-4 w-4 stroke-[3]" />
+            Create Invoice / Quote
+          </Button>
+        )}
       </div>
 
       {/* Metrics Banner */}
@@ -441,7 +459,7 @@ export default function AdminInvoicesPage() {
                           </Button>
 
                           {/* Quick Mark as Paid Toggle */}
-                          {!isPaid && (
+                          {canCreateEdit && !isPaid && (
                             <Button
                               size="icon"
                               variant="ghost"
@@ -454,15 +472,17 @@ export default function AdminInvoicesPage() {
                           )}
 
                           {/* Delete */}
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handleDeleteInvoice(inv)}
-                            title="Delete Invoice"
-                            className="h-8 w-8 rounded-lg text-rose-400 hover:bg-rose-500/10"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          {canDelete && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleDeleteInvoice(inv)}
+                              title="Delete Invoice"
+                              className="h-8 w-8 rounded-lg text-rose-400 hover:bg-rose-500/10"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -481,13 +501,15 @@ export default function AdminInvoicesPage() {
               ? 'No billing records match your current filters.'
               : 'No invoices or quotations have been issued yet.'}
           </p>
-          <Button
-            onClick={() => setIsCreateModalOpen(true)}
-            size="sm"
-            className="mt-4 rounded-full bg-cyan text-slate-950 font-bold text-xs"
-          >
-            <Plus className="mr-1 h-3.5 w-3.5 stroke-[3]" /> Issue First Invoice
-          </Button>
+          {canCreateEdit && (
+            <Button
+              onClick={() => setIsCreateModalOpen(true)}
+              size="sm"
+              className="mt-4 rounded-full bg-cyan text-slate-950 font-bold text-xs"
+            >
+              <Plus className="mr-1 h-3.5 w-3.5 stroke-[3]" /> Issue First Invoice
+            </Button>
+          )}
         </div>
       )}
 

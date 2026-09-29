@@ -6,26 +6,30 @@ import {
   LayoutDashboard,
   Layers,
   CreditCard,
-  Briefcase,
   Users,
   UserCheck,
   FileText,
   Settings,
   ExternalLink,
-  ChevronRight,
   ShieldCheck,
   FolderKanban,
   Building,
   Gift,
+  UserCircle2,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Logo } from '@/components/site/Logo';
+import { useAuth } from '@/lib/auth-context';
+import { PermissionMatrix } from '@/lib/supabase/types';
 
 interface SidebarItem {
   title: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   badge?: string;
+  module?: keyof PermissionMatrix;
+  action?: string;
+  adminOnly?: boolean;
 }
 
 const navItems: SidebarItem[] = [
@@ -39,63 +43,99 @@ const navItems: SidebarItem[] = [
     href: '/admin/users',
     icon: Users,
     badge: 'Admin',
+    adminOnly: true,
   },
   {
     title: 'Client Accounts',
     href: '/admin/clients',
     icon: Building,
+    module: 'clients',
+    action: 'view',
   },
   {
     title: 'Services CMS',
     href: '/admin/services',
     icon: Layers,
+    module: 'services',
+    action: 'view',
   },
   {
     title: 'Pricing Plans',
     href: '/admin/pricing',
     icon: CreditCard,
+    module: 'pricing',
+    action: 'view',
   },
   {
     title: 'Free Resources CMS',
     href: '/admin/resources',
     icon: Gift,
     badge: 'Hub',
+    module: 'cms_content',
+    action: 'view',
   },
   {
     title: 'Projects & Milestones',
     href: '/admin/projects',
     icon: FolderKanban,
     badge: 'Live',
+    module: 'projects',
+    action: 'view',
   },
   {
     title: 'Invoices & Billing',
     href: '/admin/invoices',
     icon: FileText,
+    module: 'invoices',
+    action: 'view',
   },
   {
     title: 'Team & Tasks',
     href: '/admin/team',
     icon: UserCheck,
+    module: 'team_roles',
+    action: 'view',
   },
   {
     title: 'Roles & Permissions',
     href: '/admin/roles',
     icon: ShieldCheck,
+    module: 'team_roles',
+    action: 'manage_permissions',
+    adminOnly: true,
   },
   {
     title: 'Website CMS',
     href: '/admin/cms',
     icon: FileText,
+    module: 'cms_content',
+    action: 'view',
   },
   {
     title: 'Database & Settings',
     href: '/admin/settings',
     icon: Settings,
+    module: 'settings',
+    action: 'view',
+    adminOnly: true,
   },
 ];
 
 export function AdminSidebar() {
   const pathname = usePathname();
+  const { hasPermission, isAdmin, user, role, rolesList } = useAuth();
+
+  const currentRoleObj = rolesList.find((r) => r.key === role || r.id === role);
+  const roleDisplayName = isAdmin
+    ? 'Super Admin'
+    : currentRoleObj?.name || (role ? role.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase()) : 'Staff');
+
+  const visibleItems = navItems.filter((item) => {
+    if (isAdmin) return true;
+    if (item.adminOnly) return false;
+    if (!item.module) return true;
+    return hasPermission(item.module, item.action || 'view');
+  });
 
   return (
     <aside className="w-72 shrink-0 border-r border-border bg-card/50 backdrop-blur-xl flex flex-col justify-between hidden md:flex h-screen sticky top-0 overflow-y-auto z-40">
@@ -105,12 +145,27 @@ export function AdminSidebar() {
           <Logo href="/admin" badge="Admin" subtitle="Agency Control Center" />
         </div>
 
+        {/* User Role Banner */}
+        {user && (
+          <div className="px-5 py-3 mx-4 mt-3 rounded-2xl bg-surface/80 border border-border flex items-center gap-3">
+            <div className="h-8 w-8 rounded-full bg-cyan/15 border border-cyan/30 flex items-center justify-center text-cyan shrink-0">
+              <UserCircle2 className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold text-foreground truncate">{user.name || user.email}</p>
+              <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-cyan/30 bg-cyan/10 text-cyan font-bold tracking-wide">
+                {roleDisplayName}
+              </Badge>
+            </div>
+          </div>
+        )}
+
         {/* Navigation Items */}
         <div className="p-4 space-y-1.5">
           <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-            Core Management
+            {isAdmin ? 'Core Management' : 'Authorized Modules'}
           </p>
-          {navItems.map((item) => {
+          {visibleItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href || (item.href !== '/admin' && pathname?.startsWith(item.href));
 

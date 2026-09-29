@@ -46,23 +46,58 @@ export default function ClientLayout({
   const [notifications, setNotifications] = useState<NotificationModel[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [activeSection, setActiveSection] = useState<string>('dashboard');
 
   // If we're on the /client/login page, don't render portal header
   const isLoginPage = pathname === '/client/login';
 
   useEffect(() => {
     const handleScroll = () => {
-      setShowScrollTop(window.scrollY > 280);
+      const shouldShow = window.scrollY > 280;
+      setShowScrollTop((prev) => (prev !== shouldShow ? shouldShow : prev));
+
+      const sectionIds = ['billing', 'invoices', 'support', 'updates', 'milestones', 'services'];
+      const scrollPos = window.scrollY + 200;
+
+      // Check if near the very bottom of the page
+      if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 60) {
+        setActiveSection((prev) => (prev !== 'billing' ? 'billing' : prev));
+        return;
+      }
+
+      for (const id of sectionIds) {
+        const el = document.getElementById(id);
+        if (el && el.offsetTop <= scrollPos) {
+          const target = id === 'invoices' || id === 'support' ? 'billing' : id;
+          setActiveSection((prev) => (prev !== target ? target : prev));
+          return;
+        }
+      }
+      setActiveSection((prev) => (prev !== 'dashboard' ? 'dashboard' : prev));
     };
+
     window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   const handleScrollToTop = () => {
+    setActiveSection('dashboard');
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       if (window.location.hash) {
         window.history.replaceState(null, '', '/client');
+      }
+    }
+  };
+
+  const scrollToSection = (id: string) => {
+    setActiveSection(id === 'invoices' || id === 'support' ? 'billing' : id);
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+      if (typeof window !== 'undefined') {
+        window.history.replaceState(null, '', `#${id}`);
       }
     }
   };
@@ -130,9 +165,9 @@ export default function ClientLayout({
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Top Header */}
-      <header className="h-20 border-b border-border bg-card/90 backdrop-blur-xl px-4 sm:px-8 flex items-center justify-between sticky top-0 z-40 transition-colors">
+      <header className="h-16 sm:h-20 border-b border-border bg-card/90 backdrop-blur-xl px-3.5 sm:px-8 flex items-center justify-between sticky top-0 z-40 transition-colors gap-2">
         {/* Brand Logo & Client Badge */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0 shrink">
           <Logo
             href="/client"
             onClick={handleScrollToTop}
@@ -143,58 +178,67 @@ export default function ClientLayout({
 
         {/* Navigation Tabs (Desktop) */}
         <nav className="hidden md:flex items-center gap-1 bg-surface/60 p-1 rounded-full border border-border">
-          <Link
-            href="/client"
+          <button
             onClick={handleScrollToTop}
             className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
-              pathname === '/client'
+              activeSection === 'dashboard'
                 ? 'bg-cyan text-slate-950 shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             Dashboard
-          </Link>
-          <a
-            href="#services"
-            className="px-4 py-1.5 rounded-full text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+          </button>
+          <button
+            onClick={() => scrollToSection('services')}
+            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
+              activeSection === 'services'
+                ? 'bg-cyan text-slate-950 shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
           >
             Our Services
-          </a>
-          <a
-            href="#milestones"
-            className="px-4 py-1.5 rounded-full text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+          </button>
+          <button
+            onClick={() => scrollToSection('milestones')}
+            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
+              activeSection === 'milestones'
+                ? 'bg-cyan text-slate-950 shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
           >
             Milestones
-          </a>
-          <a
-            href="#updates"
-            className="px-4 py-1.5 rounded-full text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+          </button>
+          <button
+            onClick={() => scrollToSection('updates')}
+            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
+              activeSection === 'updates'
+                ? 'bg-cyan text-slate-950 shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
           >
             Project Updates
-          </a>
-          <a
-            href="#invoices"
-            className="px-4 py-1.5 rounded-full text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+          </button>
+          <button
+            onClick={() => scrollToSection('billing')}
+            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
+              activeSection === 'billing'
+                ? 'bg-cyan text-slate-950 shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
           >
-            Invoices & Quotes
-          </a>
-          <a
-            href="#support"
-            className="px-4 py-1.5 rounded-full text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Assigned Team
-          </a>
+            Billing & Support
+          </button>
         </nav>
 
         {/* Right Controls */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           {/* Notifications Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="outline"
                 size="icon"
-                className="relative h-9 w-9 rounded-full border-border bg-surface/60"
+                className="relative h-8.5 w-8.5 sm:h-9 sm:w-9 rounded-full border-border bg-surface/60"
               >
                 <Bell className="h-4 w-4 text-foreground" />
                 {unreadCount > 0 && (
@@ -256,7 +300,7 @@ export default function ClientLayout({
             variant="outline"
             size="icon"
             onClick={toggle}
-            className="h-9 w-9 rounded-full border-border bg-surface/60"
+            className="h-8.5 w-8.5 sm:h-9 sm:w-9 rounded-full border-border bg-surface/60"
           >
             {theme === 'dark' ? (
               <Sun className="h-4 w-4 text-amber-400" />
@@ -268,8 +312,8 @@ export default function ClientLayout({
           {/* Client Account Menu */}
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-2 pl-2 focus:outline-none">
-                <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-cyan to-indigo-500 p-0.5 shadow-sm">
+              <button className="flex items-center gap-2 pl-1 sm:pl-2 focus:outline-none">
+                <div className="h-8.5 w-8.5 sm:h-9 sm:w-9 rounded-full bg-gradient-to-tr from-cyan to-indigo-500 p-0.5 shadow-sm">
                   <div className="h-full w-full rounded-full bg-card flex items-center justify-center text-xs font-bold text-cyan">
                     {activeClient ? activeClient.name.slice(0, 2).toUpperCase() : 'CL'}
                   </div>
@@ -316,48 +360,57 @@ export default function ClientLayout({
       </header>
 
       {/* Mobile Sub-Navigation Bar (Sticky & Horizontally Scrollable) */}
-      <div className="md:hidden border-b border-border bg-card/85 backdrop-blur-md px-3 py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar sticky top-20 z-30 shadow-sm">
-        <Link
-          href="/client"
+      <div className="md:hidden border-b border-border bg-card/85 backdrop-blur-md px-3 py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar sticky top-16 sm:top-20 z-30 shadow-sm">
+        <button
           onClick={handleScrollToTop}
           className={`px-3 py-1 rounded-full text-[11px] font-bold shrink-0 transition-all ${
-            pathname === '/client'
+            activeSection === 'dashboard'
               ? 'bg-cyan text-slate-950 shadow-sm'
               : 'bg-surface/80 text-muted-foreground hover:text-foreground border border-border'
           }`}
         >
           Dashboard
-        </Link>
-        <a
-          href="#services"
-          className="px-3 py-1 rounded-full text-[11px] font-semibold bg-surface/80 text-muted-foreground hover:text-foreground border border-border shrink-0 transition-colors"
+        </button>
+        <button
+          onClick={() => scrollToSection('services')}
+          className={`px-3 py-1 rounded-full text-[11px] font-semibold shrink-0 transition-all ${
+            activeSection === 'services'
+              ? 'bg-cyan text-slate-950 shadow-sm'
+              : 'bg-surface/80 text-muted-foreground hover:text-foreground border border-border'
+          }`}
         >
           Our Services
-        </a>
-        <a
-          href="#milestones"
-          className="px-3 py-1 rounded-full text-[11px] font-semibold bg-surface/80 text-muted-foreground hover:text-foreground border border-border shrink-0 transition-colors"
+        </button>
+        <button
+          onClick={() => scrollToSection('milestones')}
+          className={`px-3 py-1 rounded-full text-[11px] font-semibold shrink-0 transition-all ${
+            activeSection === 'milestones'
+              ? 'bg-cyan text-slate-950 shadow-sm'
+              : 'bg-surface/80 text-muted-foreground hover:text-foreground border border-border'
+          }`}
         >
           Milestones
-        </a>
-        <a
-          href="#updates"
-          className="px-3 py-1 rounded-full text-[11px] font-semibold bg-surface/80 text-muted-foreground hover:text-foreground border border-border shrink-0 transition-colors"
+        </button>
+        <button
+          onClick={() => scrollToSection('updates')}
+          className={`px-3 py-1 rounded-full text-[11px] font-semibold shrink-0 transition-all ${
+            activeSection === 'updates'
+              ? 'bg-cyan text-slate-950 shadow-sm'
+              : 'bg-surface/80 text-muted-foreground hover:text-foreground border border-border'
+          }`}
         >
           Updates
-        </a>
-        <a
-          href="#invoices"
-          className="px-3 py-1 rounded-full text-[11px] font-semibold bg-surface/80 text-muted-foreground hover:text-foreground border border-border shrink-0 transition-colors"
+        </button>
+        <button
+          onClick={() => scrollToSection('billing')}
+          className={`px-3 py-1 rounded-full text-[11px] font-semibold shrink-0 transition-all ${
+            activeSection === 'billing'
+              ? 'bg-cyan text-slate-950 shadow-sm'
+              : 'bg-surface/80 text-muted-foreground hover:text-foreground border border-border'
+          }`}
         >
-          Invoices
-        </a>
-        <a
-          href="#support"
-          className="px-3 py-1 rounded-full text-[11px] font-semibold bg-surface/80 text-muted-foreground hover:text-foreground border border-border shrink-0 transition-colors"
-        >
-          Team
-        </a>
+          Billing & Support
+        </button>
       </div>
 
       {/* Main Client Content */}

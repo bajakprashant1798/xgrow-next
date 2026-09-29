@@ -58,10 +58,17 @@ import {
 } from '@/lib/db';
 import { TeamMemberModel, ProjectModel, CustomRoleModel, TaskModel } from '@/lib/supabase/types';
 import { useAuth } from '@/lib/auth-context';
+import { AdminAccessDenied } from '@/components/admin/AdminAccessDenied';
 import { Loader2, AlertCircle, AlertTriangle } from 'lucide-react';
 
 export default function TeamManagementPage() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, hasPermission } = useAuth();
+  const canView = isAdmin || hasPermission('team_roles', 'view');
+  const canCreateEdit = isAdmin || hasPermission('team_roles', 'create_edit');
+  const canDelete = isAdmin || hasPermission('team_roles', 'delete');
+  const canManageRoles = isAdmin || hasPermission('team_roles', 'manage_permissions');
+  const canUpdateTask = isAdmin || hasPermission('tasks', 'update_status');
+
   const [team, setTeam] = useState<TeamMemberModel[]>([]);
   const [projects, setProjects] = useState<ProjectModel[]>([]);
   const [roles, setRoles] = useState<CustomRoleModel[]>([]);
@@ -112,6 +119,10 @@ export default function TeamManagementPage() {
   }, [editingMember?.email, editingMember?.id]);
 
   const openCreateDialog = () => {
+    if (!canCreateEdit) {
+      toast.error('You do not have permission to add team members');
+      return;
+    }
     const defaultRoleKey = roles.find((r) => !r.is_system)?.key || 'developer';
     setEditingMember({
       name: '',
@@ -127,6 +138,10 @@ export default function TeamManagementPage() {
   };
 
   const openEditDialog = (member: TeamMemberModel) => {
+    if (!canCreateEdit) {
+      toast.error('You do not have permission to edit team members');
+      return;
+    }
     setEditingMember(member);
     setEmailCheckStatus('idle');
     setEmailCheckResult(null);
@@ -135,6 +150,10 @@ export default function TeamManagementPage() {
 
   const handleSaveMember = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canCreateEdit) {
+      toast.error('You do not have permission to save team members');
+      return;
+    }
     if (!editingMember?.name || !editingMember?.email) {
       toast.error('Name and Email are required');
       return;
@@ -157,6 +176,10 @@ export default function TeamManagementPage() {
   };
 
   const handleDeleteMember = async (member: TeamMemberModel) => {
+    if (!canDelete) {
+      toast.error('You do not have permission to remove team members');
+      return;
+    }
     if (member.email === 'bajakprashant1998@gmail.com') {
       toast.error('Cannot remove the primary Super Admin account.');
       return;
@@ -180,6 +203,10 @@ export default function TeamManagementPage() {
   };
 
   const handleToggleTask = async (projectId: string, task: TaskModel) => {
+    if (!canUpdateTask) {
+      toast.error('You do not have permission to update task status');
+      return;
+    }
     const newStatus = task.status === 'done' ? 'in_progress' : 'done';
     await updateTaskStatus(projectId, task.id, newStatus);
     toast.success(newStatus === 'done' ? 'Task completed!' : 'Task reopened');
@@ -198,6 +225,10 @@ export default function TeamManagementPage() {
     (p.tasks || []).map((t) => ({ ...t, projectId: p.id, projectName: p.project_name }))
   );
 
+  if (!canView) {
+    return <AdminAccessDenied moduleName="Team & Employee Management" requiredAction="View Team & Roles" />;
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -212,22 +243,26 @@ export default function TeamManagementPage() {
           </p>
         </div>
         <div className="flex items-center gap-2.5 flex-wrap">
-          <Link href="/admin/roles">
+          {canManageRoles && (
+            <Link href="/admin/roles">
+              <Button
+                variant="outline"
+                className="rounded-full border-border hover:border-cyan/40 font-bold text-xs px-4"
+              >
+                <ShieldCheck className="h-3.5 w-3.5 mr-1.5 text-cyan" />
+                Manage Roles & Permissions
+                <ArrowUpRight className="h-3 w-3 ml-1 text-muted-foreground" />
+              </Button>
+            </Link>
+          )}
+          {canCreateEdit && (
             <Button
-              variant="outline"
-              className="rounded-full border-border hover:border-cyan/40 font-bold text-xs px-4"
+              onClick={openCreateDialog}
+              className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-5 shadow-sm"
             >
-              <ShieldCheck className="h-3.5 w-3.5 mr-1.5 text-cyan" />
-              Manage Roles & Permissions
-              <ArrowUpRight className="h-3 w-3 ml-1 text-muted-foreground" />
+              <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Employee
             </Button>
-          </Link>
-          <Button
-            onClick={openCreateDialog}
-            className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-5 shadow-sm"
-          >
-            <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Employee
-          </Button>
+          )}
         </div>
       </div>
 
@@ -327,12 +362,13 @@ export default function TeamManagementPage() {
                             <div className="flex items-start gap-2">
                               <button
                                 type="button"
+                                disabled={!canUpdateTask}
                                 onClick={() => handleToggleTask(task.projectId, task)}
                                 className={`h-4 w-4 rounded mt-0.5 flex items-center justify-center border transition-colors ${
                                   task.status === 'done'
                                     ? 'bg-cyan border-cyan text-slate-950'
                                     : 'border-border bg-surface'
-                                }`}
+                                } ${!canUpdateTask ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
                               >
                                 {task.status === 'done' && <Check className="h-3 w-3 stroke-[3]" />}
                               </button>
@@ -368,15 +404,17 @@ export default function TeamManagementPage() {
                   Role: <strong className="text-foreground">{roleName}</strong>
                 </span>
                 <div className="flex items-center gap-1.5">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => openEditDialog(member)}
-                    className="rounded-full text-xs font-semibold h-8 px-3 border-border"
-                  >
-                    <Edit2 className="h-3 w-3 mr-1" /> Edit
-                  </Button>
-                  {!isSuperAdmin && (
+                  {canCreateEdit && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openEditDialog(member)}
+                      className="rounded-full text-xs font-semibold h-8 px-3 border-border"
+                    >
+                      <Edit2 className="h-3 w-3 mr-1" /> Edit
+                    </Button>
+                  )}
+                  {canDelete && !isSuperAdmin && (
                     <Button
                       size="sm"
                       variant="ghost"

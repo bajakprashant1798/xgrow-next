@@ -78,6 +78,8 @@ import {
 import { TestimonialModel, FaqModel, TrustedLogoModel } from '@/lib/supabase/types';
 import { compressImageFile } from '@/lib/image-compressor';
 import { AdminResourcesManager } from '@/components/admin/AdminResourcesManager';
+import { useAuth } from '@/lib/auth-context';
+import { AdminAccessDenied } from '@/components/admin/AdminAccessDenied';
 
 const PRESET_ICONS = [
   { name: 'Building2', icon: Building2, label: 'Building / Corporate' },
@@ -161,6 +163,11 @@ VALUES
 ON CONFLICT (id) DO NOTHING;`;
 
 export default function CmsManagementPage() {
+  const { isAdmin, hasPermission } = useAuth();
+  const canView = isAdmin || hasPermission('cms_content', 'view');
+  const canCreateEdit = isAdmin || hasPermission('cms_content', 'create_edit');
+  const canDelete = isAdmin || hasPermission('cms_content', 'delete');
+
   const [testimonials, setTestimonials] = useState<TestimonialModel[]>([]);
   const [faqs, setFaqs] = useState<FaqModel[]>([]);
   const [trustedLogos, setTrustedLogos] = useState<TrustedLogoModel[]>([]);
@@ -244,6 +251,10 @@ export default function CmsManagementPage() {
   }, []);
 
   const handleSaveHeading = async () => {
+    if (!canCreateEdit) {
+      toast.error('You do not have permission to modify website headings');
+      return;
+    }
     await saveTrustedSectionTitle(sectionHeading);
     toast.success('Section heading updated on homepage!');
   };
@@ -290,6 +301,10 @@ export default function CmsManagementPage() {
   // Testimonial Handlers
   const handleSaveTestimonial = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canCreateEdit) {
+      toast.error('You do not have permission to edit testimonials');
+      return;
+    }
     if (!editingTestimonial?.quote || !editingTestimonial?.name) {
       toast.error('Quote and Client Name are required');
       return;
@@ -303,6 +318,10 @@ export default function CmsManagementPage() {
   };
 
   const handleDeleteTestimonial = async (id: string) => {
+    if (!canDelete) {
+      toast.error('You do not have permission to delete testimonials');
+      return;
+    }
     if (confirm('Delete this testimonial?')) {
       await deleteTestimonial(id);
       toast.success('Testimonial deleted');
@@ -313,6 +332,10 @@ export default function CmsManagementPage() {
   // FAQ Handlers
   const handleSaveFaq = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canCreateEdit) {
+      toast.error('You do not have permission to edit FAQs');
+      return;
+    }
     if (!editingFaq?.question || !editingFaq?.answer) {
       toast.error('Question and Answer are required');
       return;
@@ -326,6 +349,10 @@ export default function CmsManagementPage() {
   };
 
   const handleDeleteFaq = async (id: string) => {
+    if (!canDelete) {
+      toast.error('You do not have permission to delete FAQs');
+      return;
+    }
     if (confirm('Delete this FAQ?')) {
       await deleteFaq(id);
       toast.success('FAQ deleted');
@@ -346,6 +373,10 @@ export default function CmsManagementPage() {
   // Trusted Logo Handlers
   const handleSaveLogo = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canCreateEdit) {
+      toast.error('You do not have permission to save brand logos');
+      return;
+    }
     const cleanName = (editingLogo?.name || '').trim();
     if (!cleanName) {
       toast.error('Brand / Business Name is required');
@@ -384,6 +415,10 @@ export default function CmsManagementPage() {
   };
 
   const handleDeleteLogo = async (id: string) => {
+    if (!canDelete) {
+      toast.error('You do not have permission to delete brand logos');
+      return;
+    }
     const target = trustedLogos.find((l) => l.id === id);
     const brandName = target?.name || 'this brand logo';
     if (confirm(`Delete "${brandName}" from the homepage? This action cannot be undone.`)) {
@@ -400,6 +435,10 @@ export default function CmsManagementPage() {
   };
 
   const handleToggleLogoStatus = async (logo: TrustedLogoModel) => {
+    if (!canCreateEdit) {
+      toast.error('You do not have permission to modify brand logos');
+      return;
+    }
     const nextStatus = logo.status === 'published' ? 'draft' : 'published';
     await saveTrustedLogo({ ...logo, status: nextStatus });
     toast.success(`Logo marked as ${nextStatus}`);
@@ -407,6 +446,10 @@ export default function CmsManagementPage() {
   };
 
   const handleMoveOrder = async (logo: TrustedLogoModel, direction: 'up' | 'down') => {
+    if (!canCreateEdit) {
+      toast.error('You do not have permission to reorder brand logos');
+      return;
+    }
     const currentIndex = trustedLogos.findIndex((l) => l.id === logo.id);
     if (currentIndex === -1) return;
 
@@ -439,6 +482,10 @@ export default function CmsManagementPage() {
       l.name.toLowerCase().includes(logoSearch.toLowerCase()) ||
       (l.note && l.note.toLowerCase().includes(logoSearch.toLowerCase()))
   );
+
+  if (!canView) {
+    return <AdminAccessDenied moduleName="Website Content & Brand CMS" requiredAction="View CMS Content" />;
+  }
 
   return (
     <div className="space-y-6">
@@ -493,31 +540,33 @@ export default function CmsManagementPage() {
         {/* ============================================================ */}
         <TabsContent value="trusted-logos" className="space-y-6">
           {/* Section Heading Editor Card */}
-          <Card className="rounded-2xl border-border bg-card/70 p-4 sm:p-5 backdrop-blur-sm shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="space-y-1 flex-1">
-                <label className="text-xs font-bold text-foreground flex items-center gap-2">
-                  <Sparkles className="h-3.5 w-3.5 text-cyan" />
-                  Section Heading Text (Homepage Banner)
-                </label>
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
-                  <Input
-                    placeholder="e.g. Trusted by growing businesses across India & USA"
-                    value={sectionHeading}
-                    onChange={(e) => setSectionHeading(e.target.value)}
-                    className="text-xs rounded-xl h-9 font-semibold flex-1 bg-surface"
-                  />
-                  <Button
-                    onClick={handleSaveHeading}
-                    size="sm"
-                    className="rounded-xl bg-cyan text-slate-950 font-bold text-xs px-4 h-9 whitespace-nowrap shadow-sm"
-                  >
-                    <Check className="h-3.5 w-3.5 mr-1" /> Update Heading
-                  </Button>
+          {canCreateEdit && (
+            <Card className="rounded-2xl border-border bg-card/70 p-4 sm:p-5 backdrop-blur-sm shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-1 flex-1">
+                  <label className="text-xs font-bold text-foreground flex items-center gap-2">
+                    <Sparkles className="h-3.5 w-3.5 text-cyan" />
+                    Section Heading Text (Homepage Banner)
+                  </label>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+                    <Input
+                      placeholder="e.g. Trusted by growing businesses across India & USA"
+                      value={sectionHeading}
+                      onChange={(e) => setSectionHeading(e.target.value)}
+                      className="text-xs rounded-xl h-9 font-semibold flex-1 bg-surface"
+                    />
+                    <Button
+                      onClick={handleSaveHeading}
+                      size="sm"
+                      className="rounded-xl bg-cyan text-slate-950 font-bold text-xs px-4 h-9 whitespace-nowrap shadow-sm"
+                    >
+                      <Check className="h-3.5 w-3.5 mr-1" /> Update Heading
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
-          </Card>
+            </Card>
+          )}
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
@@ -525,26 +574,28 @@ export default function CmsManagementPage() {
                 Manage the live client logos in the &quot;<strong>{sectionHeading}</strong>&quot; marquee.
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={() => {
-                  setEditingLogo({
-                    name: '',
-                    note: '',
-                    logo_url: '',
-                    icon: 'Building2',
-                    website_url: '',
-                    status: 'published',
-                    display_order: trustedLogos.length + 1,
-                  });
-                  setIsLogoModalOpen(true);
-                }}
-                size="sm"
-                className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4"
-              >
-                <Plus className="h-3.5 w-3.5 mr-1" /> Add Brand Logo
-              </Button>
-            </div>
+            {canCreateEdit && (
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={() => {
+                    setEditingLogo({
+                      name: '',
+                      note: '',
+                      logo_url: '',
+                      icon: 'Building2',
+                      website_url: '',
+                      status: 'published',
+                      display_order: trustedLogos.length + 1,
+                    });
+                    setIsLogoModalOpen(true);
+                  }}
+                  size="sm"
+                  className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4"
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Brand Logo
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Search & Stats Bar */}
@@ -566,56 +617,58 @@ export default function CmsManagementPage() {
           </div>
 
           {/* Quick Preset Logo Blueprints */}
-          <div className="p-3.5 rounded-2xl bg-surface/50 border border-border space-y-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-              <Sparkles className="h-3 w-3 text-cyan" /> Quick-Add from Local Assets (Click to Autofill):
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {PRESET_LOCAL_LOGOS.map((tmpl) => {
-                const alreadyAdded = trustedLogos.some(
-                  (l) => l.name.trim().toLowerCase() === tmpl.label.trim().toLowerCase()
-                );
-                return (
-                  <Button
-                    key={tmpl.label}
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={alreadyAdded}
-                    onClick={() => {
-                      if (alreadyAdded) {
-                        toast.warning(`"${tmpl.label}" is already in your trusted logos list.`);
-                        return;
-                      }
-                      setEditingLogo({
-                        name: tmpl.label,
-                        note: tmpl.note,
-                        logo_url: tmpl.path,
-                        icon: 'Building2',
-                        status: 'published',
-                        display_order: trustedLogos.length + 1,
-                      });
-                      setIsLogoModalOpen(true);
-                      toast.info(`Loaded preset logo for ${tmpl.label}`);
-                    }}
-                    className={`rounded-xl text-[11px] h-7 border-border transition-all ${
-                      alreadyAdded
-                        ? 'opacity-60 bg-muted/30 text-muted-foreground border-dashed cursor-not-allowed'
-                        : 'hover:border-cyan/40 bg-card/60'
-                    }`}
-                  >
-                    {alreadyAdded ? (
-                      <>
-                        <Check className="h-3 w-3 mr-1 text-emerald-500" /> {tmpl.label} (Added)
-                      </>
-                    ) : (
-                      tmpl.label
-                    )}
-                  </Button>
-                );
-              })}
+          {canCreateEdit && (
+            <div className="p-3.5 rounded-2xl bg-surface/50 border border-border space-y-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <Sparkles className="h-3 w-3 text-cyan" /> Quick-Add from Local Assets (Click to Autofill):
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {PRESET_LOCAL_LOGOS.map((tmpl) => {
+                  const alreadyAdded = trustedLogos.some(
+                    (l) => l.name.trim().toLowerCase() === tmpl.label.trim().toLowerCase()
+                  );
+                  return (
+                    <Button
+                      key={tmpl.label}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={alreadyAdded}
+                      onClick={() => {
+                        if (alreadyAdded) {
+                          toast.warning(`"${tmpl.label}" is already in your trusted logos list.`);
+                          return;
+                        }
+                        setEditingLogo({
+                          name: tmpl.label,
+                          note: tmpl.note,
+                          logo_url: tmpl.path,
+                          icon: 'Building2',
+                          status: 'published',
+                          display_order: trustedLogos.length + 1,
+                        });
+                        setIsLogoModalOpen(true);
+                        toast.info(`Loaded preset logo for ${tmpl.label}`);
+                      }}
+                      className={`rounded-xl text-[11px] h-7 border-border transition-all ${
+                        alreadyAdded
+                          ? 'opacity-60 bg-muted/30 text-muted-foreground border-dashed cursor-not-allowed'
+                          : 'hover:border-cyan/40 bg-card/60'
+                      }`}
+                    >
+                      {alreadyAdded ? (
+                        <>
+                          <Check className="h-3 w-3 mr-1 text-emerald-500" /> {tmpl.label} (Added)
+                        </>
+                      ) : (
+                        tmpl.label
+                      )}
+                    </Button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Logos Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -702,56 +755,62 @@ export default function CmsManagementPage() {
                         )}
                       </div>
                     </div>
-                  </div>
+                  </div>                  {/* Actions Row */}
+                  {(canCreateEdit || canDelete) && (
+                    <div className="pt-3 border-t border-border mt-3 flex items-center justify-between">
+                      {/* Reordering */}
+                      {canCreateEdit ? (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            disabled={index === 0}
+                            onClick={() => handleMoveOrder(logo, 'up')}
+                            className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+                            title="Move left / up in marquee"
+                          >
+                            <ArrowUp className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            disabled={index === filteredLogos.length - 1}
+                            onClick={() => handleMoveOrder(logo, 'down')}
+                            className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+                            title="Move right / down in marquee"
+                          >
+                            <ArrowDown className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ) : <div />}
 
-                  {/* Actions Row */}
-                  <div className="pt-3 border-t border-border mt-3 flex items-center justify-between">
-                    {/* Reordering */}
-                    <div className="flex items-center gap-1">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        disabled={index === 0}
-                        onClick={() => handleMoveOrder(logo, 'up')}
-                        className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
-                        title="Move left / up in marquee"
-                      >
-                        <ArrowUp className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        disabled={index === filteredLogos.length - 1}
-                        onClick={() => handleMoveOrder(logo, 'down')}
-                        className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
-                        title="Move right / down in marquee"
-                      >
-                        <ArrowDown className="h-3 w-3" />
-                      </Button>
+                      <div className="flex items-center gap-1.5">
+                        {canCreateEdit && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingLogo(logo);
+                              setIsLogoModalOpen(true);
+                            }}
+                            className="h-7 rounded-full text-xs px-2.5 gap-1"
+                          >
+                            <Edit2 className="h-3 w-3" /> Edit
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleDeleteLogo(logo.id)}
+                            className="h-7 w-7 text-destructive hover:bg-destructive/10 rounded-full"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
-
-                    <div className="flex items-center gap-1.5">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setEditingLogo(logo);
-                          setIsLogoModalOpen(true);
-                        }}
-                        className="h-7 rounded-full text-xs px-2.5 gap-1"
-                      >
-                        <Edit2 className="h-3 w-3" /> Edit
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => handleDeleteLogo(logo.id)}
-                        className="h-7 w-7 text-destructive hover:bg-destructive/10 rounded-full"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
+                  )}
                 </Card>
               );
             })}
@@ -776,23 +835,25 @@ export default function CmsManagementPage() {
             <p className="text-xs text-muted-foreground">
               These client reviews are shown on the homepage and landing pages.
             </p>
-            <Button
-              onClick={() => {
-                setEditingTestimonial({
-                  quote: '',
-                  name: '',
-                  org: '',
-                  rating: 5,
-                  status: 'published',
-                  display_order: testimonials.length + 1,
-                });
-                setIsTestimonialModalOpen(true);
-              }}
-              size="sm"
-              className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4 self-start"
-            >
-              <Plus className="h-3.5 w-3.5 mr-1" /> Add Testimonial
-            </Button>
+            {canCreateEdit && (
+              <Button
+                onClick={() => {
+                  setEditingTestimonial({
+                    quote: '',
+                    name: '',
+                    org: '',
+                    rating: 5,
+                    status: 'published',
+                    display_order: testimonials.length + 1,
+                  });
+                  setIsTestimonialModalOpen(true);
+                }}
+                size="sm"
+                className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4 self-start"
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" /> Add Testimonial
+              </Button>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -823,27 +884,33 @@ export default function CmsManagementPage() {
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-border mt-4 flex items-center justify-end gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setEditingTestimonial(test);
-                      setIsTestimonialModalOpen(true);
-                    }}
-                    className="h-8 rounded-full text-xs px-3"
-                  >
-                    <Edit2 className="h-3 w-3 mr-1" /> Edit
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => handleDeleteTestimonial(test.id)}
-                    className="h-8 w-8 text-destructive rounded-full"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
+                {(canCreateEdit || canDelete) && (
+                  <div className="pt-4 border-t border-border mt-4 flex items-center justify-end gap-2">
+                    {canCreateEdit && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setEditingTestimonial(test);
+                          setIsTestimonialModalOpen(true);
+                        }}
+                        className="h-8 rounded-full text-xs px-3"
+                      >
+                        <Edit2 className="h-3 w-3 mr-1" /> Edit
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => handleDeleteTestimonial(test.id)}
+                        className="h-8 w-8 text-destructive rounded-full"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                )}
               </Card>
             ))}
           </div>
@@ -857,22 +924,24 @@ export default function CmsManagementPage() {
             <p className="text-xs text-muted-foreground">
               Frequently asked questions displayed on the /pricing and /faqs pages.
             </p>
-            <Button
-              onClick={() => {
-                setEditingFaq({
-                  question: '',
-                  answer: '',
-                  category: 'Pricing',
-                  status: 'published',
-                  display_order: faqs.length + 1,
-                });
-                setIsFaqModalOpen(true);
-              }}
-              size="sm"
-              className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4"
-            >
-              <Plus className="h-3.5 w-3.5 mr-1" /> Add FAQ
-            </Button>
+            {canCreateEdit && (
+              <Button
+                onClick={() => {
+                  setEditingFaq({
+                    question: '',
+                    answer: '',
+                    category: 'Pricing',
+                    status: 'published',
+                    display_order: faqs.length + 1,
+                  });
+                  setIsFaqModalOpen(true);
+                }}
+                size="sm"
+                className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4"
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" /> Add FAQ
+              </Button>
+            )}
           </div>
 
           <div className="space-y-4">
@@ -895,27 +964,33 @@ export default function CmsManagementPage() {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-1 self-end sm:self-start">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setEditingFaq(faq);
-                      setIsFaqModalOpen(true);
-                    }}
-                    className="h-8 rounded-full text-xs px-3"
-                  >
-                    <Edit2 className="h-3 w-3 mr-1" /> Edit
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => handleDeleteFaq(faq.id)}
-                    className="h-8 w-8 text-destructive rounded-full"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
+                {(canCreateEdit || canDelete) && (
+                  <div className="flex items-center gap-1 self-end sm:self-start">
+                    {canCreateEdit && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setEditingFaq(faq);
+                          setIsFaqModalOpen(true);
+                        }}
+                        className="h-8 rounded-full text-xs px-3"
+                      >
+                        <Edit2 className="h-3 w-3 mr-1" /> Edit
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => handleDeleteFaq(faq.id)}
+                        className="h-8 w-8 text-destructive rounded-full"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                )}
               </Card>
             ))}
           </div>

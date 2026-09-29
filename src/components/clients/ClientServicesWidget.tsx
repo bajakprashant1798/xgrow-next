@@ -118,18 +118,20 @@ export function ClientServicesWidget({
   return (
     <section id="services" className="space-y-4">
       {/* Header with Title and Retainer Badge */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-card via-surface/80 to-card p-5 rounded-3xl border border-border shadow-sm">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-cyan" />
-            <h3 className="text-lg font-extrabold tracking-tight text-foreground">
-              Active Services & Subscribed Products
-            </h3>
-            <Badge className={`text-[10px] font-black uppercase tracking-wider ${billingCycle.tagClass}`}>
-              {billingCycle.badge}
-            </Badge>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-card via-surface/80 to-card p-4 sm:p-5 rounded-3xl border border-border shadow-sm">
+        <div className="space-y-1 min-w-0">
+          <div className="flex items-start sm:items-center gap-2.5">
+            <Sparkles className="h-5 w-5 text-cyan shrink-0 mt-0.5 sm:mt-0" />
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-base sm:text-lg font-extrabold tracking-tight text-foreground leading-snug">
+                Active Services & Subscribed Products
+              </h3>
+              <Badge className={`text-[9.5px] sm:text-[10px] font-black uppercase tracking-wider shrink-0 whitespace-nowrap ${billingCycle.tagClass}`}>
+                {billingCycle.badge}
+              </Badge>
+            </div>
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground pl-7 sm:pl-7.5">
             {isYearly
               ? 'Premium early annual partner contract with dedicated multidisciplinary team allocation.'
               : 'Ongoing retained agency deliverables with priority sprint execution and monthly reporting.'}
@@ -143,7 +145,7 @@ export function ClientServicesWidget({
               setSelectedAddon(availableAddons[0] || AVAILABLE_AGENCY_SERVICES[0]);
               setIsAddonModalOpen(true);
             }}
-            className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4 h-9 shadow-sm hover:shadow-cyan/20 hover:scale-105 transition-all gap-1.5 shrink-0"
+            className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4 h-9 shadow-sm hover:shadow-cyan/20 hover:scale-105 transition-all gap-1.5 shrink-0 w-full sm:w-auto"
           >
             <Plus className="h-4 w-4" /> Request Add-on Service
           </Button>
@@ -157,22 +159,22 @@ export function ClientServicesWidget({
             key={svc.id}
             className={`p-5 rounded-3xl border bg-gradient-to-br ${svc.bgGradient} space-y-3 relative group transition-all duration-300 hover:shadow-md hover:-translate-y-0.5`}
           >
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex items-center gap-3">
-                <div className={`h-10 w-10 rounded-2xl flex items-center justify-center border shadow-sm ${svc.badgeClass}`}>
+            <div className="flex items-start justify-between gap-2.5">
+              <div className="flex items-start gap-3 min-w-0 flex-1">
+                <div className={`h-9 w-9 sm:h-10 sm:w-10 rounded-2xl flex items-center justify-center border shadow-sm shrink-0 mt-0.5 ${svc.badgeClass}`}>
                   {getServiceIcon(svc.iconName)}
                 </div>
-                <div>
-                  <h4 className="font-extrabold text-sm text-foreground group-hover:text-cyan transition-colors">
+                <div className="min-w-0 flex-1">
+                  <h4 className="font-extrabold text-sm text-foreground group-hover:text-cyan transition-colors leading-snug break-words">
                     {svc.name}
                   </h4>
-                  <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider block">
+                  <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider block mt-0.5">
                     {svc.category}
                   </span>
                 </div>
               </div>
 
-              <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[9px] uppercase font-black tracking-wider px-2 py-0.5">
+              <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[9px] uppercase font-black tracking-wider px-2.5 py-0.5 shrink-0 whitespace-nowrap self-start">
                 ● Active
               </Badge>
             </div>
@@ -183,10 +185,10 @@ export function ClientServicesWidget({
 
             <div className="pt-2 border-t border-border/50 flex items-center justify-between text-[11px]">
               <span className="text-muted-foreground font-mono flex items-center gap-1">
-                <ShieldCheck className="h-3.5 w-3.5 text-cyan" />
+                <ShieldCheck className="h-3.5 w-3.5 text-cyan shrink-0" />
                 Verified Agency Deliverable
               </span>
-              <span className="font-bold text-foreground">
+              <span className="font-bold text-foreground shrink-0">
                 {client.billing_cycle === 'yearly' ? 'Annual Plan' : 'Monthly'}
               </span>
             </div>
@@ -225,10 +227,10 @@ export function ClientServicesWidget({
                   <Plus className="h-3.5 w-3.5 text-muted-foreground group-hover:text-cyan transition-colors" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-foreground group-hover:text-cyan transition-colors truncate">
+                  <p className="text-xs font-bold text-foreground group-hover:text-cyan transition-colors leading-snug break-words">
                     {addon.shortName}
                   </p>
-                  <p className="text-[10px] text-muted-foreground truncate">{addon.category}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5 leading-none">{addon.category}</p>
                 </div>
               </button>
             ))}

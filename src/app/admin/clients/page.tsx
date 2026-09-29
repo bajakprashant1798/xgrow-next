@@ -71,6 +71,8 @@ import {
   assignProjectsToClient,
   updateUserRoleAndProfile,
   subscribeToDataChanges,
+  saveUserCredential,
+  generateSecurePassword,
   EmailCheckResult,
 } from '@/lib/db';
 import { ClientModel, ProjectModel, CustomRoleModel, ProjectStatus } from '@/lib/supabase/types';
@@ -82,6 +84,8 @@ import {
   getBillingCycleDefinition,
   getServicesForPlan,
 } from '@/lib/client-services';
+import { useAuth } from '@/lib/auth-context';
+import { AdminAccessDenied } from '@/components/admin/AdminAccessDenied';
 
 interface OnboardUserData {
   id?: string;
@@ -105,6 +109,13 @@ interface OnboardUserData {
 }
 
 export default function ClientsManagementPage() {
+  const { user, isAdmin, hasPermission } = useAuth();
+
+  // RBAC Gating permissions
+  const canView = isAdmin || hasPermission('clients', 'view');
+  const canCreateEdit = isAdmin || hasPermission('clients', 'create_edit');
+  const canDelete = isAdmin || hasPermission('clients', 'delete');
+
   const [clients, setClients] = useState<ClientModel[]>([]);
   const [projects, setProjects] = useState<ProjectModel[]>([]);
   const [roles, setRoles] = useState<CustomRoleModel[]>([]);
@@ -380,6 +391,19 @@ export default function ClientsManagementPage() {
           await saveProject(autoProj as any);
         }
 
+        if (!userData.id) {
+          const generatedPass = generateSecurePassword(12);
+          await saveUserCredential(saved.email, generatedPass, true, {
+            name: saved.name,
+            role: 'client',
+            phone: saved.phone,
+            company_name: saved.company_name,
+            address: saved.address,
+            selected_plan: saved.selected_plan,
+            status: saved.status,
+          });
+        }
+
         toast.success(userData.id ? 'Client account updated successfully!' : 'New client account created successfully!');
       } else {
         if (userData.id) {
@@ -399,6 +423,15 @@ export default function ClientsManagementPage() {
             email: userData.email.trim().toLowerCase(),
             phone: userData.phone || '',
             role: userData.role,
+            department: userData.department || 'Engineering',
+            status: 'active',
+          });
+
+          const generatedPass = generateSecurePassword(12);
+          await saveUserCredential(userData.email.trim().toLowerCase(), generatedPass, true, {
+            name: userData.name.trim(),
+            role: userData.role,
+            phone: userData.phone,
             department: userData.department || 'Engineering',
             status: 'active',
           });
@@ -540,6 +573,10 @@ export default function ClientsManagementPage() {
     return found ? found.name : roleKey.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase());
   };
 
+  if (!canView) {
+    return <AdminAccessDenied moduleName="Client Accounts" requiredAction="View Clients" />;
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -553,12 +590,14 @@ export default function ClientsManagementPage() {
             Manage client subscriptions, active deliverables (Website, SEO, AI Automation, Graphic Design, GBP), monthly/yearly retainers & project workspaces.
           </p>
         </div>
-        <Button
-          onClick={openCreateDialog}
-          className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-5 shadow-sm self-start sm:self-auto"
-        >
-          <UserPlus className="h-3.5 w-3.5 mr-1.5" /> Onboard New Client
-        </Button>
+        {canCreateEdit && (
+          <Button
+            onClick={openCreateDialog}
+            className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-5 shadow-sm self-start sm:self-auto"
+          >
+            <UserPlus className="h-3.5 w-3.5 mr-1.5" /> Onboard New Client
+          </Button>
+        )}
       </div>
 
       {/* Pending Approval Alert Banner (if any pending) */}
@@ -843,63 +882,65 @@ export default function ClientsManagementPage() {
                 </div>
 
                 {/* Actions Footer */}
-                <div className="p-4 border-t border-border bg-surface/40 flex items-center justify-between gap-2 flex-wrap">
-                  {isPending ? (
-                    <div className="flex items-center gap-2 w-full">
-                      <Button
-                        size="sm"
-                        onClick={() => handleApproveClient(client)}
-                        className="flex-1 rounded-full bg-emerald-500 text-slate-950 hover:bg-emerald-400 font-bold text-xs h-8 px-3 shadow-sm"
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Approve Client
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => openAssignProjectsModal(client)}
-                        className="rounded-full text-xs font-semibold h-8 px-2.5 border-cyan/40 text-cyan hover:bg-cyan/10"
-                        title="Assign Project Workspaces"
-                      >
-                        <FolderKanban className="h-3.5 w-3.5 mr-1" /> Projects
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between w-full">
-                      <div className="flex items-center gap-1.5 flex-wrap">
+                {canCreateEdit && (
+                  <div className="p-4 border-t border-border bg-surface/40 flex items-center justify-between gap-2 flex-wrap">
+                    {isPending ? (
+                      <div className="flex items-center gap-2 w-full">
+                        <Button
+                          size="sm"
+                          onClick={() => handleApproveClient(client)}
+                          className="flex-1 rounded-full bg-emerald-500 text-slate-950 hover:bg-emerald-400 font-bold text-xs h-8 px-3 shadow-sm"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Approve Client
+                        </Button>
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => openAssignProjectsModal(client)}
                           className="rounded-full text-xs font-semibold h-8 px-2.5 border-cyan/40 text-cyan hover:bg-cyan/10"
+                          title="Assign Project Workspaces"
                         >
-                          <FolderKanban className="h-3.5 w-3.5 mr-1" /> Assign Projects
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEditDialog(client)}
-                          className="rounded-full text-xs font-semibold h-8 px-2.5 border-border hover:border-cyan/40"
-                        >
-                          <Edit2 className="h-3 w-3 mr-1" /> Edit
+                          <FolderKanban className="h-3.5 w-3.5 mr-1" /> Projects
                         </Button>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleToggleClientStatus(client)}
-                        className={`rounded-full text-xs font-semibold h-8 px-2.5 transition-colors ${
-                          client.status === 'inactive'
-                            ? 'text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10'
-                            : 'text-rose-400 hover:text-rose-300 hover:bg-rose-500/10'
-                        }`}
-                        title={client.status === 'inactive' ? 'Activate Client' : 'Deactivate Client'}
-                      >
-                        <Power className="h-3.5 w-3.5 mr-1" />
-                        {client.status === 'inactive' ? 'Activate' : 'Deactivate'}
-                      </Button>
-                    </div>
-                  )}
-                </div>
+                    ) : (
+                      <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openAssignProjectsModal(client)}
+                            className="rounded-full text-xs font-semibold h-8 px-2.5 border-cyan/40 text-cyan hover:bg-cyan/10"
+                          >
+                            <FolderKanban className="h-3.5 w-3.5 mr-1" /> Assign Projects
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openEditDialog(client)}
+                            className="rounded-full text-xs font-semibold h-8 px-2.5 border-border hover:border-cyan/40"
+                          >
+                            <Edit2 className="h-3 w-3 mr-1" /> Edit
+                          </Button>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleToggleClientStatus(client)}
+                          className={`rounded-full text-xs font-semibold h-8 px-2.5 transition-colors ${
+                            client.status === 'inactive'
+                              ? 'text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10'
+                              : 'text-rose-400 hover:text-rose-300 hover:bg-rose-500/10'
+                          }`}
+                          title={client.status === 'inactive' ? 'Activate Client' : 'Deactivate Client'}
+                        >
+                          <Power className="h-3.5 w-3.5 mr-1" />
+                          {client.status === 'inactive' ? 'Activate' : 'Deactivate'}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </Card>
             );
           })}

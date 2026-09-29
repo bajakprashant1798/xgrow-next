@@ -25,8 +25,14 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 import { getServices, getPricingPlans, getProjects, getClients } from '@/lib/db';
+import { useAuth } from '@/lib/auth-context';
+import { AdminAccessDenied } from '@/components/admin/AdminAccessDenied';
 
 export default function SettingsPage() {
+  const { isAdmin, hasPermission } = useAuth();
+  const canView = isAdmin || hasPermission('settings', 'view');
+  const canEdit = isAdmin || hasPermission('settings', 'edit');
+
   const [supabaseReady, setSupabaseReady] = useState(false);
   const [stats, setStats] = useState({ services: 0, plans: 0, projects: 0, clients: 0 });
 
@@ -70,6 +76,10 @@ export default function SettingsPage() {
     a.click();
     toast.success('Agency database export downloaded!');
   };
+
+  if (!canView) {
+    return <AdminAccessDenied moduleName="Database & Settings" requiredAction="View Settings" />;
+  }
 
   return (
     <div className="space-y-6">

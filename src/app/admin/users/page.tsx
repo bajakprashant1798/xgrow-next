@@ -85,9 +85,11 @@ import {
 } from '@/lib/db';
 import { CustomRoleModel, ProjectModel } from '@/lib/supabase/types';
 import { useAuth } from '@/lib/auth-context';
+import { AdminAccessDenied } from '@/components/admin/AdminAccessDenied';
 
 export default function UsersManagementPage() {
-  const { user: currentAuthUser, isAdmin } = useAuth();
+  const { user: currentAuthUser, isAdmin, hasPermission } = useAuth();
+  const canManageUsers = isAdmin || hasPermission('team_roles', 'manage_permissions');
 
   const [users, setUsers] = useState<UnifiedUserModel[]>([]);
   const [roles, setRoles] = useState<CustomRoleModel[]>([]);
@@ -468,6 +470,10 @@ _Please keep these credentials secure. You can sign in and change your password 
     return 'border-border bg-surface text-foreground';
   };
 
+  if (!canManageUsers) {
+    return <AdminAccessDenied moduleName="Users Management & Credentials" requiredAction="Manage Users & RBAC (Super Admin)" />;
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -713,12 +719,28 @@ _Please keep these credentials secure. You can sign in and change your password 
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => {
+                            onClick={async () => {
                               const origin = typeof window !== 'undefined' ? window.location.origin : 'https://xgro.in';
+                              let pass = u.temporaryPassword;
+                              if (!pass) {
+                                try {
+                                  const res = await fetch('/api/auth/credentials/reveal', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ email: u.email }),
+                                  });
+                                  if (res.ok) {
+                                    const data = await res.json();
+                                    if (data.password) {
+                                      pass = data.password;
+                                    }
+                                  }
+                                } catch (e) {}
+                              }
                               setCredentialsData({
                                 name: u.name,
                                 email: u.email,
-                                password: u.temporaryPassword || 'Generated Password',
+                                password: pass || 'Temporary Password Configured',
                                 roleDisplayName: u.roleDisplayName,
                                 loginUrl: `${origin}/login`,
                               });

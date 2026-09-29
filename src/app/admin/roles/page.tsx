@@ -66,9 +66,12 @@ import {
   ModuleDefinition,
 } from '@/lib/permissions';
 import { useAuth } from '@/lib/auth-context';
+import { AdminAccessDenied } from '@/components/admin/AdminAccessDenied';
 
 export default function RolesManagementPage() {
-  const { user, isAdmin, refreshUserData } = useAuth();
+  const { user, isAdmin, refreshUserData, hasPermission } = useAuth();
+  const canManageRoles = isAdmin || hasPermission('team_roles', 'manage_permissions');
+
   const [roles, setRoles] = useState<CustomRoleModel[]>([]);
   const [team, setTeam] = useState<TeamMemberModel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -268,6 +271,10 @@ export default function RolesManagementPage() {
     const percentage = total > 0 ? Math.round((granted / total) * 100) : 0;
     return { total, granted, percentage };
   };
+
+  if (!canManageRoles) {
+    return <AdminAccessDenied moduleName="Roles & Permissions Access Control" requiredAction="Manage Roles & RBAC (Super Admin)" />;
+  }
 
   return (
     <div className="space-y-6">

@@ -43,8 +43,15 @@ import {
 import { toast } from 'sonner';
 import { getPricingPlans, savePricingPlan, deletePricingPlan, subscribeToDataChanges } from '@/lib/db';
 import { PricingPlanModel, PricingStatus } from '@/lib/supabase/types';
+import { useAuth } from '@/lib/auth-context';
+import { AdminAccessDenied } from '@/components/admin/AdminAccessDenied';
 
 export default function PricingManagementPage() {
+  const { isAdmin, hasPermission } = useAuth();
+  const canView = isAdmin || hasPermission('pricing', 'view');
+  const canCreateEdit = isAdmin || hasPermission('pricing', 'create_edit');
+  const canDelete = isAdmin || hasPermission('pricing', 'delete');
+
   const [plans, setPlans] = useState<PricingPlanModel[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<Partial<PricingPlanModel> | null>(null);
@@ -62,6 +69,10 @@ export default function PricingManagementPage() {
   }, []);
 
   const openCreateDialog = () => {
+    if (!canCreateEdit) {
+      toast.error('You do not have permission to create pricing plans');
+      return;
+    }
     setEditingPlan({
       name: '',
       slug: '',
@@ -86,6 +97,10 @@ export default function PricingManagementPage() {
   };
 
   const openEditDialog = (plan: PricingPlanModel) => {
+    if (!canCreateEdit) {
+      toast.error('You do not have permission to edit pricing plans');
+      return;
+    }
     setEditingPlan(plan);
     setFeaturesList(plan.features || []);
     setIsDialogOpen(true);
@@ -104,6 +119,10 @@ export default function PricingManagementPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canCreateEdit) {
+      toast.error('You do not have permission to save pricing plans');
+      return;
+    }
     if (!editingPlan?.name || !editingPlan?.price) {
       toast.error('Plan Name and Price are required');
       return;
@@ -127,6 +146,10 @@ export default function PricingManagementPage() {
   };
 
   const handleDelete = async (id: string, name: string) => {
+    if (!canDelete) {
+      toast.error('You do not have permission to delete pricing plans');
+      return;
+    }
     if (confirm(`Are you sure you want to delete the plan "${name}"?`)) {
       await deletePricingPlan(id);
       toast.success(`Plan "${name}" removed`);
@@ -135,6 +158,10 @@ export default function PricingManagementPage() {
   };
 
   const handleToggleStatus = async (plan: PricingPlanModel) => {
+    if (!canCreateEdit) {
+      toast.error('You do not have permission to modify plan status');
+      return;
+    }
     const newStatus: PricingStatus = plan.status === 'published' ? 'draft' : 'published';
     await savePricingPlan({
       ...plan,
@@ -143,6 +170,10 @@ export default function PricingManagementPage() {
     toast.success(`Plan status changed to ${newStatus}`);
     loadData();
   };
+
+  if (!canView) {
+    return <AdminAccessDenied moduleName="Pricing Plans CMS" requiredAction="View Pricing Plans" />;
+  }
 
   return (
     <div className="space-y-6">
@@ -157,100 +188,104 @@ export default function PricingManagementPage() {
             Manage packages displayed on the public site, pricing tiers, badges, and features.
           </p>
         </div>
-        <Button
-          onClick={openCreateDialog}
-          className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-5 shadow-sm self-start sm:self-auto"
-        >
-          <Plus className="h-3.5 w-3.5 mr-1.5" /> Add New Plan
-        </Button>
+        {canCreateEdit && (
+          <Button
+            onClick={openCreateDialog}
+            className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-5 shadow-sm self-start sm:self-auto"
+          >
+            <Plus className="h-3.5 w-3.5 mr-1.5" /> Add New Plan
+          </Button>
+        )}
       </div>
 
       {/* Example Pricing Blueprints */}
-      <div className="p-4 rounded-2xl bg-surface/50 border border-border/80 space-y-2.5">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-            <Sparkles className="h-3.5 w-3.5 text-cyan" />
-            Quick Example Pricing Templates (Click to Load Blueprint):
-          </span>
+      {canCreateEdit && (
+        <div className="p-4 rounded-2xl bg-surface/50 border border-border/80 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <Sparkles className="h-3.5 w-3.5 text-cyan" />
+              Quick Example Pricing Templates (Click to Load Blueprint):
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              {
+                label: '📈 Monthly SEO & Local Growth Retainer',
+                name: 'SEO & Growth Retainer',
+                price: '₹18,500/mo',
+                discount_price: '₹25,000/mo',
+                tag: 'Monthly managed SEO, citations & Google ranking',
+                highlighted: false,
+                features: [
+                  'Google Business Profile Weekly Optimization & Posts',
+                  'Local 3-Pack Maps Ranking Strategy',
+                  '4 High-Intent SEO Articles per Month',
+                  'Technical Crawl Audits & Schema Markup',
+                  'Monthly Live Traffic & Leads Analytics Call'
+                ]
+              },
+              {
+                label: '🚀 Full-Stack AI & Performance Package',
+                name: 'Full Growth Suite',
+                price: '₹49,999',
+                discount_price: '₹75,000',
+                tag: 'Complete custom website, AI chatbot & paid ads engine',
+                highlighted: true,
+                features: [
+                  'Up to 15 Pages Custom Next.js Web App',
+                  '24/7 WhatsApp AI Support Agent Integration',
+                  'High-ROAS Meta (Facebook/Instagram) & Google Ads Setup',
+                  'Client Project Milestone Portal Access',
+                  '3 Months Priority SLA Support & Maintenance'
+                ]
+              },
+              {
+                label: '🛡️ Annual Agency SLA & Web Maintenance',
+                name: 'Annual Care SLA',
+                price: '₹14,999/yr',
+                discount_price: '₹22,000/yr',
+                tag: 'Hosting, security, uptime & monthly revisions',
+                highlighted: false,
+                features: [
+                  '99.9% Uptime Hosting & Cloudflare CDN Monitoring',
+                  'Weekly Automated Off-Site Backups',
+                  'Unlimited Minor Content & Banner Revisions',
+                  'SSL Security & Malware Protection',
+                  'Dedicated Technical Support WhatsApp Desk'
+                ]
+              }
+            ].map((tmpl) => (
+              <Button
+                key={tmpl.name}
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setEditingPlan({
+                    name: tmpl.name,
+                    slug: tmpl.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+                    price: tmpl.price,
+                    discount_price: tmpl.discount_price,
+                    tag: tmpl.tag,
+                    highlighted: tmpl.highlighted,
+                    features: tmpl.features,
+                    status: 'published',
+                    display_order: plans.length + 1,
+                    cta_label: 'Get Started',
+                    cta_link: '/contact',
+                  });
+                  setFeaturesList(tmpl.features);
+                  setIsDialogOpen(true);
+                  toast.info(`Loaded blueprint for "${tmpl.name}"!`);
+                }}
+                className="rounded-xl text-xs h-7 border-border hover:border-cyan/40 bg-card/70 font-semibold"
+              >
+                {tmpl.label}
+              </Button>
+            ))}
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {[
-            {
-              label: '📈 Monthly SEO & Local Growth Retainer',
-              name: 'SEO & Growth Retainer',
-              price: '₹18,500/mo',
-              discount_price: '₹25,000/mo',
-              tag: 'Monthly managed SEO, citations & Google ranking',
-              highlighted: false,
-              features: [
-                'Google Business Profile Weekly Optimization & Posts',
-                'Local 3-Pack Maps Ranking Strategy',
-                '4 High-Intent SEO Articles per Month',
-                'Technical Crawl Audits & Schema Markup',
-                'Monthly Live Traffic & Leads Analytics Call'
-              ]
-            },
-            {
-              label: '🚀 Full-Stack AI & Performance Package',
-              name: 'Full Growth Suite',
-              price: '₹49,999',
-              discount_price: '₹75,000',
-              tag: 'Complete custom website, AI chatbot & paid ads engine',
-              highlighted: true,
-              features: [
-                'Up to 15 Pages Custom Next.js Web App',
-                '24/7 WhatsApp AI Support Agent Integration',
-                'High-ROAS Meta (Facebook/Instagram) & Google Ads Setup',
-                'Client Project Milestone Portal Access',
-                '3 Months Priority SLA Support & Maintenance'
-              ]
-            },
-            {
-              label: '🛡️ Annual Agency SLA & Web Maintenance',
-              name: 'Annual Care SLA',
-              price: '₹14,999/yr',
-              discount_price: '₹22,000/yr',
-              tag: 'Hosting, security, uptime & monthly revisions',
-              highlighted: false,
-              features: [
-                '99.9% Uptime Hosting & Cloudflare CDN Monitoring',
-                'Weekly Automated Off-Site Backups',
-                'Unlimited Minor Content & Banner Revisions',
-                'SSL Security & Malware Protection',
-                'Dedicated Technical Support WhatsApp Desk'
-              ]
-            }
-          ].map((tmpl) => (
-            <Button
-              key={tmpl.name}
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setEditingPlan({
-                  name: tmpl.name,
-                  slug: tmpl.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-                  price: tmpl.price,
-                  discount_price: tmpl.discount_price,
-                  tag: tmpl.tag,
-                  highlighted: tmpl.highlighted,
-                  features: tmpl.features,
-                  status: 'published',
-                  display_order: plans.length + 1,
-                  cta_label: 'Get Started',
-                  cta_link: '/contact',
-                });
-                setFeaturesList(tmpl.features);
-                setIsDialogOpen(true);
-                toast.info(`Loaded blueprint for "${tmpl.name}"!`);
-              }}
-              className="rounded-xl text-xs h-7 border-border hover:border-cyan/40 bg-card/70 font-semibold"
-            >
-              {tmpl.label}
-            </Button>
-          ))}
-        </div>
-      </div>
+      )}
 
       {/* Pricing Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -324,43 +359,51 @@ export default function PricingManagementPage() {
             </div>
 
             {/* Actions */}
-            <div className="p-4 border-t border-border bg-surface/40 flex items-center justify-between">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => handleToggleStatus(plan)}
-                className="h-8 text-xs font-semibold text-muted-foreground hover:text-foreground"
-              >
-                {plan.status === 'published' ? (
-                  <span className="flex items-center gap-1.5">
-                    <EyeOff className="h-3.5 w-3.5" /> Unpublish
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1.5 text-emerald-500">
-                    <Eye className="h-3.5 w-3.5" /> Publish
-                  </span>
-                )}
-              </Button>
+            {(canCreateEdit || canDelete) && (
+              <div className="p-4 border-t border-border bg-surface/40 flex items-center justify-between">
+                {canCreateEdit ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleToggleStatus(plan)}
+                    className="h-8 text-xs font-semibold text-muted-foreground hover:text-foreground"
+                  >
+                    {plan.status === 'published' ? (
+                      <span className="flex items-center gap-1.5">
+                        <EyeOff className="h-3.5 w-3.5" /> Unpublish
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5 text-emerald-500">
+                        <Eye className="h-3.5 w-3.5" /> Publish
+                      </span>
+                    )}
+                  </Button>
+                ) : <div />}
 
-              <div className="flex items-center gap-1.5">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => openEditDialog(plan)}
-                  className="h-8 rounded-full border-border text-xs px-3 font-semibold"
-                >
-                  <Edit2 className="h-3 w-3 mr-1" /> Edit
-                </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => handleDelete(plan.id, plan.name)}
-                  className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-full"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  {canCreateEdit && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openEditDialog(plan)}
+                      className="h-8 rounded-full border-border text-xs px-3 font-semibold"
+                    >
+                      <Edit2 className="h-3 w-3 mr-1" /> Edit
+                    </Button>
+                  )}
+                  {canDelete && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => handleDelete(plan.id, plan.name)}
+                      className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-full"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </Card>
         ))}
       </div>

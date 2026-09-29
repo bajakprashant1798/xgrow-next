@@ -58,6 +58,8 @@ import {
   subscribeToDataChanges,
 } from '@/lib/db';
 import { ProjectModel, ClientModel, ServiceModel, TeamMemberModel, ProjectStatus } from '@/lib/supabase/types';
+import { useAuth } from '@/lib/auth-context';
+import { AdminAccessDenied } from '@/components/admin/AdminAccessDenied';
 
 const STATUS_CONFIG: Record<ProjectStatus, { label: string; color: string }> = {
   not_started: { label: 'Not Started', color: 'border-slate-500 text-slate-500 bg-slate-500/10' },
@@ -73,6 +75,7 @@ const STATUS_CONFIG: Record<ProjectStatus, { label: string; color: string }> = {
 };
 
 export default function ProjectsListPage() {
+  const { user, isAdmin, hasPermission } = useAuth();
   const [projects, setProjects] = useState<ProjectModel[]>([]);
   const [clients, setClients] = useState<ClientModel[]>([]);
   const [services, setServices] = useState<ServiceModel[]>([]);
@@ -81,6 +84,12 @@ export default function ProjectsListPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  // RBAC Action checks
+  const canView = isAdmin || hasPermission('projects', 'view');
+  const canCreate = isAdmin || hasPermission('projects', 'create_edit');
+  const canEdit = isAdmin || hasPermission('projects', 'create_edit');
+  const canDelete = isAdmin || hasPermission('projects', 'delete');
 
   // Edit Project state
   const [editingProject, setEditingProject] = useState<ProjectModel | null>(null);
@@ -132,6 +141,10 @@ export default function ProjectsListPage() {
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canCreate) {
+      toast.error('You do not have permission to create projects');
+      return;
+    }
     if (!newProject.project_name || !newProject.client_id) {
       toast.error('Project Name and Client are required');
       return;
@@ -162,12 +175,20 @@ export default function ProjectsListPage() {
   const handleOpenEditModal = (project: ProjectModel, e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
+    if (!canEdit) {
+      toast.error('You do not have permission to edit projects');
+      return;
+    }
     setEditingProject({ ...project });
     setIsEditDialogOpen(true);
   };
 
   const handleSaveEditedProject = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEdit) {
+      toast.error('You do not have permission to edit projects');
+      return;
+    }
     if (!editingProject || !editingProject.project_name?.trim()) {
       toast.error('Project Name is required');
       return;
@@ -187,12 +208,20 @@ export default function ProjectsListPage() {
   const handleOpenDeleteModal = (project: ProjectModel, e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
+    if (!canDelete) {
+      toast.error('You do not have permission to delete projects');
+      return;
+    }
     setProjectToDelete(project);
     setDeleteConfirmInput('');
     setIsDeleteDialogOpen(true);
   };
 
   const handleConfirmSafeDelete = async () => {
+    if (!canDelete) {
+      toast.error('You do not have permission to delete projects');
+      return;
+    }
     if (!projectToDelete) return;
     if (deleteConfirmInput.trim() !== projectToDelete.project_name.trim()) {
       toast.error('Project name does not match');
@@ -230,6 +259,10 @@ export default function ProjectsListPage() {
     return matchesStatus && matchesSearch;
   });
 
+  if (!canView) {
+    return <AdminAccessDenied moduleName="Projects & Milestones" requiredAction="View Projects" />;
+  }
+
   return (
     <div className="space-y-6">
       {/* Header & Actions */}
@@ -243,12 +276,14 @@ export default function ProjectsListPage() {
             Track active deliverables, progress percentages, assigned Project Managers, and safe workspace management.
           </p>
         </div>
-        <Button
-          onClick={() => setIsDialogOpen(true)}
-          className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-5 shadow-sm self-start sm:self-auto"
-        >
-          <Plus className="h-3.5 w-3.5 mr-1.5" /> Create Project
-        </Button>
+        {canCreate && (
+          <Button
+            onClick={() => setIsDialogOpen(true)}
+            className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-5 shadow-sm self-start sm:self-auto"
+          >
+            <Plus className="h-3.5 w-3.5 mr-1.5" /> Create Project
+          </Button>
+        )}
       </div>
 
       {/* Controls Bar */}
@@ -458,7 +493,7 @@ export default function ProjectsListPage() {
                         <Calendar className="h-3.5 w-3.5 text-cyan" />
                         <span>Start: {project.start_date || 'Feb 2026'}</span>
                         {project.expected_completion_date && (
-                          <span>→ Due: {project.expected_completion_date}</span>
+                          <span className="text-emerald-400 font-semibold">• Target Delivery: {project.expected_completion_date}</span>
                         )}
                       </div>
                       <span className="text-[11px] text-muted-foreground">
@@ -471,22 +506,26 @@ export default function ProjectsListPage() {
                 {/* Card Action with Edit & Safe Delete buttons */}
                 <div className="p-4 border-t border-border bg-surface/40 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => handleOpenEditModal(project, e)}
-                      className="rounded-full h-8 text-xs font-semibold border-border hover:border-cyan hover:text-cyan"
-                    >
-                      <Edit className="h-3.5 w-3.5 mr-1" /> Edit
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => handleOpenDeleteModal(project, e)}
-                      className="rounded-full h-8 text-xs font-semibold border-border text-rose-500 hover:bg-rose-500/10 hover:border-rose-500"
-                    >
-                      <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
-                    </Button>
+                    {canEdit && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => handleOpenEditModal(project, e)}
+                        className="rounded-full h-8 text-xs font-semibold border-border hover:border-cyan hover:text-cyan"
+                      >
+                        <Edit className="h-3.5 w-3.5 mr-1" /> Edit
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => handleOpenDeleteModal(project, e)}
+                        className="rounded-full h-8 text-xs font-semibold border-border text-rose-500 hover:bg-rose-500/10 hover:border-rose-500"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+                      </Button>
+                    )}
                   </div>
                   <Button asChild size="sm" className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-4">
                     <Link href={`/admin/projects/${project.id}`}>
@@ -577,7 +616,7 @@ export default function ProjectsListPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground">Expected Completion</label>
+                <label className="text-xs font-bold text-foreground">Target Delivery Date (Client Deadline)</label>
                 <Input
                   type="date"
                   value={newProject.expected_completion_date || ''}
@@ -804,7 +843,7 @@ export default function ProjectsListPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-foreground">Expected Completion</label>
+                  <label className="text-xs font-bold text-foreground">Target Delivery Date (Client Deadline)</label>
                   <Input
                     type="date"
                     value={editingProject.expected_completion_date || ''}

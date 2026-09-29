@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { ArrowRight, Calendar, Clock, User } from "lucide-react";
-import { Reveal } from "@/components/site/Reveal";
 import type { SanityPost } from "@/sanity/lib/queries";
 import { urlForImage } from "@/sanity/lib/image";
 
@@ -26,18 +25,43 @@ function formatDate(dateStr?: string) {
 export function BlogList({ initialPosts = [] }: BlogListProps) {
   const [selectedCat, setSelectedCat] = useState<string>("All");
 
-  const categories = [
-    "All",
-    "AI",
-    "SEO",
-    "Website Development",
-    "Digital Marketing",
-    "Branding",
-    "Case Studies",
-    "Business Growth",
-    "Tutorials",
-    "Industry News",
-  ];
+  // Derive categories dynamically from available posts with preferred ordering
+  const categories = useMemo(() => {
+    const rawCategories = initialPosts
+      .map((p) => p.category?.trim())
+      .filter((c): c is string => Boolean(c));
+    const unique = Array.from(new Set(rawCategories));
+
+    const preferredOrder = [
+      "AI",
+      "SEO",
+      "Website Development",
+      "Digital Marketing",
+      "Branding",
+      "Business Growth",
+    ];
+
+    unique.sort((a, b) => {
+      const idxA = preferredOrder.indexOf(a);
+      const idxB = preferredOrder.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+
+    return ["All", ...unique];
+  }, [initialPosts]);
+
+  // Helper to count posts in a category
+  const getCategoryCount = (cat: string) => {
+    if (cat === "All") return initialPosts.length;
+    return initialPosts.filter(
+      (p) =>
+        p.category?.toLowerCase() === cat.toLowerCase() ||
+        p.tags?.some((t) => t.toLowerCase() === cat.toLowerCase())
+    ).length;
+  };
 
   // Helper to filter posts by category or tag
   const filteredPosts =
@@ -51,41 +75,44 @@ export function BlogList({ initialPosts = [] }: BlogListProps) {
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6">
-      {/* Category Navigation */}
-      <div className="flex flex-wrap justify-start gap-2 border-b border-border pb-8">
+      {/* Category Tabs (styled like Services page) */}
+      <div className="flex flex-wrap justify-center gap-2 border-b border-border pb-8">
         {categories.map((cat) => (
           <button
             key={cat}
             onClick={() => setSelectedCat(cat)}
-            className={`rounded-full px-4 py-2 text-xs font-semibold transition-all duration-300 ${
+            className={`rounded-full px-5 py-2.5 text-sm font-semibold transition-all duration-300 ${
               selectedCat === cat
-                ? "bg-primary text-primary-foreground shadow-md dark:bg-cyan dark:text-cyan-foreground"
+                ? "bg-primary text-primary-foreground shadow-lg dark:bg-cyan dark:text-cyan-foreground"
                 : "border border-border bg-card text-foreground hover:bg-secondary"
             }`}
           >
-            {cat}
+            {cat} {cat !== "All" && `(${getCategoryCount(cat)})`}
           </button>
         ))}
       </div>
 
-      {filteredPosts.length === 0 ? (
-        <div className="text-center py-20">
-          <p className="text-lg text-muted-foreground">
-            No articles found in this category yet.
-          </p>
-          <button
-            onClick={() => setSelectedCat("All")}
-            className="mt-4 text-cyan hover:underline font-semibold"
-          >
-            Clear filter
-          </button>
-        </div>
-      ) : (
-        /* Blog Grid */
-        <div className="mt-12 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-          {filteredPosts.map((post, i) => (
-            <Reveal key={post.slug} delay={i * 80}>
-              <article className="group flex h-full flex-col rounded-3xl border border-border bg-card overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:border-cyan hover:shadow-2xl">
+      {/* Blog Grid with stable container min-height */}
+      <div className="mt-16 min-h-[400px]">
+        {filteredPosts.length === 0 ? (
+          <div className="text-center py-20">
+            <p className="text-lg text-muted-foreground">
+              No articles found in this category yet.
+            </p>
+            <button
+              onClick={() => setSelectedCat("All")}
+              className="mt-4 text-cyan hover:underline font-semibold text-sm"
+            >
+              Clear filter
+            </button>
+          </div>
+        ) : (
+          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+            {filteredPosts.map((post) => (
+              <article
+                key={post.slug}
+                className="group flex h-full flex-col rounded-3xl border border-border bg-card overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:border-cyan hover:shadow-2xl animate-in fade-in-50 duration-200"
+              >
                 {/* Visual Cover Image or Gradient */}
                 {post.mainImage?.asset ? (
                   <div className="relative h-48 w-full overflow-hidden border-b border-border">
@@ -162,10 +189,11 @@ export function BlogList({ initialPosts = [] }: BlogListProps) {
                   </div>
                 </div>
               </article>
-            </Reveal>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
     </section>
   );
 }
+

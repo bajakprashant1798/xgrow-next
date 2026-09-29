@@ -53,11 +53,21 @@ import { toast } from 'sonner';
 import { getServices, saveService, deleteService, subscribeToDataChanges } from '@/lib/db';
 import { ServiceModel, ServiceStatus } from '@/lib/supabase/types';
 import { compressImageFile } from '@/lib/image-compressor';
+import { useAuth } from '@/lib/auth-context';
+import { AdminAccessDenied } from '@/components/admin/AdminAccessDenied';
 
 const CATEGORIES = ['All', 'Web', 'Creative', 'Marketing', 'AI'];
 const ICONS = ['Laptop', 'Palette', 'TrendingUp', 'Cpu', 'Sparkles'];
 
 export default function ServicesManagementPage() {
+  const { user, isAdmin, hasPermission } = useAuth();
+
+  // RBAC Gating permissions
+  const canView = isAdmin || hasPermission('services', 'view');
+  const canCreateEdit = isAdmin || hasPermission('services', 'create_edit');
+  const canPublish = isAdmin || hasPermission('services', 'publish');
+  const canDelete = isAdmin || hasPermission('services', 'delete');
+
   const [services, setServices] = useState<ServiceModel[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -138,6 +148,10 @@ export default function ServicesManagementPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canCreateEdit) {
+      toast.error('You do not have permission to create or edit services');
+      return;
+    }
     if (!editingService?.title) {
       toast.error('Service Name is required');
       return;
@@ -161,6 +175,10 @@ export default function ServicesManagementPage() {
   };
 
   const handleDelete = async (id: string, name: string) => {
+    if (!canDelete) {
+      toast.error('You do not have permission to delete services');
+      return;
+    }
     if (confirm(`Are you sure you want to delete "${name}"?`)) {
       await deleteService(id);
       toast.success(`Service "${name}" deleted`);
@@ -169,6 +187,10 @@ export default function ServicesManagementPage() {
   };
 
   const handleToggleStatus = async (service: ServiceModel) => {
+    if (!canPublish) {
+      toast.error('You do not have permission to publish or draft services');
+      return;
+    }
     const newStatus: ServiceStatus = service.status === 'published' ? 'draft' : 'published';
     await saveService({
       ...service,
@@ -203,6 +225,10 @@ export default function ServicesManagementPage() {
     }
   };
 
+  if (!canView) {
+    return <AdminAccessDenied moduleName="Services CMS" requiredAction="View Services" />;
+  }
+
   return (
     <div className="space-y-6">
       {/* Header & Title */}
@@ -216,12 +242,14 @@ export default function ServicesManagementPage() {
             Manage public agency services, pricing, included features, SEO tags, and order dynamically.
           </p>
         </div>
-        <Button
-          onClick={openCreateDialog}
-          className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-5 shadow-sm self-start sm:self-auto"
-        >
-          <Plus className="h-3.5 w-3.5 mr-1.5" /> Add New Service
-        </Button>
+        {canCreateEdit && (
+          <Button
+            onClick={openCreateDialog}
+            className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-5 shadow-sm self-start sm:self-auto"
+          >
+            <Plus className="h-3.5 w-3.5 mr-1.5" /> Add New Service
+          </Button>
+        )}
       </div>
 
       {/* Filters & Search Controls */}

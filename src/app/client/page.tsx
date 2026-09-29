@@ -458,21 +458,29 @@ export default function ClientDashboardPage() {
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-cyan">
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-cyan bg-cyan/10 border border-cyan/30 px-2.5 py-0.5 rounded-full">
                     {activeProj.service_name}
                   </span>
                   <span className="text-xs text-muted-foreground">•</span>
-                  <span className="text-xs font-semibold text-muted-foreground">
-                    Started: {activeProj.start_date || 'Feb 2026'}
+                  <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
+                    <Calendar className="h-3.5 w-3.5 text-cyan" /> Started: <strong className="text-foreground">{activeProj.start_date || 'Feb 2026'}</strong>
                   </span>
+                  {activeProj.expected_completion_date && (
+                    <>
+                      <span className="text-xs text-muted-foreground">•</span>
+                      <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-0.5 rounded-full shadow-sm">
+                        <Clock className="h-3.5 w-3.5 text-emerald-400" /> Target Delivery: <strong className="text-emerald-300 font-bold">{activeProj.expected_completion_date}</strong>
+                      </span>
+                    </>
+                  )}
                 </div>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-foreground">
+                <h2 className="text-xl sm:text-2xl font-extrabold text-foreground leading-tight">
                   {activeProj.project_name}
                 </h2>
-                <div className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground">
-                  <User className="h-3.5 w-3.5 text-cyan shrink-0" />
-                  <span className="truncate">
+                <div className="flex items-start sm:items-center gap-1.5 mt-2 text-xs text-muted-foreground leading-relaxed">
+                  <User className="h-3.5 w-3.5 text-cyan shrink-0 mt-0.5 sm:mt-0" />
+                  <span className="break-words">
                     Project Manager:{' '}
                     <strong className="text-foreground">
                       {activeProj.assigned_manager?.name ||
@@ -509,11 +517,9 @@ export default function ClientDashboardPage() {
               {/* Progress Track */}
               <div className="w-full bg-surface/80 rounded-full h-3 sm:h-3.5 overflow-hidden p-0.5 border border-border shadow-inner">
                 <div
-                  className="bg-gradient-to-r from-cyan via-indigo-500 to-cyan h-full rounded-full transition-all duration-700 shadow-sm relative overflow-hidden"
+                  className="bg-gradient-to-r from-cyan via-indigo-500 to-cyan h-full rounded-full transition-all duration-700 shadow-sm"
                   style={{ width: `${Math.max(4, activeProj.progress_percentage)}%` }}
-                >
-                  <div className="absolute inset-0 bg-white/20 animate-pulse" />
-                </div>
+                />
               </div>
 
               {/* Desktop Timeline Stage Labels (>= 640px) */}
@@ -523,7 +529,9 @@ export default function ClientDashboardPage() {
                 <span className={activeProj.progress_percentage >= 40 ? 'text-cyan font-bold' : ''}>UI Design</span>
                 <span className={activeProj.progress_percentage >= 65 ? 'text-cyan font-bold' : ''}>Development</span>
                 <span className={activeProj.progress_percentage >= 85 ? 'text-cyan font-bold' : ''}>Testing</span>
-                <span className={activeProj.progress_percentage >= 100 ? 'text-cyan font-bold' : ''}>100% Live Delivery</span>
+                <span className={activeProj.progress_percentage >= 100 ? 'text-cyan font-bold' : ''}>
+                  100% {activeProj.expected_completion_date ? `Delivery (${activeProj.expected_completion_date})` : 'Live Delivery'}
+                </span>
               </div>
 
               {/* Mobile Responsive Step Badges (< 640px) */}
@@ -533,7 +541,9 @@ export default function ClientDashboardPage() {
                   <span className="text-cyan font-bold font-sans text-xs">
                     Stage: {activeProj.status.replace('_', ' ').toUpperCase()} ({activeProj.progress_percentage}%)
                   </span>
-                  <span>100% Live</span>
+                  <span className={activeProj.expected_completion_date ? 'text-emerald-400 font-bold' : ''}>
+                    {activeProj.expected_completion_date ? `Due: ${activeProj.expected_completion_date}` : '100% Live'}
+                  </span>
                 </div>
 
                 {/* 3x2 Grid of Clean Stage Chips for Mobile */}
@@ -583,16 +593,18 @@ export default function ClientDashboardPage() {
         />
 
         {/* 4. Milestones Checklist Timeline */}
-        <section id="milestones" className="space-y-4">
+        <section id="milestones" className="scroll-mt-24 sm:scroll-mt-28 space-y-4">
           <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-extrabold tracking-tight text-foreground flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-cyan" />
-                Deliverable Milestones ({completedMilestones}/{totalMilestones} Completed)
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Track each verified phase of your digital solution.
-              </p>
+            <div className="flex items-start sm:items-center gap-2.5">
+              <CheckCircle2 className="h-5 w-5 text-cyan shrink-0 mt-0.5 sm:mt-0" />
+              <div>
+                <h3 className="text-base sm:text-lg font-extrabold tracking-tight text-foreground leading-snug">
+                  Deliverable Milestones ({completedMilestones}/{totalMilestones} Completed)
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Track each verified phase of your digital solution.
+                </p>
+              </div>
             </div>
           </div>
 
@@ -654,131 +666,164 @@ export default function ClientDashboardPage() {
           </div>
         </section>
 
-        {/* 4. Live Updates Feed & Assigned Team Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left 2 Cols: Live Feed */}
-          <section id="updates" className="lg:col-span-2 space-y-4">
-            <h3 className="text-lg font-extrabold tracking-tight text-foreground flex items-center gap-2">
-              <MessageSquare className="h-5 w-5 text-cyan" />
-              Live Project Updates & Feed
-            </h3>
+        {/* 5. Live Updates Feed (Full Width Dedicated Section) */}
+        <section id="updates" className="scroll-mt-24 sm:scroll-mt-28 space-y-4">
+          <div className="flex items-start sm:items-center justify-between gap-2">
+            <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+              <MessageSquare className="h-5 w-5 text-cyan shrink-0 mt-0.5 sm:mt-0" />
+              <div>
+                <h3 className="text-base sm:text-lg font-extrabold tracking-tight text-foreground leading-snug">
+                  Live Project Updates & Feed
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Real-time milestone progress logs, sprint notes, and manager announcements.
+                </p>
+              </div>
+            </div>
+          </div>
 
-            <div className="space-y-4">
-              {(activeProj.updates || []).length === 0 ? (
-                <Card className="rounded-3xl border-border bg-card/60 p-8 text-center text-xs text-muted-foreground">
-                  No public updates published yet. Your project lead will log milestone progress here.
+          <div className="space-y-4">
+            {(activeProj.updates || []).length === 0 ? (
+              <Card className="rounded-3xl border-border bg-card/60 p-8 text-center text-xs text-muted-foreground">
+                No public updates published yet. Your project lead will log milestone progress here.
+              </Card>
+            ) : (
+              activeProj.updates?.map((upd) => (
+                <Card key={upd.id} className="rounded-3xl border-border bg-card/60 p-6 shadow-sm space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <div className="h-8 w-8 rounded-full bg-cyan/15 text-cyan font-black text-xs flex items-center justify-center border border-cyan/30 shrink-0 mt-0.5">
+                        {upd.author_name.slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-extrabold text-xs text-foreground leading-snug break-words">{upd.author_name}</p>
+                        <p className="text-[10px] text-cyan capitalize mt-0.5">{upd.author_role || 'Project Lead'}</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground font-mono shrink-0 whitespace-nowrap mt-0.5">
+                      {upd.created_at ? new Date(upd.created_at).toLocaleDateString() : 'Recent'}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <h4 className="font-bold text-sm text-foreground">{upd.title}</h4>
+                    <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-line">
+                      {upd.message}
+                    </p>
+                  </div>
+
+                  {typeof upd.progress_percent === 'number' && (
+                    <div className="pt-2 border-t border-border flex items-center gap-2 text-[11px] text-cyan font-bold">
+                      <TrendingUp className="h-3.5 w-3.5 shrink-0" />
+                      <span>Progress milestone updated to {upd.progress_percent}%</span>
+                    </div>
+                  )}
                 </Card>
-              ) : (
-                activeProj.updates?.map((upd) => (
-                  <Card key={upd.id} className="rounded-3xl border-border bg-card/60 p-6 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="h-8 w-8 rounded-full bg-cyan/15 text-cyan font-black text-xs flex items-center justify-center border border-cyan/30">
-                          {upd.author_name.slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="font-extrabold text-xs text-foreground">{upd.author_name}</p>
-                          <p className="text-[10px] text-cyan capitalize">{upd.author_role || 'Project Lead'}</p>
-                        </div>
-                      </div>
-                      <span className="text-[10px] text-muted-foreground font-mono">
-                        {upd.created_at ? new Date(upd.created_at).toLocaleDateString() : 'Recent'}
-                      </span>
-                    </div>
+              ))
+            )}
+          </div>
+        </section>
 
-                    <div className="space-y-1">
-                      <h4 className="font-bold text-sm text-foreground">{upd.title}</h4>
-                      <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-line">
-                        {upd.message}
-                      </p>
-                    </div>
-
-                    {typeof upd.progress_percent === 'number' && (
-                      <div className="pt-2 border-t border-border flex items-center gap-2 text-[11px] text-cyan font-bold">
-                        <TrendingUp className="h-3.5 w-3.5" />
-                        <span>Progress milestone updated to {upd.progress_percent}%</span>
-                      </div>
-                    )}
-                  </Card>
-                ))
+        {/* 6. Combined Billing & Support Hub (Full-Width Sequential Layout) */}
+        <section id="billing" className="scroll-mt-24 sm:scroll-mt-28 space-y-8 pb-10">
+          {/* Part A: Invoices & Quotations */}
+          <div id="invoices" className="scroll-mt-24 sm:scroll-mt-28 space-y-4">
+            <div className="flex items-start sm:items-center justify-between gap-2">
+              <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+                <FileText className="h-5 w-5 text-cyan shrink-0 mt-0.5 sm:mt-0" />
+                <div>
+                  <h3 className="text-base sm:text-lg font-extrabold tracking-tight text-foreground leading-snug">
+                    Invoices & Quotations
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Official GST billing documents, project quotes, and verified payment receipts.
+                  </p>
+                </div>
+              </div>
+              {(activeProj.invoices || []).length > 0 && (
+                <Badge variant="outline" className="text-[10px] border-cyan/30 text-cyan shrink-0 whitespace-nowrap">
+                  {activeProj.invoices?.length} {activeProj.invoices?.length === 1 ? 'Document' : 'Documents'}
+                </Badge>
               )}
             </div>
-          </section>
 
-          {/* Right Col: Invoices & Assigned Team Contacts */}
-          <div className="space-y-8">
-            {/* Invoices */}
-            <section id="invoices" className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-extrabold tracking-tight text-foreground flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-cyan" />
-                  Invoices & Quotations
-                </h3>
-                {(activeProj.invoices || []).length > 0 && (
-                  <Badge variant="outline" className="text-[10px] border-cyan/30 text-cyan">
-                    {activeProj.invoices?.length} {activeProj.invoices?.length === 1 ? 'Document' : 'Documents'}
-                  </Badge>
-                )}
-              </div>
-
-              <div className="space-y-3">
-                {(activeProj.invoices || []).length === 0 ? (
-                  <Card className="rounded-3xl border-border bg-card/60 p-6 text-center text-xs text-muted-foreground">
-                    No billing documents issued for this project yet.
-                  </Card>
-                ) : (
-                  activeProj.invoices?.map((inv) => (
-                    <Card
-                      key={inv.id}
-                      onClick={() => {
-                        setSelectedInvoice(inv);
-                        setIsInvoiceModalOpen(true);
-                      }}
-                      className="group rounded-2xl border-border bg-card/60 p-4 space-y-3 hover:border-cyan/40 hover:bg-card/90 transition-all cursor-pointer shadow-sm hover:shadow-cyan/5"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <div className="h-8 w-8 rounded-xl bg-cyan/10 text-cyan flex items-center justify-center group-hover:bg-cyan group-hover:text-slate-950 transition-colors">
-                            <FileText className="h-4 w-4" />
-                          </div>
-                          <div>
-                            <span className="font-bold text-xs text-foreground uppercase block group-hover:text-cyan transition-colors">
+            {(activeProj.invoices || []).length === 0 ? (
+              <Card className="rounded-3xl border-border bg-card/60 p-8 text-center text-xs text-muted-foreground">
+                No billing documents issued for this project yet.
+              </Card>
+            ) : (
+              <div className="space-y-3.5">
+                {activeProj.invoices?.map((inv) => (
+                  <Card
+                    key={inv.id}
+                    onClick={() => {
+                      setSelectedInvoice(inv);
+                      setIsInvoiceModalOpen(true);
+                    }}
+                    className="group rounded-3xl border-border bg-card/60 hover:bg-card/90 p-5 sm:p-6 transition-all cursor-pointer shadow-sm hover:border-cyan/40 hover:shadow-cyan/5"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      {/* Left: Icon, Title, Ref, Dates */}
+                      <div className="flex items-start gap-3.5 min-w-0">
+                        <div className="h-11 w-11 rounded-2xl bg-cyan/10 text-cyan flex items-center justify-center group-hover:bg-cyan group-hover:text-slate-950 transition-colors shrink-0 mt-0.5 sm:mt-0">
+                          <FileText className="h-5 w-5" />
+                        </div>
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-extrabold text-sm sm:text-base text-foreground group-hover:text-cyan transition-colors leading-snug break-words">
                               {inv.title}
                             </span>
-                            <span className="text-[10px] text-muted-foreground font-mono">
+                            <Badge
+                              className={`text-[9px] uppercase font-black shrink-0 whitespace-nowrap ${
+                                inv.status === 'paid'
+                                  ? 'bg-emerald-500 text-slate-950'
+                                  : inv.status === 'overdue'
+                                  ? 'bg-red-500 text-white'
+                                  : 'bg-amber-400 text-slate-950'
+                              }`}
+                            >
+                              ● {inv.status}
+                            </Badge>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2.5 text-xs text-muted-foreground">
+                            <span className="font-mono text-[11px] text-cyan">
                               #{inv.reference_number || inv.id}
                             </span>
+                            {inv.issue_date && (
+                              <>
+                                <span>•</span>
+                                <span className="text-[11px]">
+                                  Issued: <strong className="text-foreground">{inv.issue_date}</strong>
+                                </span>
+                              </>
+                            )}
+                            {inv.due_date && (
+                              <>
+                                <span>•</span>
+                                <span className="text-[11px]">
+                                  Due: <strong className="text-foreground">{inv.due_date}</strong>
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
-                        <Badge
-                          className={`text-[9px] uppercase font-black ${
-                            inv.status === 'paid'
-                              ? 'bg-emerald-500 text-slate-950'
-                              : inv.status === 'overdue'
-                              ? 'bg-red-500 text-white'
-                              : 'bg-amber-400 text-slate-950'
-                          }`}
-                        >
-                          {inv.status}
-                        </Badge>
                       </div>
 
-                      <div className="flex items-center justify-between text-xs pt-2 border-t border-border/60">
-                        <div>
-                          <span className="font-mono font-bold text-foreground text-sm">
+                      {/* Right: Amount & PDF Modal Button */}
+                      <div className="flex items-center justify-between sm:justify-end gap-4 pt-3 sm:pt-0 border-t border-border/50 sm:border-t-0 shrink-0">
+                        <div className="text-left sm:text-right">
+                          <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">
+                            Invoice Total
+                          </span>
+                          <span className="font-mono font-black text-foreground text-base sm:text-lg">
                             ₹{Number(inv.amount).toLocaleString('en-IN')}
                           </span>
-                          {inv.issue_date && (
-                            <span className="text-[10px] text-muted-foreground block">
-                              Date: {inv.issue_date}
-                            </span>
-                          )}
                         </div>
 
                         <Button
                           size="sm"
                           variant="secondary"
-                          className="h-8 px-3 text-[11px] font-bold rounded-xl bg-cyan/15 hover:bg-cyan/25 text-cyan border border-cyan/30 flex items-center gap-1.5 transition-colors"
+                          className="h-9 px-4 text-xs font-bold rounded-xl bg-cyan/15 hover:bg-cyan/25 text-cyan border border-cyan/30 flex items-center gap-1.5 transition-colors shrink-0 shadow-sm"
                           onClick={(e) => {
                             e.stopPropagation();
                             setSelectedInvoice(inv);
@@ -786,78 +831,116 @@ export default function ClientDashboardPage() {
                           }}
                         >
                           <Download className="h-3.5 w-3.5" />
-                          <span>View & Download</span>
+                          <span>View PDF</span>
                         </Button>
                       </div>
-                    </Card>
-                  ))
-                )}
+                    </div>
+                  </Card>
+                ))}
               </div>
-            </section>
-
-            {/* Dedicated Team Contacts */}
-            <section id="support" className="space-y-4">
-              <h3 className="text-lg font-extrabold tracking-tight text-foreground flex items-center gap-2">
-                <Users className="h-5 w-5 text-cyan" />
-                Assigned Team Contacts
-              </h3>
-
-              <div className="space-y-3">
-                {(() => {
-                  const manager =
-                    activeProj.assigned_manager ||
-                    team.find((t) => t.id === activeProj.assigned_manager_id) || {
-                      name: 'Prashant Bajak',
-                      role: 'Super Admin & Project Director',
-                      phone: '+91 63953 19725',
-                      email: 'info@xgro.in',
-                    };
-                  const initials = manager.name
-                    .split(' ')
-                    .map((n) => n[0])
-                    .join('')
-                    .toUpperCase()
-                    .slice(0, 2);
-
-                  return (
-                    <Card className="rounded-3xl border-border bg-card/60 p-5 space-y-3">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-2xl bg-cyan text-slate-950 flex items-center justify-center font-black text-sm">
-                          {initials}
-                        </div>
-                        <div>
-                          <p className="font-extrabold text-xs text-foreground">{manager.name}</p>
-                          <p className="text-[10px] text-cyan font-semibold capitalize">
-                            {manager.role?.replace('_', ' ') || 'Project Manager'}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 pt-2 border-t border-border">
-                        <a
-                          href={`https://wa.me/916395319725?text=${encodeURIComponent(
-                            `Hello ${manager.name}, regarding project: ${activeProj.project_name}`
-                          )}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex-1 text-center py-1.5 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-xs font-bold hover:bg-emerald-500/25 transition-colors"
-                        >
-                          WhatsApp
-                        </a>
-                        <a
-                          href="mailto:info@xgro.in"
-                          className="flex-1 text-center py-1.5 rounded-xl bg-surface border border-border text-xs font-semibold hover:border-cyan/40 transition-colors"
-                        >
-                          Email
-                        </a>
-                      </div>
-                    </Card>
-                  );
-                })()}
-              </div>
-            </section>
+            )}
           </div>
-        </div>
+
+          {/* Part B: Assigned Team Contacts & Direct Support (Full-Width below Invoices) */}
+          <div id="support" className="scroll-mt-24 sm:scroll-mt-28 space-y-4 pt-2">
+            <div className="flex items-start sm:items-center justify-between gap-2">
+              <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+                <Users className="h-5 w-5 text-cyan shrink-0 mt-0.5 sm:mt-0" />
+                <div>
+                  <h3 className="text-base sm:text-lg font-extrabold tracking-tight text-foreground leading-snug">
+                    Assigned Project Team & Support
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Direct communication channels with your designated project leaders and technical leads.
+                  </p>
+                </div>
+              </div>
+              <span className="hidden sm:flex items-center gap-1.5 text-xs text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" /> Direct Priority Line
+              </span>
+            </div>
+
+            {(() => {
+              const manager =
+                activeProj.assigned_manager ||
+                team.find((t) => t.id === activeProj.assigned_manager_id) || {
+                  name: 'Prashant Bajak',
+                  role: 'Super Admin & Project Director',
+                  phone: '+91 63953 19725',
+                  email: 'info@xgro.in',
+                };
+              const initials = manager.name
+                .split(' ')
+                .map((n) => n[0])
+                .join('')
+                .toUpperCase()
+                .slice(0, 2);
+
+              return (
+                <Card className="rounded-3xl border-border bg-gradient-to-br from-card via-surface/60 to-card p-6 sm:p-7 shadow-sm">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                    {/* Left: Manager Profile Info */}
+                    <div className="flex items-start sm:items-center gap-4 min-w-0">
+                      <div className="relative shrink-0">
+                        <div className="h-14 w-14 sm:h-16 sm:w-16 rounded-2xl bg-gradient-to-tr from-cyan to-indigo-600 p-0.5 shadow-md">
+                          <div className="h-full w-full rounded-2xl bg-card flex items-center justify-center font-black text-base sm:text-lg text-cyan">
+                            {initials}
+                          </div>
+                        </div>
+                        <span className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full bg-emerald-500 border-2 border-card" title="Online & Active" />
+                      </div>
+
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="font-extrabold text-sm sm:text-base text-foreground leading-tight">
+                            {manager.name}
+                          </h4>
+                          <Badge variant="outline" className="text-[10px] font-bold border-cyan/40 text-cyan bg-cyan/10">
+                            {manager.role?.replace('_', ' ') || 'Lead Project Manager'}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                          Dedicated Point of Contact for <strong className="text-foreground">{activeProj.project_name}</strong>
+                        </p>
+                        <div className="flex flex-wrap items-center gap-3 pt-1 text-[11px] text-muted-foreground font-mono">
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-3 w-3 text-cyan" /> 9:30 AM – 7:30 PM IST
+                          </span>
+                          <span>•</span>
+                          <span className="text-emerald-400 font-sans font-semibold">
+                            Avg. response: ~15 mins
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Direct Action Buttons */}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0 pt-4 lg:pt-0 border-t border-border/60 lg:border-t-0">
+                      <a
+                        href={`https://wa.me/916395319725?text=${encodeURIComponent(
+                          `Hello ${manager.name}, regarding project: ${activeProj.project_name}`
+                        )}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-5 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-black shadow-md shadow-emerald-500/20 hover:shadow-emerald-500/30 transition-all flex items-center justify-center gap-2"
+                      >
+                        <MessageSquare className="h-4 w-4" />
+                        <span>Chat on WhatsApp</span>
+                      </a>
+                      <a
+                        href="mailto:info@xgro.in"
+                        className="px-5 py-2.5 rounded-2xl bg-surface hover:bg-surface/80 border border-border text-xs font-bold hover:border-cyan/40 text-foreground transition-all flex items-center justify-center gap-2"
+                      >
+                        <Mail className="h-4 w-4 text-cyan" />
+                        <span>Send Email</span>
+                      </a>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })()}
+          </div>
+        </section>
       </div>
 
       {/* Invoice Viewer & PDF Modal */}

@@ -36,8 +36,10 @@ import {
   subscribeToDataChanges,
 } from '@/lib/db';
 import { ProjectModel, ServiceModel, TeamMemberModel, ClientModel } from '@/lib/supabase/types';
+import { useAuth } from '@/lib/auth-context';
 
 export default function AdminDashboardPage() {
+  const { user, isAdmin, hasPermission } = useAuth();
   const [projects, setProjects] = useState<ProjectModel[]>([]);
   const [services, setServices] = useState<ServiceModel[]>([]);
   const [team, setTeam] = useState<TeamMemberModel[]>([]);
@@ -104,16 +106,27 @@ export default function AdminDashboardPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 relative z-10">
-          <Button asChild className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-5 shadow-sm">
-            <Link href="/admin/projects">
-              <Plus className="h-3.5 w-3.5 mr-1.5" /> New Project
-            </Link>
-          </Button>
-          <Button asChild variant="outline" className="rounded-full text-xs font-semibold border-border">
-            <Link href="/admin/services">
-              <Layers className="h-3.5 w-3.5 mr-1.5 text-cyan" /> Services CMS
-            </Link>
-          </Button>
+          {(isAdmin || hasPermission('projects', 'create_edit')) && (
+            <Button asChild className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-5 shadow-sm">
+              <Link href="/admin/projects">
+                <Plus className="h-3.5 w-3.5 mr-1.5" /> New Project
+              </Link>
+            </Button>
+          )}
+          {(isAdmin || hasPermission('services', 'view')) && (
+            <Button asChild variant="outline" className="rounded-full text-xs font-semibold border-border">
+              <Link href="/admin/services">
+                <Layers className="h-3.5 w-3.5 mr-1.5 text-cyan" /> Services CMS
+              </Link>
+            </Button>
+          )}
+          {!isAdmin && hasPermission('tasks', 'view') && (
+            <Button asChild variant="outline" className="rounded-full text-xs font-semibold border-border">
+              <Link href="/admin/team">
+                <Users className="h-3.5 w-3.5 mr-1.5 text-cyan" /> Team Tasks
+              </Link>
+            </Button>
+          )}
         </div>
         {/* Glow backdrop */}
         <div className="absolute right-0 top-0 -mr-16 -mt-16 h-64 w-64 rounded-full bg-cyan/10 blur-3xl pointer-events-none" />
@@ -361,44 +374,80 @@ export default function AdminDashboardPage() {
 
           {/* Quick Actions Card */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Link
-              href="/admin/services"
-              className="p-5 rounded-2xl border border-border bg-card/60 hover:border-cyan/50 hover:shadow-md transition-all group"
-            >
-              <div className="h-10 w-10 rounded-xl bg-cyan/15 text-cyan flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                <Layers className="h-5 w-5" />
-              </div>
-              <h3 className="text-sm font-bold text-foreground">Services CMS</h3>
-              <p className="text-xs text-muted-foreground mt-1">
-                Add, edit pricing, features, SEO info and order of services.
-              </p>
-            </Link>
+            {(isAdmin || hasPermission('services', 'view')) && (
+              <Link
+                href="/admin/services"
+                className="p-5 rounded-2xl border border-border bg-card/60 hover:border-cyan/50 hover:shadow-md transition-all group"
+              >
+                <div className="h-10 w-10 rounded-xl bg-cyan/15 text-cyan flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                  <Layers className="h-5 w-5" />
+                </div>
+                <h3 className="text-sm font-bold text-foreground">Services CMS</h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Add, edit pricing, features, SEO info and order of services.
+                </p>
+              </Link>
+            )}
 
-            <Link
-              href="/admin/pricing"
-              className="p-5 rounded-2xl border border-border bg-card/60 hover:border-cyan/50 hover:shadow-md transition-all group"
-            >
-              <div className="h-10 w-10 rounded-xl bg-indigo-500/15 text-indigo-500 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                <TrendingUp className="h-5 w-5" />
-              </div>
-              <h3 className="text-sm font-bold text-foreground">Pricing Plans</h3>
-              <p className="text-xs text-muted-foreground mt-1">
-                Manage Starter, Growth & Scale plans, badges, and pricing cards.
-              </p>
-            </Link>
+            {(isAdmin || hasPermission('pricing', 'view')) && (
+              <Link
+                href="/admin/pricing"
+                className="p-5 rounded-2xl border border-border bg-card/60 hover:border-cyan/50 hover:shadow-md transition-all group"
+              >
+                <div className="h-10 w-10 rounded-xl bg-indigo-500/15 text-indigo-500 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                  <TrendingUp className="h-5 w-5" />
+                </div>
+                <h3 className="text-sm font-bold text-foreground">Pricing Plans</h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Manage Starter, Growth & Scale plans, badges, and pricing cards.
+                </p>
+              </Link>
+            )}
 
-            <Link
-              href="/admin/cms"
-              className="p-5 rounded-2xl border border-border bg-card/60 hover:border-cyan/50 hover:shadow-md transition-all group"
-            >
-              <div className="h-10 w-10 rounded-xl bg-amber-500/15 text-amber-500 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                <Sparkles className="h-5 w-5" />
-              </div>
-              <h3 className="text-sm font-bold text-foreground">Website Testimonials</h3>
-              <p className="text-xs text-muted-foreground mt-1">
-                Edit reviews, client quotes, and frequently asked questions.
-              </p>
-            </Link>
+            {(isAdmin || hasPermission('cms_content', 'view')) && (
+              <Link
+                href="/admin/cms"
+                className="p-5 rounded-2xl border border-border bg-card/60 hover:border-cyan/50 hover:shadow-md transition-all group"
+              >
+                <div className="h-10 w-10 rounded-xl bg-amber-500/15 text-amber-500 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <h3 className="text-sm font-bold text-foreground">Website Testimonials</h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Edit reviews, client quotes, and frequently asked questions.
+                </p>
+              </Link>
+            )}
+
+            {(isAdmin || hasPermission('invoices', 'view')) && (
+              <Link
+                href="/admin/invoices"
+                className="p-5 rounded-2xl border border-border bg-card/60 hover:border-cyan/50 hover:shadow-md transition-all group"
+              >
+                <div className="h-10 w-10 rounded-xl bg-emerald-500/15 text-emerald-500 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                  <DollarSign className="h-5 w-5" />
+                </div>
+                <h3 className="text-sm font-bold text-foreground">Invoices & Billing</h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Issue branded invoices, quotations, and track payments.
+                </p>
+              </Link>
+            )}
+
+            {(isAdmin || hasPermission('team_roles', 'view')) && (
+              <Link
+                href="/admin/team"
+                className="p-5 rounded-2xl border border-border bg-card/60 hover:border-cyan/50 hover:shadow-md transition-all group"
+              >
+                <div className="h-10 w-10 rounded-xl bg-cyan/15 text-cyan flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                  <Users className="h-5 w-5" />
+                </div>
+                <h3 className="text-sm font-bold text-foreground">Team & Tasks</h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Oversee team members, assign tasks, and track statuses.
+                </p>
+              </Link>
+            )}
           </div>
         </div>
 

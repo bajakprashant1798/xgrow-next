@@ -33,6 +33,7 @@ import {
   Link2,
   Download,
   Mail,
+  ShieldAlert,
 } from 'lucide-react';
 import {
   Card,
@@ -103,6 +104,8 @@ import {
 import { InvoiceViewModal } from '@/components/invoices/InvoiceViewModal';
 import { CreateInvoiceModal } from '@/components/invoices/CreateInvoiceModal';
 import { sendInvoiceEmail } from '@/lib/email-service';
+import { useAuth } from '@/lib/auth-context';
+import { AdminAccessDenied } from '@/components/admin/AdminAccessDenied';
 
 export const STATUS_CONFIG: Record<
   ProjectStatus,
@@ -248,6 +251,17 @@ export default function ProjectWorkspacePage({
 }) {
   const { id: projectId } = use(params);
   const router = useRouter();
+  const { user, isAdmin, hasPermission } = useAuth();
+
+  // RBAC Gating permissions
+  const canView = isAdmin || hasPermission('projects', 'view');
+  const canEditProject = isAdmin || hasPermission('projects', 'create_edit');
+  const canDeleteProject = isAdmin || hasPermission('projects', 'delete');
+  const canUpdateProgress = isAdmin || hasPermission('projects', 'update_progress');
+  const canAssignTasks = isAdmin || hasPermission('tasks', 'assign');
+  const canUpdateTaskStatus = isAdmin || hasPermission('tasks', 'update_status');
+  const canCreateInvoice = isAdmin || hasPermission('invoices', 'create_edit');
+  const canDeleteInvoice = isAdmin || hasPermission('invoices', 'delete');
 
   const [project, setProject] = useState<ProjectModel | null>(null);
   const [team, setTeam] = useState<TeamMemberModel[]>([]);
@@ -358,6 +372,10 @@ export default function ProjectWorkspacePage({
     );
   }
 
+  if (!canView) {
+    return <AdminAccessDenied moduleName="Projects & Milestones" requiredAction="View Projects" />;
+  }
+
   if (!project) {
     return (
       <div className="text-center py-16 space-y-4">
@@ -386,6 +404,10 @@ export default function ProjectWorkspacePage({
 
   // Handle stage selection with intelligent progress alignment
   const handleSelectStage = (stage: ProjectStatus) => {
+    if (!canUpdateProgress) {
+      toast.error('You do not have permission to change project stages');
+      return;
+    }
     setCurrentStatus(stage);
     if (autoSync) {
       if (stage === 'not_started') {
@@ -408,6 +430,10 @@ export default function ProjectWorkspacePage({
 
   // Handle progress slider / direct number change
   const handleProgressChange = (newVal: number) => {
+    if (!canUpdateProgress) {
+      toast.error('You do not have permission to adjust progress');
+      return;
+    }
     const clamped = Math.max(0, Math.min(100, newVal));
     setCurrentProgress(clamped);
     if (autoSync && currentStatus !== 'on_hold') {
@@ -420,12 +446,14 @@ export default function ProjectWorkspacePage({
 
   // Handle preset click
   const handleSelectPreset = (preset: { label: string; value: number; stage: ProjectStatus }) => {
+    if (!canUpdateProgress) return;
     setCurrentProgress(preset.value);
     setCurrentStatus(preset.stage);
   };
 
   // Sync progress directly with deliverable milestones
   const handleSyncWithMilestones = () => {
+    if (!canUpdateProgress) return;
     setCurrentProgress(calculatedMilestonePercent);
     if (autoSync || calculatedMilestonePercent === 0 || calculatedMilestonePercent === 100) {
       const recStage = getRecommendedStageForProgress(calculatedMilestonePercent, currentStatus);
@@ -446,6 +474,10 @@ export default function ProjectWorkspacePage({
 
   // Handle live progress update & client notification
   const handleSaveProgress = async () => {
+    if (!canUpdateProgress) {
+      toast.error('You do not have permission to update project progress');
+      return;
+    }
     setSavingProgress(true);
     try {
       const updated = await updateProjectProgress(
@@ -475,6 +507,10 @@ export default function ProjectWorkspacePage({
 
   // Edit Project Details
   const handleOpenEditProject = () => {
+    if (!canEditProject) {
+      toast.error('You do not have permission to edit project details');
+      return;
+    }
     setEditingProjectForm({
       ...project,
     });
@@ -483,6 +519,10 @@ export default function ProjectWorkspacePage({
 
   const handleSaveEditedProject = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEditProject) {
+      toast.error('You do not have permission to edit project details');
+      return;
+    }
     if (!editingProjectForm.project_name || !editingProjectForm.client_id) {
       toast.error('Project name and client are required');
       return;
@@ -503,6 +543,10 @@ export default function ProjectWorkspacePage({
 
   // Safe Delete Project (GitHub-Style)
   const handleSafeDeleteProject = async () => {
+    if (!canDeleteProject) {
+      toast.error('You do not have permission to delete projects');
+      return;
+    }
     if (deleteConfirmInput.trim() !== project.project_name.trim()) {
       toast.error('Project name does not match');
       return;
@@ -520,6 +564,10 @@ export default function ProjectWorkspacePage({
 
   // Milestone toggling
   const handleToggleMilestone = async (milestone: MilestoneModel) => {
+    if (!canUpdateProgress) {
+      toast.error('You do not have permission to update milestones');
+      return;
+    }
     let nextStatus: 'pending' | 'in_progress' | 'completed' = 'in_progress';
     if (milestone.status === 'pending') nextStatus = 'in_progress';
     else if (milestone.status === 'in_progress') nextStatus = 'completed';
@@ -541,6 +589,10 @@ export default function ProjectWorkspacePage({
 
   const handleAddMilestone = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canUpdateProgress) {
+      toast.error('You do not have permission to add milestones');
+      return;
+    }
     if (!newMilestoneTitle.trim()) return;
 
     const updated = await addMilestone(project.id, newMilestoneTitle, newMilestoneDesc);
@@ -556,12 +608,14 @@ export default function ProjectWorkspacePage({
 
   const handleOpenEditMilestone = (ms: MilestoneModel, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!canUpdateProgress) return;
     setEditingMilestone({ ...ms });
     setIsEditMilestoneModalOpen(true);
   };
 
   const handleSaveEditedMilestone = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canUpdateProgress) return;
     if (!editingMilestone || !editingMilestone.title.trim()) {
       toast.error('Milestone title is required');
       return;
@@ -585,6 +639,7 @@ export default function ProjectWorkspacePage({
 
   const handleDeleteMilestone = async (milestoneId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!canUpdateProgress) return;
     if (confirm('Are you sure you want to delete this milestone? Project progress percentage will be recalculated.')) {
       const updated = await deleteMilestone(project.id, milestoneId);
       if (updated) {
@@ -598,6 +653,10 @@ export default function ProjectWorkspacePage({
   // Task actions
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canAssignTasks) {
+      toast.error('You do not have permission to assign tasks');
+      return;
+    }
     if (!newTaskTitle.trim()) return;
 
     await addTask(project.id, newTaskTitle, newTaskAssignee || undefined, newTaskPriority);
@@ -608,6 +667,10 @@ export default function ProjectWorkspacePage({
   };
 
   const handleToggleTaskStatus = async (task: TaskModel) => {
+    if (!canUpdateTaskStatus) {
+      toast.error('You do not have permission to update task status');
+      return;
+    }
     const nextStatus: TaskStatus = task.status === 'done' ? 'in_progress' : 'done';
     await updateTaskStatus(project.id, task.id, nextStatus);
     toast.success(nextStatus === 'done' ? 'Task marked complete!' : 'Task reopened');
@@ -617,6 +680,10 @@ export default function ProjectWorkspacePage({
   // Quick Post Update
   const handlePostUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canUpdateProgress) {
+      toast.error('You do not have permission to post activity updates');
+      return;
+    }
     if (!updateLogMessage.trim()) {
       toast.error('Please enter an update message');
       return;
@@ -638,6 +705,7 @@ export default function ProjectWorkspacePage({
 
   // Edit and Delete Activity Updates
   const handleOpenEditUpdate = (upd: ProjectUpdateModel) => {
+    if (!canUpdateProgress) return;
     setEditingUpdate(upd);
     setEditUpdateTitle(upd.title || '');
     setEditUpdateMessage(upd.message || '');
@@ -648,6 +716,7 @@ export default function ProjectWorkspacePage({
 
   const handleSaveEditUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canUpdateProgress) return;
     if (!project || !editingUpdate) return;
     if (!editUpdateMessage.trim()) {
       toast.error('Please enter an update message');
@@ -668,12 +737,26 @@ export default function ProjectWorkspacePage({
   };
 
   const handleDeleteUpdate = async (updateId: string) => {
+    if (!canUpdateProgress) return;
     if (!project) return;
     await deleteProjectUpdate(project.id, updateId);
     toast.success('Activity update deleted');
     setIsDeleteUpdateModalOpen(false);
     setDeletingUpdateId(null);
     loadProject(false);
+  };
+
+  const handleDeleteInvoice = async (invoiceId: string) => {
+    if (!canDeleteInvoice) {
+      toast.error('You do not have permission to delete invoices');
+      return;
+    }
+    if (!project) return;
+    if (confirm('Are you sure you want to delete this invoice document?')) {
+      await deleteProjectInvoice(project.id, invoiceId);
+      toast.success('Invoice deleted');
+      loadProject(false);
+    }
   };
 
   // Invoice / Document actions
@@ -702,13 +785,6 @@ export default function ProjectWorkspacePage({
     } else {
       toast.success(`Invoice emailed directly to ${result.recipient}!`);
     }
-  };
-
-  const handleDeleteInvoice = async (invoiceId: string) => {
-    if (!project) return;
-    await deleteProjectInvoice(project.id, invoiceId);
-    toast.success('Invoice deleted');
-    loadProject(false);
   };
 
   const statusInfo = STATUS_CONFIG[currentStatus] || STATUS_CONFIG.requirement;
@@ -743,23 +819,27 @@ export default function ProjectWorkspacePage({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={handleOpenEditProject}
-            className="rounded-full text-xs font-semibold border-border hover:border-cyan hover:text-cyan"
-          >
-            <Edit className="h-3.5 w-3.5 mr-1.5" /> Edit Details
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              setDeleteConfirmInput('');
-              setIsDeleteProjectModalOpen(true);
-            }}
-            className="rounded-full text-xs font-semibold border-border text-rose-500 hover:bg-rose-500/10 hover:border-rose-500"
-          >
-            <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete Project
-          </Button>
+          {canEditProject && (
+            <Button
+              variant="outline"
+              onClick={handleOpenEditProject}
+              className="rounded-full text-xs font-semibold border-border hover:border-cyan hover:text-cyan"
+            >
+              <Edit className="h-3.5 w-3.5 mr-1.5" /> Edit Details
+            </Button>
+          )}
+          {canDeleteProject && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteConfirmInput('');
+                setIsDeleteProjectModalOpen(true);
+              }}
+              className="rounded-full text-xs font-semibold border-border text-rose-500 hover:bg-rose-500/10 hover:border-rose-500"
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete Project
+            </Button>
+          )}
           <Button asChild variant="outline" className="rounded-full text-xs font-semibold border-border">
             <Link href="/client" target="_blank">
               <ExternalLink className="h-3.5 w-3.5 mr-1.5 text-cyan" /> Client View
@@ -792,7 +872,7 @@ export default function ProjectWorkspacePage({
         <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
             <Calendar className="h-3.5 w-3.5 text-cyan" />
-            <span>Timeline: {project.start_date || 'Feb 2026'} → {project.expected_completion_date || 'Ongoing'}</span>
+            <span>Timeline: {project.start_date || 'Feb 2026'} → {project.expected_completion_date ? <strong className="text-emerald-400 font-bold">Target Delivery: {project.expected_completion_date}</strong> : 'Ongoing'}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <DollarSign className="h-3.5 w-3.5 text-emerald-400" />
@@ -805,6 +885,13 @@ export default function ProjectWorkspacePage({
 
       {/* LIVE PROGRESS & STAGE CONTROLLER CARD */}
       <Card className="rounded-3xl border-border bg-gradient-to-r from-card via-surface/80 to-card shadow-sm p-6 sm:p-8 space-y-6">
+        {!canUpdateProgress && (
+          <div className="flex items-center gap-2 p-3 rounded-2xl bg-cyan/10 border border-cyan/20 text-xs text-cyan">
+            <ShieldAlert className="h-4 w-4 shrink-0" />
+            <span>View-only Mode: You have read-only access to progress tracking and project deliverables.</span>
+          </div>
+        )}
+
         {/* Section Top Header & Auto-Sync Toggle */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -827,6 +914,7 @@ export default function ProjectWorkspacePage({
               <Switch
                 checked={autoSync}
                 onCheckedChange={setAutoSync}
+                disabled={!canUpdateProgress}
                 className="scale-90"
               />
             </div>
@@ -839,28 +927,31 @@ export default function ProjectWorkspacePage({
                   min={0}
                   max={100}
                   value={currentProgress}
+                  disabled={!canUpdateProgress}
                   onChange={(e) => {
                     const num = parseInt(e.target.value, 10);
                     handleProgressChange(isNaN(num) ? 0 : num);
                   }}
-                  className="w-16 h-10 text-xl font-black text-center rounded-xl bg-card border-border font-mono px-1 text-cyan"
+                  className="w-16 h-10 text-xl font-black text-center rounded-xl bg-card border-border font-mono px-1 text-cyan disabled:opacity-80"
                 />
                 <span className="text-2xl font-black text-foreground">%</span>
               </div>
             </div>
 
-            <Button
-              onClick={handleSaveProgress}
-              disabled={savingProgress}
-              className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-black text-xs px-6 shadow-md h-10 transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
-            >
-              {savingProgress ? (
-                <span className="animate-spin">⏳</span>
-              ) : (
-                <Save className="h-4 w-4 stroke-[2.5]" />
-              )}
-              {savingProgress ? 'Saving...' : 'Save & Notify Client'}
-            </Button>
+            {canUpdateProgress && (
+              <Button
+                onClick={handleSaveProgress}
+                disabled={savingProgress}
+                className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-black text-xs px-6 shadow-md h-10 transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
+              >
+                {savingProgress ? (
+                  <span className="animate-spin">⏳</span>
+                ) : (
+                  <Save className="h-4 w-4 stroke-[2.5]" />
+                )}
+                {savingProgress ? 'Saving...' : 'Save & Notify Client'}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -880,42 +971,45 @@ export default function ProjectWorkspacePage({
             value={[currentProgress]}
             max={100}
             step={1}
+            disabled={!canUpdateProgress}
             onValueChange={(vals) => handleProgressChange(vals[0])}
             className="py-2"
           />
 
           {/* Quick Preset Buttons & Milestone Sync */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
-            <div className="flex flex-wrap gap-1.5">
-              {PROGRESS_PRESETS.map((preset) => {
-                const isCurrent = currentProgress === preset.value && currentStatus === preset.stage;
-                return (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() => handleSelectPreset(preset)}
-                    className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-all cursor-pointer ${
-                      isCurrent
-                        ? 'bg-cyan text-slate-950 border-cyan font-black shadow-sm'
-                        : 'bg-card border-border/80 text-muted-foreground hover:border-cyan hover:text-foreground'
-                    }`}
-                  >
-                    {preset.label}
-                  </button>
-                );
-              })}
-            </div>
+          {canUpdateProgress && (
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+              <div className="flex flex-wrap gap-1.5">
+                {PROGRESS_PRESETS.map((preset) => {
+                  const isCurrent = currentProgress === preset.value && currentStatus === preset.stage;
+                  return (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => handleSelectPreset(preset)}
+                      className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-all cursor-pointer ${
+                        isCurrent
+                          ? 'bg-cyan text-slate-950 border-cyan font-black shadow-sm'
+                          : 'bg-card border-border/80 text-muted-foreground hover:border-cyan hover:text-foreground'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
 
-            <button
-              type="button"
-              onClick={handleSyncWithMilestones}
-              title="Align progress to completed deliverable milestones"
-              className="px-3 py-1 rounded-full text-[11px] font-bold border border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 transition-all cursor-pointer flex items-center gap-1"
-            >
-              <Zap className="h-3 w-3" />
-              Auto-Sync from Milestones ({calculatedMilestonePercent}%)
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={handleSyncWithMilestones}
+                title="Align progress to completed deliverable milestones"
+                className="px-3 py-1 rounded-full text-[11px] font-bold border border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 transition-all cursor-pointer flex items-center gap-1"
+              >
+                <Zap className="h-3 w-3" />
+                Auto-Sync from Milestones ({calculatedMilestonePercent}%)
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Status Mismatch Warning Banner */}
@@ -927,18 +1021,20 @@ export default function ProjectWorkspacePage({
                 <strong>Stage &amp; Progress Mismatch:</strong> Stage is set to <strong>&ldquo;{statusInfo.label}&rdquo;</strong> but progress is <strong>{currentProgress}%</strong>.
               </span>
             </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                const config = STATUS_CONFIG[currentStatus];
-                if (config) setCurrentProgress(config.defaultProgress);
-              }}
-              className="rounded-full text-[11px] h-7 px-3 border-amber-500/40 text-amber-300 hover:bg-amber-500/20 self-start sm:self-auto"
-            >
-              <RotateCcw className="h-3 w-3 mr-1" /> Auto-Fix to {STATUS_CONFIG[currentStatus]?.defaultProgress}%
-            </Button>
+            {canUpdateProgress && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const config = STATUS_CONFIG[currentStatus];
+                  if (config) setCurrentProgress(config.defaultProgress);
+                }}
+                className="rounded-full text-[11px] h-7 px-3 border-amber-500/40 text-amber-300 hover:bg-amber-500/20 self-start sm:self-auto"
+              >
+                <RotateCcw className="h-3 w-3 mr-1" /> Auto-Fix to {STATUS_CONFIG[currentStatus]?.defaultProgress}%
+              </Button>
+            )}
           </div>
         )}
 
@@ -961,8 +1057,11 @@ export default function ProjectWorkspacePage({
                 <button
                   key={key}
                   type="button"
-                  onClick={() => handleSelectStage(key as ProjectStatus)}
-                  className={`p-2.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                  disabled={!canUpdateProgress}
+                  onClick={() => canUpdateProgress && handleSelectStage(key as ProjectStatus)}
+                  className={`p-2.5 rounded-2xl border text-left transition-all flex items-center justify-between gap-2 ${
+                    !canUpdateProgress ? 'cursor-default opacity-85' : 'cursor-pointer'
+                  } ${
                     isSelected
                       ? `${config.activeBg} shadow-md ring-1 ring-cyan scale-[1.02]`
                       : 'bg-card/70 border-border hover:border-cyan/50 hover:bg-surface text-muted-foreground hover:text-foreground'
@@ -989,9 +1088,10 @@ export default function ProjectWorkspacePage({
             <label className="text-xs font-bold text-foreground">Stage Dropdown</label>
             <Select
               value={currentStatus}
+              disabled={!canUpdateProgress}
               onValueChange={(val: ProjectStatus) => handleSelectStage(val)}
             >
-              <SelectTrigger className="h-9 text-xs rounded-xl bg-card border-border">
+              <SelectTrigger className="h-9 text-xs rounded-xl bg-card border-border disabled:opacity-80">
                 <SelectValue placeholder="Choose Stage" />
               </SelectTrigger>
               <SelectContent>
@@ -1014,8 +1114,9 @@ export default function ProjectWorkspacePage({
             <Input
               placeholder="e.g. Services and pricing modules implemented. Moving to QA testing..."
               value={updateLogMessage}
+              disabled={!canUpdateProgress}
               onChange={(e) => setUpdateLogMessage(e.target.value)}
-              className="h-9 text-xs rounded-xl bg-card border-border"
+              className="h-9 text-xs rounded-xl bg-card border-border disabled:opacity-80"
             />
           </div>
         </div>
@@ -1047,28 +1148,32 @@ export default function ProjectWorkspacePage({
                 Project Milestones Timeline ({completedMilestones}/{totalMilestones} Done · {calculatedMilestonePercent}%)
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Click the status circle or badge to cycle status. Use edit or delete buttons on any milestone to adjust deliverables.
+                {canUpdateProgress
+                  ? 'Click the status circle or badge to cycle status. Use edit or delete buttons on any milestone to adjust deliverables.'
+                  : 'Milestones and delivery phases for this project.'}
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              {totalMilestones > 0 && (
+            {canUpdateProgress && (
+              <div className="flex items-center gap-2">
+                {totalMilestones > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSyncWithMilestones}
+                    className="rounded-full text-xs font-bold border-cyan/40 text-cyan hover:bg-cyan/10"
+                  >
+                    <Zap className="h-3.5 w-3.5 mr-1" /> Sync Progress ({calculatedMilestonePercent}%)
+                  </Button>
+                )}
                 <Button
-                  variant="outline"
+                  onClick={() => setIsMilestoneModalOpen(true)}
                   size="sm"
-                  onClick={handleSyncWithMilestones}
-                  className="rounded-full text-xs font-bold border-cyan/40 text-cyan hover:bg-cyan/10"
+                  className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4 shadow-sm"
                 >
-                  <Zap className="h-3.5 w-3.5 mr-1" /> Sync Progress ({calculatedMilestonePercent}%)
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Milestone
                 </Button>
-              )}
-              <Button
-                onClick={() => setIsMilestoneModalOpen(true)}
-                size="sm"
-                className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4 shadow-sm"
-              >
-                <Plus className="h-3.5 w-3.5 mr-1" /> Add Milestone
-              </Button>
-            </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-3">
@@ -1104,14 +1209,17 @@ export default function ProjectWorkspacePage({
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
-                      onClick={() => handleToggleMilestone(ms)}
-                      title="Click to change status (Pending → In Progress → Completed)"
-                      className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-transform hover:scale-105 active:scale-95 ${
+                      disabled={!canUpdateProgress}
+                      onClick={() => canUpdateProgress && handleToggleMilestone(ms)}
+                      title={canUpdateProgress ? "Click to change status (Pending → In Progress → Completed)" : "Milestone status"}
+                      className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 transition-transform ${
+                        !canUpdateProgress ? 'cursor-default' : 'cursor-pointer hover:scale-105 active:scale-95'
+                      } ${
                         isDone
                           ? 'bg-emerald-500 text-slate-950 font-black shadow-emerald-500/20 shadow-md'
                           : isInProgress
                           ? 'bg-cyan text-slate-950 font-black animate-pulse shadow-cyan/20 shadow-md'
-                          : 'border border-muted-foreground/40 text-muted-foreground hover:border-cyan hover:text-cyan'
+                          : 'border border-muted-foreground/40 text-muted-foreground'
                       }`}
                     >
                       {isDone ? (
@@ -1142,8 +1250,10 @@ export default function ProjectWorkspacePage({
                   <div className="flex items-center gap-2 self-end sm:self-auto">
                     <Badge
                       variant="outline"
-                      onClick={() => handleToggleMilestone(ms)}
-                      className={`text-[10px] uppercase font-extrabold tracking-wider px-2.5 py-0.5 rounded-full cursor-pointer select-none transition-colors ${
+                      onClick={() => canUpdateProgress && handleToggleMilestone(ms)}
+                      className={`text-[10px] uppercase font-extrabold tracking-wider px-2.5 py-0.5 rounded-full select-none transition-colors ${
+                        !canUpdateProgress ? 'cursor-default' : 'cursor-pointer'
+                      } ${
                         isDone
                           ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10'
                           : isInProgress
@@ -1154,25 +1264,29 @@ export default function ProjectWorkspacePage({
                       ● {ms.status.replace('_', ' ')}
                     </Badge>
 
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => handleOpenEditMilestone(ms, e)}
-                      title="Edit milestone"
-                      className="h-8 w-8 rounded-lg text-muted-foreground hover:text-cyan hover:bg-cyan/10"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
+                    {canUpdateProgress && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => handleOpenEditMilestone(ms, e)}
+                          title="Edit milestone"
+                          className="h-8 w-8 rounded-lg text-muted-foreground hover:text-cyan hover:bg-cyan/10"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
 
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => handleDeleteMilestone(ms.id, e)}
-                      title="Delete milestone"
-                      className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => handleDeleteMilestone(ms.id, e)}
+                          title="Delete milestone"
+                          className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               );
@@ -1189,13 +1303,15 @@ export default function ProjectWorkspacePage({
                 Assign tasks to developers, designers and SEO leads.
               </p>
             </div>
-            <Button
-              onClick={() => setIsTaskModalOpen(true)}
-              size="sm"
-              className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4"
-            >
-              <Plus className="h-3.5 w-3.5 mr-1" /> Assign Task
-            </Button>
+            {canAssignTasks && (
+              <Button
+                onClick={() => setIsTaskModalOpen(true)}
+                size="sm"
+                className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4"
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" /> Assign Task
+              </Button>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1213,8 +1329,11 @@ export default function ProjectWorkspacePage({
                   <div className="flex items-start gap-3">
                     <button
                       type="button"
-                      onClick={() => handleToggleTaskStatus(task)}
-                      className={`h-5 w-5 rounded-md mt-0.5 flex items-center justify-center border transition-colors cursor-pointer ${
+                      disabled={!canUpdateTaskStatus}
+                      onClick={() => canUpdateTaskStatus && handleToggleTaskStatus(task)}
+                      className={`h-5 w-5 rounded-md mt-0.5 flex items-center justify-center border transition-colors ${
+                        !canUpdateTaskStatus ? 'cursor-default opacity-80' : 'cursor-pointer'
+                      } ${
                         isDone
                           ? 'bg-cyan border-cyan text-slate-950'
                           : 'border-border bg-surface hover:border-cyan'
@@ -1255,29 +1374,31 @@ export default function ProjectWorkspacePage({
 
         {/* 3. UPDATES TAB */}
         <TabsContent value="updates" className="space-y-4">
-          <Card className="rounded-3xl border-border bg-card/60 p-6">
-            <h3 className="font-bold text-base text-foreground mb-4 flex items-center gap-2">
-              <Send className="h-4 w-4 text-cyan" />
-              Post Live Update to Client Portal
-            </h3>
-            <form onSubmit={handlePostUpdate} className="space-y-3">
-              <Textarea
-                placeholder="e.g. Homepage and Services section completed. Testing responsive views..."
-                value={updateLogMessage}
-                onChange={(e) => setUpdateLogMessage(e.target.value)}
-                rows={3}
-                className="text-xs rounded-xl"
-              />
-              <div className="flex justify-between items-center">
-                <span className="text-[11px] text-muted-foreground">
-                  * Triggers notification on client dashboard and email alert.
-                </span>
-                <Button type="submit" size="sm" className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-5">
-                  Publish Update
-                </Button>
-              </div>
-            </form>
-          </Card>
+          {canUpdateProgress && (
+            <Card className="rounded-3xl border-border bg-card/60 p-6">
+              <h3 className="font-bold text-base text-foreground mb-4 flex items-center gap-2">
+                <Send className="h-4 w-4 text-cyan" />
+                Post Live Update to Client Portal
+              </h3>
+              <form onSubmit={handlePostUpdate} className="space-y-3">
+                <Textarea
+                  placeholder="e.g. Homepage and Services section completed. Testing responsive views..."
+                  value={updateLogMessage}
+                  onChange={(e) => setUpdateLogMessage(e.target.value)}
+                  rows={3}
+                  className="text-xs rounded-xl"
+                />
+                <div className="flex justify-between items-center">
+                  <span className="text-[11px] text-muted-foreground">
+                    * Triggers notification on client dashboard and email alert.
+                  </span>
+                  <Button type="submit" size="sm" className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-5">
+                    Publish Update
+                  </Button>
+                </div>
+              </form>
+            </Card>
+          )}
 
           {/* Timeline */}
           <div className="space-y-3 mt-6">
@@ -1325,28 +1446,32 @@ export default function ProjectWorkspacePage({
                         )}
                       </span>
 
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleOpenEditUpdate(upd)}
-                        title="Edit update"
-                        className="h-7 w-7 rounded-lg text-muted-foreground hover:text-cyan hover:bg-cyan/10"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
+                      {canUpdateProgress && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleOpenEditUpdate(upd)}
+                            title="Edit update"
+                            className="h-7 w-7 rounded-lg text-muted-foreground hover:text-cyan hover:bg-cyan/10"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
 
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setDeletingUpdateId(upd.id);
-                          setIsDeleteUpdateModalOpen(true);
-                        }}
-                        title="Delete update"
-                        className="h-7 w-7 rounded-lg text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setDeletingUpdateId(upd.id);
+                              setIsDeleteUpdateModalOpen(true);
+                            }}
+                            title="Delete update"
+                            className="h-7 w-7 rounded-lg text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -1374,13 +1499,15 @@ export default function ProjectWorkspacePage({
                 Attach billing and scope documents visible on the client portal with PDF download and email dispatch.
               </p>
             </div>
-            <Button
-              onClick={() => setIsInvoiceModalOpen(true)}
-              size="sm"
-              className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4 shadow-sm gap-1.5"
-            >
-              <Plus className="h-3.5 w-3.5" /> Add Invoice / Quote
-            </Button>
+            {canCreateInvoice && (
+              <Button
+                onClick={() => setIsInvoiceModalOpen(true)}
+                size="sm"
+                className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-4 shadow-sm gap-1.5"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add Invoice / Quote
+              </Button>
+            )}
           </div>
 
           <div className="space-y-3">
@@ -1391,14 +1518,16 @@ export default function ProjectWorkspacePage({
                 <p className="text-[11px] text-muted-foreground mt-0.5">
                   Create a new invoice or quotation to issue to the client.
                 </p>
-                <Button
-                  onClick={() => setIsInvoiceModalOpen(true)}
-                  size="sm"
-                  variant="outline"
-                  className="mt-3 rounded-full text-xs font-bold"
-                >
-                  <Plus className="h-3 w-3 mr-1" /> Create First Invoice
-                </Button>
+                {canCreateInvoice && (
+                  <Button
+                    onClick={() => setIsInvoiceModalOpen(true)}
+                    size="sm"
+                    variant="outline"
+                    className="mt-3 rounded-full text-xs font-bold"
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> Create First Invoice
+                  </Button>
+                )}
               </Card>
             ) : (
               (project.invoices || []).map((inv) => (
@@ -1454,15 +1583,17 @@ export default function ProjectWorkspacePage({
                       >
                         <Mail className="h-3.5 w-3.5" />
                       </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => handleDeleteInvoice(inv.id)}
-                        title="Delete Invoice"
-                        className="h-8 w-8 rounded-lg text-rose-400 hover:bg-rose-500/10"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      {canDeleteInvoice && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => handleDeleteInvoice(inv.id)}
+                          title="Delete Invoice"
+                          className="h-8 w-8 rounded-lg text-rose-400 hover:bg-rose-500/10"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1698,7 +1829,7 @@ export default function ProjectWorkspacePage({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground">Expected Completion</label>
+                <label className="text-xs font-bold text-foreground">Target Delivery Date (Client Deadline)</label>
                 <Input
                   type="date"
                   value={editingProjectForm.expected_completion_date || ''}

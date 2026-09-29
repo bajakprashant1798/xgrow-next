@@ -10,6 +10,7 @@ import {
   saveClient,
   checkUserEmailExists,
   getUserCredential,
+  fetchUserCredential,
   saveUserCredential,
 } from './db';
 import { TeamMemberModel, ClientModel, CustomRoleModel, PermissionMatrix } from './supabase/types';
@@ -108,6 +109,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
     }
 
+    // Check credentials store metadata (handles Incognito / cross-device seamlessly)
+    try {
+      const cred = await fetchUserCredential(cleanEmail);
+      if (cred && cred.email) {
+        return {
+          id: fallbackId || `user-${Date.now()}`,
+          email: cleanEmail,
+          name: cred.name || cleanEmail.split('@')[0],
+          role: (cred.role as AppRole) || 'client',
+          company_name: cred.company_name,
+          department: cred.department,
+          status: cred.status || 'active',
+        };
+      }
+    } catch (e) {}
+
     // Default unknown user to client
     return {
       id: fallbackId || `user-${Date.now()}`,
@@ -181,14 +198,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initAuth();
   }, [resolveUserProfile]);
 
-  // Strict Secure Sign In function
+  // Strict Secure Sign In function using server-side verification
   const signIn = async (
     email: string,
     password?: string
   ): Promise<{ success: boolean; role: AppRole; error?: string }> => {
     try {
       const cleanEmail = email.trim().toLowerCase();
-      const enteredPassword = (password || '').trim();
+      const rawPassword = password || '';
+      const enteredPassword = rawPassword.trim();
 
       if (!cleanEmail) {
         return { success: false, role: 'client', error: 'Please enter your email address.' };
@@ -198,92 +216,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const supabase = getSupabaseClient();
-      let isAuthenticated = false;
-      let authenticatedUserId: string | undefined = undefined;
+      let verifiedUser: AuthUser | null = null;
+      let authenticatedRole: AppRole = 'client';
 
-      // 1. First attempt verification with Supabase Auth if client is configured
-      if (supabase) {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password: enteredPassword,
-        });
-
-        if (!error && data?.user) {
-          isAuthenticated = true;
-          authenticatedUserId = data.user.id;
-        } else {
-          // Supabase authentication failed.
-          // Check if this user has an admin-generated/saved password in credentials store
-          const localCred = getUserCredential(cleanEmail);
-          if (localCred && localCred.temporaryPassword) {
-            if (localCred.temporaryPassword === enteredPassword) {
-              isAuthenticated = true;
-            } else {
-              // Password was explicitly wrong
-              return {
-                success: false,
-                role: 'client',
-                error: 'Invalid password. Please verify your credentials and try again.',
-              };
-            }
-          } else {
-            // Neither Supabase nor local credentials validated the password
-            const userCheck = await checkUserEmailExists(cleanEmail);
-            if (userCheck.exists) {
-              return {
-                success: false,
-                role: 'client',
-                error: 'The password you entered is incorrect. Please double-check your password and try again.',
-              };
-            } else {
-              return {
-                success: false,
-                role: 'client',
-                error: `No registered account found with email "${cleanEmail}". Please check your email address or contact an administrator.`,
-              };
-            }
+      // 1. Secure server-side credential verification (Zero credentials exposure to client)
+      if (typeof window !== 'undefined') {
+        try {
+          const res = await fetch('/api/auth/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: cleanEmail, password: rawPassword }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            return {
+              success: false,
+              role: 'client',
+              error: data.error || 'Authentication failed. Please check your email and password.',
+            };
           }
+          if (data.user) {
+            verifiedUser = data.user as AuthUser;
+            authenticatedRole = (data.role || data.user.role) as AppRole;
+          }
+        } catch (netErr) {
+          // If network fetch fails, attempt fallback
         }
-      } else {
-        // Offline / Local mode (No Supabase client configured)
-        const localCred = getUserCredential(cleanEmail);
-        if (localCred && localCred.temporaryPassword) {
-          if (localCred.temporaryPassword === enteredPassword) {
-            isAuthenticated = true;
-          } else {
+      }
+
+      // 2. Fallback check for Supabase Auth if server verify had network issue
+      if (!verifiedUser && supabase) {
+        try {
+          const { data: sbData, error: sbError } = await supabase.auth.signInWithPassword({
+            email: cleanEmail,
+            password: enteredPassword,
+          });
+          if (sbError || !sbData?.user) {
             return {
               success: false,
               role: 'client',
               error: 'The password you entered is incorrect. Please double-check your password and try again.',
             };
           }
-        } else {
-          const userExists = await checkUserEmailExists(cleanEmail);
-          if (!userExists.exists) {
-            return {
-              success: false,
-              role: 'client',
-              error: `No registered account found with email "${cleanEmail}". Please check your email address or sign up.`,
-            };
-          }
+        } catch (e) {
           return {
             success: false,
             role: 'client',
-            error: 'No password recorded for this account. Please contact an administrator to set your password.',
+            error: 'Authentication failed. Please try again.',
           };
         }
       }
 
-      if (!isAuthenticated) {
-        return {
-          success: false,
-          role: 'client',
-          error: 'Authentication failed. Invalid login credentials.',
-        };
-      }
-
-      // 2. Resolve Profile and enforce Account Status
-      const profile = await resolveUserProfile(cleanEmail, authenticatedUserId);
+      // 3. Resolve Profile and enforce Account Status
+      const profile = verifiedUser || (await resolveUserProfile(cleanEmail));
       if (!profile) {
         return { success: false, role: 'client', error: 'User account profile not found.' };
       }
@@ -310,7 +295,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      // 3. Set Active Authenticated Session
+      // 4. Set Active Authenticated Session
       setUser(profile);
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(profile));
       if (profile.role === 'client') {

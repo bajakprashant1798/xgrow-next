@@ -136,7 +136,7 @@ CREATE INDEX IF NOT EXISTS idx_resources_featured ON public.resources (featured)
 `;
 
 export function AdminResourcesManager() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, hasPermission: checkPerm } = useAuth();
   const [resources, setResources] = useState<ResourceItem[]>(initialResources);
   const [roles, setRoles] = useState<CustomRoleModel[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -160,8 +160,8 @@ export function AdminResourcesManager() {
   const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
 
   // Permissions check
-  const canCreateOrEdit = isAdmin || hasPermission(user?.role, 'cms_content', 'create_edit', roles);
-  const canDelete = isAdmin || hasPermission(user?.role, 'cms_content', 'delete', roles);
+  const canCreateOrEdit = isAdmin || checkPerm('cms_content', 'create_edit');
+  const canDelete = isAdmin || checkPerm('cms_content', 'delete');
 
   const loadData = async () => {
     try {

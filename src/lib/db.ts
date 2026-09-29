@@ -139,6 +139,16 @@ function setLocalItem<T>(key: string, value: T): void {
   notifyDataChanged();
 }
 
+// Helper to silently update cache without triggering notification cascade
+function setLocalItemSilent<T>(key: string, value: T): void {
+  memoryCache[key] = { data: value, timestamp: Date.now() };
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {}
+  }
+}
+
 // Ultra-fast Stale-While-Revalidate (SWR) cache fetcher
 async function fetchWithSWR<T>(
   key: string,
@@ -527,6 +537,22 @@ export async function checkUserEmailExists(
       role: existingTeam.role || 'Staff / Admin',
       user: existingTeam,
     };
+  }
+
+  // Check in remote credentials store (covers Incognito / other browser sessions)
+  try {
+    const remoteCred = await fetchUserCredential(clean);
+    if (remoteCred && remoteCred.email) {
+      const isClient = remoteCred.role === 'client' || !remoteCred.role;
+      return {
+        exists: true,
+        type: isClient ? 'client' : 'team',
+        name: remoteCred.name || clean.split('@')[0],
+        role: remoteCred.role || (isClient ? 'Client (Portal User)' : 'Staff Member'),
+      };
+    }
+  } catch (e) {
+    // Ignore fetch error
   }
 
   return { exists: false };
@@ -1149,7 +1175,15 @@ export async function createUserWithRole(data: {
       await assignProjectsToClient(newClient.id, data.assignedProjectIds);
     }
 
-    saveUserCredential(cleanEmail, generatedPassword, true);
+    await saveUserCredential(cleanEmail, generatedPassword, true, {
+      name: data.name,
+      role: 'client',
+      phone: data.phone,
+      company_name: data.company_name || `${data.name}'s Business`,
+      address: data.address,
+      selected_plan: data.selected_plan,
+      status: 'active',
+    });
 
     return { user: newClient, type: 'client', password: generatedPassword };
   } else {
@@ -1162,7 +1196,13 @@ export async function createUserWithRole(data: {
       status: 'active',
     });
 
-    saveUserCredential(cleanEmail, generatedPassword, true);
+    await saveUserCredential(cleanEmail, generatedPassword, true, {
+      name: data.name,
+      role: data.role,
+      phone: data.phone,
+      department: data.department || 'Engineering',
+      status: 'active',
+    });
 
     return { user: newMember, type: 'team', password: generatedPassword };
   }
@@ -2506,30 +2546,155 @@ export function generateSecurePassword(length: number = 12): string {
 export interface UserCredentialInfo {
   email: string;
   temporaryPassword?: string;
+  name?: string;
+  role?: string;
+  phone?: string;
+  company_name?: string;
+  department?: string;
+  address?: string;
+  status?: 'active' | 'inactive' | 'pending_approval';
+  selected_plan?: string;
   updatedAt: string;
   createdByAdmin: boolean;
 }
 
-export function saveUserCredential(
+export async function saveUserCredential(
   email: string,
   password?: string,
-  createdByAdmin: boolean = true
-): void {
+  createdByAdmin: boolean = true,
+  metadata?: Partial<UserCredentialInfo>
+): Promise<void> {
   const clean = email.trim().toLowerCase();
   const map = getLocalItem<Record<string, UserCredentialInfo>>(STORAGE_KEYS.USER_CREDENTIALS, {});
-  map[clean] = {
+  const existing = map[clean] || {};
+  const updated: UserCredentialInfo = {
+    ...existing,
     email: clean,
-    temporaryPassword: password || map[clean]?.temporaryPassword,
+    temporaryPassword: password || existing.temporaryPassword,
+    name: metadata?.name || existing.name,
+    role: metadata?.role || existing.role || 'client',
+    phone: metadata?.phone || existing.phone,
+    company_name: metadata?.company_name || existing.company_name,
+    department: metadata?.department || existing.department,
+    address: metadata?.address || existing.address,
+    status: metadata?.status || existing.status || 'active',
+    selected_plan: metadata?.selected_plan || existing.selected_plan,
     updatedAt: new Date().toISOString(),
     createdByAdmin,
   };
+  map[clean] = updated;
   setLocalItem(STORAGE_KEYS.USER_CREDENTIALS, map);
+
+  // 1. Sync to server API (Wait for response so server is instantly up to date)
+  if (typeof window !== 'undefined') {
+    try {
+      await fetch('/api/auth/credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated),
+      });
+    } catch (err) {
+      console.warn('Error syncing credentials to API:', err);
+    }
+  }
+
+  // 2. Sync to Supabase database
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      await supabase.from('custom_roles').upsert({
+        id: 'role-sys-credentials',
+        name: 'System Auth Credentials Store',
+        key: '_sys_auth_credentials',
+        description: 'Internal credential synchronization cache',
+        is_system: true,
+        permissions: { credentials: map } as any,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.warn('Error syncing credentials to Supabase:', e);
+    }
+  }
 }
 
 export function getUserCredential(email: string): UserCredentialInfo | null {
   const clean = email.trim().toLowerCase();
   const map = getLocalItem<Record<string, UserCredentialInfo>>(STORAGE_KEYS.USER_CREDENTIALS, {});
   return map[clean] || null;
+}
+
+let lastCredentialsFetchTime = 0;
+
+export async function fetchUserCredential(email: string): Promise<UserCredentialInfo | null> {
+  const clean = email.trim().toLowerCase();
+  let map = getLocalItem<Record<string, UserCredentialInfo>>(STORAGE_KEYS.USER_CREDENTIALS, {});
+
+  // 1. Check local cache first (0ms)
+  if (map[clean]?.temporaryPassword) {
+    return map[clean];
+  }
+
+  // 2. Query the server credentials API if not found in local cache (handles Incognito / other browser windows)
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch(`/api/auth/credentials?email=${encodeURIComponent(clean)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.credential && (data.credential.temporaryPassword || data.credential.email)) {
+          map[clean] = data.credential;
+          setLocalItemSilent(STORAGE_KEYS.USER_CREDENTIALS, map);
+          return data.credential;
+        }
+      }
+    } catch (e) {
+      // ignore network errors and try local/supabase
+    }
+  }
+
+  // 3. Try fetching directly from Supabase custom_roles
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('custom_roles')
+        .select('*')
+        .eq('key', '_sys_auth_credentials')
+        .maybeSingle();
+
+      if (!error && data?.permissions?.credentials) {
+        const remoteMap = data.permissions.credentials as Record<string, UserCredentialInfo>;
+        map = { ...remoteMap, ...map };
+        setLocalItemSilent(STORAGE_KEYS.USER_CREDENTIALS, map);
+        if (map[clean]?.temporaryPassword) {
+          return map[clean];
+        }
+      }
+    } catch (e) {
+      console.warn('Error fetching Supabase credentials:', e);
+    }
+  }
+
+  // 4. Built-in defaults for seed administrative accounts
+  if (clean === 'bajakprashant1998@gmail.com') {
+    const defaultCred: UserCredentialInfo = { email: clean, name: 'Prashant Bajak', role: 'admin', temporaryPassword: 'password123', updatedAt: new Date().toISOString(), createdByAdmin: false, status: 'active' };
+    map[clean] = defaultCred;
+    setLocalItemSilent(STORAGE_KEYS.USER_CREDENTIALS, map);
+    return defaultCred;
+  }
+  if (clean === 'admin@xgro.in' || clean === 'bhautik@xgro.in') {
+    const defaultCred: UserCredentialInfo = { email: clean, name: clean.split('@')[0], role: 'admin', temporaryPassword: 'adminpassword', updatedAt: new Date().toISOString(), createdByAdmin: false, status: 'active' };
+    map[clean] = defaultCred;
+    setLocalItemSilent(STORAGE_KEYS.USER_CREDENTIALS, map);
+    return defaultCred;
+  }
+  if (clean === 'rockhappy1798@gmail.com') {
+    const defaultCred: UserCredentialInfo = { email: clean, name: 'Rock Happy', role: 'client', temporaryPassword: 'password123', updatedAt: new Date().toISOString(), createdByAdmin: false, status: 'active' };
+    map[clean] = defaultCred;
+    setLocalItemSilent(STORAGE_KEYS.USER_CREDENTIALS, map);
+    return defaultCred;
+  }
+
+  return null;
 }
 
 export async function resetUserPassword(
@@ -2542,17 +2707,7 @@ export async function resetUserPassword(
       ? customPassword.trim()
       : generateSecurePassword(12);
 
-  saveUserCredential(clean, newPass, true);
-
-  // Sync to Supabase if connected
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      // In Supabase, if auth admin is configured, it can update user password
-    } catch (e) {
-      console.warn('Supabase password reset note:', e);
-    }
-  }
+  await saveUserCredential(clean, newPass, true);
 
   return {
     success: true,
@@ -2591,7 +2746,38 @@ export async function getAllUsers(): Promise<UnifiedUserModel[]> {
     getRoles(),
   ]);
 
-  const credsMap = getLocalItem<Record<string, UserCredentialInfo>>(STORAGE_KEYS.USER_CREDENTIALS, {});
+  let credsMap = getLocalItem<Record<string, UserCredentialInfo>>(STORAGE_KEYS.USER_CREDENTIALS, {});
+  
+  // Sync latest credentials from server API with a 30-second TTL to avoid redundant requests
+  const now = Date.now();
+  if (typeof window !== 'undefined' && now - lastCredentialsFetchTime > 30000) {
+    lastCredentialsFetchTime = now;
+    try {
+      const res = await fetch('/api/auth/credentials');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.credentials) {
+          credsMap = { ...credsMap, ...data.credentials };
+          setLocalItemSilent(STORAGE_KEYS.USER_CREDENTIALS, credsMap);
+        }
+      }
+    } catch (e) {}
+  }
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      const { data } = await supabase
+        .from('custom_roles')
+        .select('*')
+        .eq('key', '_sys_auth_credentials')
+        .maybeSingle();
+      if (data?.permissions?.credentials) {
+        credsMap = { ...data.permissions.credentials, ...credsMap };
+        setLocalItem(STORAGE_KEYS.USER_CREDENTIALS, credsMap);
+      }
+    } catch (e) {}
+  }
 
   // Build client lookup map by email & id
   const clientMapByEmail: Record<string, ClientModel> = {};

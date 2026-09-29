@@ -35,9 +35,14 @@ import { useAuth } from '@/lib/auth-context';
 
 export function AdminTopbar() {
   const { theme, toggle } = useTheme();
-  const { user, signOut } = useAuth();
+  const { user, signOut, hasPermission, isAdmin } = useAuth();
   const [notifications, setNotifications] = useState<NotificationModel[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
+
+  const canCreateProject = isAdmin || hasPermission('projects', 'create_edit');
+  const canCreateService = isAdmin || hasPermission('services', 'create_edit');
+  const canCreatePricing = isAdmin || hasPermission('pricing', 'create_edit');
+  const hasAnyQuickCreate = canCreateProject || canCreateService || canCreatePricing;
 
   useEffect(() => {
     async function loadNotifs() {
@@ -68,36 +73,44 @@ export function AdminTopbar() {
       {/* Right Controls */}
       <div className="flex items-center gap-3 ml-auto">
         {/* Quick Action Button */}
-        <DropdownMenu modal={false}>
-          <DropdownMenuTrigger asChild>
-            <Button
-              size="sm"
-              className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-4 h-9 shadow-sm"
-            >
-              <Plus className="h-3.5 w-3.5 mr-1.5" /> Quick Create
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52 rounded-2xl p-1.5 shadow-xl bg-card/95 backdrop-blur-xl z-50 border-border">
-            <DropdownMenuLabel className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              Add New
-            </DropdownMenuLabel>
-            <DropdownMenuItem asChild>
-              <Link href="/admin/projects" className="flex items-center gap-2 cursor-pointer font-medium text-xs py-2">
-                <FolderKanban className="h-4 w-4 text-cyan" /> New Client Project
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/admin/services" className="flex items-center gap-2 cursor-pointer font-medium text-xs py-2">
-                <Layers className="h-4 w-4 text-cyan" /> Add Service
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/admin/pricing" className="flex items-center gap-2 cursor-pointer font-medium text-xs py-2">
-                <CreditCard className="h-4 w-4 text-cyan" /> Add Pricing Tier
-              </Link>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {hasAnyQuickCreate && (
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="sm"
+                className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-4 h-9 shadow-sm"
+              >
+                <Plus className="h-3.5 w-3.5 mr-1.5" /> Quick Create
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52 rounded-2xl p-1.5 shadow-xl bg-card/95 backdrop-blur-xl z-50 border-border">
+              <DropdownMenuLabel className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                Add New
+              </DropdownMenuLabel>
+              {canCreateProject && (
+                <DropdownMenuItem asChild>
+                  <Link href="/admin/projects" className="flex items-center gap-2 cursor-pointer font-medium text-xs py-2">
+                    <FolderKanban className="h-4 w-4 text-cyan" /> New Client Project
+                  </Link>
+                </DropdownMenuItem>
+              )}
+              {canCreateService && (
+                <DropdownMenuItem asChild>
+                  <Link href="/admin/services" className="flex items-center gap-2 cursor-pointer font-medium text-xs py-2">
+                    <Layers className="h-4 w-4 text-cyan" /> Add Service
+                  </Link>
+                </DropdownMenuItem>
+              )}
+              {canCreatePricing && (
+                <DropdownMenuItem asChild>
+                  <Link href="/admin/pricing" className="flex items-center gap-2 cursor-pointer font-medium text-xs py-2">
+                    <CreditCard className="h-4 w-4 text-cyan" /> Add Pricing Tier
+                  </Link>
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
 
         {/* Notifications Dropdown */}
         <DropdownMenu modal={false}>
