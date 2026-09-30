@@ -248,7 +248,7 @@ export function Header() {
                     </ul>
                   </div>
 
-                  {links.map((l) => (
+                  {links.filter((l) => l.to !== "/").map((l) => (
                     <Link
                       key={l.to}
                       href={l.to}
