@@ -219,7 +219,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       let verifiedUser: AuthUser | null = null;
       let authenticatedRole: AppRole = 'client';
 
-      // 1. Secure server-side credential verification (Zero credentials exposure to client)
+      // 1. Establish Native Supabase Auth session in browser if Supabase is configured
+      if (supabase) {
+        try {
+          await supabase.auth.signInWithPassword({
+            email: cleanEmail,
+            password: enteredPassword,
+          });
+        } catch (sbErr) {
+          // Continue to verify endpoint
+        }
+      }
+
+      // 2. Server-side credential verification & dynamic profile resolution from Supabase
       if (typeof window !== 'undefined') {
         try {
           const res = await fetch('/api/auth/verify', {
@@ -240,35 +252,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             authenticatedRole = (data.role || data.user.role) as AppRole;
           }
         } catch (netErr) {
-          // If network fetch fails, attempt fallback
-        }
-      }
-
-      // 2. Fallback check for Supabase Auth if server verify had network issue
-      if (!verifiedUser && supabase) {
-        try {
-          const { data: sbData, error: sbError } = await supabase.auth.signInWithPassword({
-            email: cleanEmail,
-            password: enteredPassword,
-          });
-          if (sbError || !sbData?.user) {
-            return {
-              success: false,
-              role: 'client',
-              error: 'The password you entered is incorrect. Please double-check your password and try again.',
-            };
-          }
-        } catch (e) {
-          return {
-            success: false,
-            role: 'client',
-            error: 'Authentication failed. Please try again.',
-          };
+          // Fallback if network fetch fails
         }
       }
 
       // 3. Resolve Profile and enforce Account Status
-      const profile = verifiedUser || (await resolveUserProfile(cleanEmail));
+      const fallbackUserId: string | undefined = (verifiedUser as AuthUser | null)?.id;
+      const resolved = await resolveUserProfile(cleanEmail, fallbackUserId);
+      const profile: AuthUser = resolved || (verifiedUser as AuthUser | null) || {
+        id: fallbackUserId || `user-${Date.now()}`,
+        email: cleanEmail,
+        name: cleanEmail.split('@')[0],
+        role: authenticatedRole,
+        status: 'active',
+      };
       if (!profile) {
         return { success: false, role: 'client', error: 'User account profile not found.' };
       }

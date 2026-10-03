@@ -392,6 +392,22 @@ export const initialClients: ClientModel[] = [
     retainer_amount: 14000,
     created_at: '2026-01-15T09:00:00Z',
   },
+  {
+    id: 'cli-samridhi',
+    name: 'Samridhi Arora',
+    email: 'samridhiarora79@gmail.com',
+    phone: '+91 98765 43219',
+    company_name: 'Arora Growth Studio',
+    avatar_url: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
+    address: 'Delhi NCR, India',
+    status: 'active',
+    selected_plan: 'Scale Growth Plan (Active Workspace)',
+    services: ['website', 'graphic_design', 'ai_automation', 'seo', 'google_business'],
+    billing_cycle: 'monthly',
+    subscription_tier: 'Growth',
+    retainer_amount: 39999,
+    created_at: '2026-03-01T10:00:00Z',
+  },
 ];
 
 export const initialTeamMembers: TeamMemberModel[] = [
@@ -546,6 +562,83 @@ export const initialProjects: ProjectModel[] = [
         notes: '50% initial kickoff and prototype delivery advance — received with thanks.'
       }
     ]
+  },
+  {
+    id: 'proj-samridhi',
+    project_name: 'Arora Growth Studio — E-Commerce & Brand Platform',
+    client_id: 'cli-samridhi',
+    service_id: 'srv-1',
+    service_name: 'Website Development, Graphic Design & SEO',
+    start_date: '2026-03-01',
+    expected_completion_date: '2026-04-15',
+    project_value: 49999,
+    assigned_manager_id: 'team-admin-1',
+    assigned_employee_ids: ['team-1', 'team-pooran'],
+    status: 'development',
+    progress_percentage: 65,
+    description: 'Custom e-commerce web platform, complete brand identity pack, Google Business profile optimization, and monthly SEO retainer.',
+    created_at: '2026-03-01T09:00:00Z',
+    milestones: [
+      {
+        id: 'ms-s1',
+        project_id: 'proj-samridhi',
+        title: 'Brand Assets & Wireframe Architecture',
+        description: 'Brand colors, typography, UX sitemap and catalog structure finalized.',
+        status: 'completed',
+        order_index: 1,
+        completed_at: '2026-03-05T15:00:00Z',
+      },
+      {
+        id: 'ms-s2',
+        project_id: 'proj-samridhi',
+        title: 'UI/UX Visual Design & Figma Mockups',
+        description: 'High-fidelity mobile and desktop screens with interactive prototypes.',
+        status: 'completed',
+        order_index: 2,
+        completed_at: '2026-03-12T17:30:00Z',
+      },
+      {
+        id: 'ms-s3',
+        project_id: 'proj-samridhi',
+        title: 'Next.js Frontend & Product Catalog Development',
+        description: 'Dynamic product engine, fast cart experience, and payment gateway integration.',
+        status: 'in_progress',
+        order_index: 3,
+      },
+      {
+        id: 'ms-s4',
+        project_id: 'proj-samridhi',
+        title: 'SEO Audit & Final Launch',
+        description: 'On-page SEO, schema markup, Core Web Vitals optimization and domain setup.',
+        status: 'pending',
+        order_index: 4,
+      },
+    ],
+    tasks: [
+      {
+        id: 'task-s1',
+        project_id: 'proj-samridhi',
+        title: 'Integrate Razorpay & Stripe Checkout Flow',
+        assigned_to: 'team-pooran',
+        status: 'in_progress',
+        priority: 'high',
+        due_date: '2026-03-25',
+      },
+    ],
+    updates: [
+      {
+        id: 'upd-s1',
+        project_id: 'proj-samridhi',
+        author_name: 'Bhautik Chauhan',
+        author_role: 'Technical Director',
+        title: 'Design System & Catalog Prototype Approved',
+        message: 'Completed full UI/UX Figma prototype for the product catalog. Development sprint is now in active progress.',
+        progress_percent: 65,
+        is_visible_to_client: true,
+        created_at: '2026-03-15T14:30:00Z',
+      },
+    ],
+    invoices: [],
   }
 ];
 

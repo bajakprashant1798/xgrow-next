@@ -22,8 +22,9 @@ const DATA_DIR = path.join(process.cwd(), '.data');
 const CREDENTIALS_FILE = path.join(DATA_DIR, 'credentials.json');
 
 // Default initial system accounts
-const defaultCredentials: Record<string, StoredUserCredential> = {
+const defaultCredentials: Record<string, StoredUserCredential & { id?: string }> = {
   'bajakprashant1998@gmail.com': {
+    id: 'team-admin-1',
     email: 'bajakprashant1998@gmail.com',
     name: 'Prashant Bajak',
     role: 'admin',
@@ -34,6 +35,7 @@ const defaultCredentials: Record<string, StoredUserCredential> = {
     status: 'active',
   },
   'admin@xgro.in': {
+    id: 'team-admin-1',
     email: 'admin@xgro.in',
     name: 'Admin',
     role: 'admin',
@@ -44,6 +46,7 @@ const defaultCredentials: Record<string, StoredUserCredential> = {
     status: 'active',
   },
   'bhautik@xgro.in': {
+    id: 'team-1',
     email: 'bhautik@xgro.in',
     name: 'Bhautik Chauhan',
     role: 'admin',
@@ -53,7 +56,41 @@ const defaultCredentials: Record<string, StoredUserCredential> = {
     createdByAdmin: false,
     status: 'active',
   },
+  'pooran@xgro.in': {
+    id: 'team-pooran',
+    email: 'pooran@xgro.in',
+    name: 'Pooran Kushwah',
+    role: 'developer',
+    department: 'WordPress Development',
+    temporaryPassword: 'password123',
+    updatedAt: new Date().toISOString(),
+    createdByAdmin: false,
+    status: 'active',
+  },
+  'neha@xgro.in': {
+    id: 'team-neha',
+    email: 'neha@xgro.in',
+    name: 'Neha Singh',
+    role: 'marketer',
+    department: 'Content & Copywriting',
+    temporaryPassword: 'password123',
+    updatedAt: new Date().toISOString(),
+    createdByAdmin: false,
+    status: 'active',
+  },
+  'sachin@xgro.in': {
+    id: 'team-sachin',
+    email: 'sachin@xgro.in',
+    name: 'Sachin Yadav',
+    role: 'marketer',
+    department: 'SEO & Digital Marketing',
+    temporaryPassword: 'password123',
+    updatedAt: new Date().toISOString(),
+    createdByAdmin: false,
+    status: 'active',
+  },
   'rockhappy1798@gmail.com': {
+    id: 'cli-1',
     email: 'rockhappy1798@gmail.com',
     name: 'Rock Happy',
     role: 'client',
@@ -61,6 +98,27 @@ const defaultCredentials: Record<string, StoredUserCredential> = {
     temporaryPassword: 'password123',
     updatedAt: new Date().toISOString(),
     createdByAdmin: false,
+    status: 'active',
+  },
+  'samridhiarora79@gmail.com': {
+    id: 'cli-samridhi',
+    email: 'samridhiarora79@gmail.com',
+    name: 'Samridhi Arora',
+    role: 'client',
+    company_name: 'Arora Growth Studio',
+    temporaryPassword: 'ieg55k*%K$nY',
+    updatedAt: new Date().toISOString(),
+    createdByAdmin: true,
+    status: 'active',
+  },
+  'bajakhome@gmail.com': {
+    id: 'cli-2',
+    email: 'bajakhome@gmail.com',
+    name: 'Bajak Home',
+    role: 'client',
+    temporaryPassword: 'MyCustomPass2026',
+    updatedAt: new Date().toISOString(),
+    createdByAdmin: true,
     status: 'active',
   },
 };
@@ -164,7 +222,7 @@ export async function POST(request: NextRequest) {
       memoryStore[cleanEmail] = {
         ...existing,
         email: cleanEmail,
-        temporaryPassword: body.password || existing.temporaryPassword,
+        temporaryPassword: body.password || body.temporaryPassword || existing.temporaryPassword,
         name: body.name || existing.name,
         role: body.role || existing.role || 'client',
         phone: body.phone || existing.phone,

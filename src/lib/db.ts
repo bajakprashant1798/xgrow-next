@@ -2591,7 +2591,10 @@ export async function saveUserCredential(
       await fetch('/api/auth/credentials', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updated),
+        body: JSON.stringify({
+          ...updated,
+          password: updated.temporaryPassword,
+        }),
       });
     } catch (err) {
       console.warn('Error syncing credentials to API:', err);
@@ -2674,7 +2677,7 @@ export async function fetchUserCredential(email: string): Promise<UserCredential
     }
   }
 
-  // 4. Built-in defaults for seed administrative accounts
+  // 4. Built-in defaults for seed administrative accounts & clients
   if (clean === 'bajakprashant1998@gmail.com') {
     const defaultCred: UserCredentialInfo = { email: clean, name: 'Prashant Bajak', role: 'admin', temporaryPassword: 'password123', updatedAt: new Date().toISOString(), createdByAdmin: false, status: 'active' };
     map[clean] = defaultCred;
@@ -2683,6 +2686,12 @@ export async function fetchUserCredential(email: string): Promise<UserCredential
   }
   if (clean === 'admin@xgro.in' || clean === 'bhautik@xgro.in') {
     const defaultCred: UserCredentialInfo = { email: clean, name: clean.split('@')[0], role: 'admin', temporaryPassword: 'adminpassword', updatedAt: new Date().toISOString(), createdByAdmin: false, status: 'active' };
+    map[clean] = defaultCred;
+    setLocalItemSilent(STORAGE_KEYS.USER_CREDENTIALS, map);
+    return defaultCred;
+  }
+  if (clean === 'samridhiarora79@gmail.com') {
+    const defaultCred: UserCredentialInfo = { email: clean, name: 'Samridhi Arora', role: 'client', company_name: 'Arora Growth Studio', temporaryPassword: 'ieg55k*%K$nY', updatedAt: new Date().toISOString(), createdByAdmin: true, status: 'active' };
     map[clean] = defaultCred;
     setLocalItemSilent(STORAGE_KEYS.USER_CREDENTIALS, map);
     return defaultCred;
