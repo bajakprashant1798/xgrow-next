@@ -27,6 +27,11 @@ import {
   Briefcase,
   X,
   Power,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Dices,
+  Lock,
 } from 'lucide-react';
 import {
   Card,
@@ -73,6 +78,7 @@ import {
   subscribeToDataChanges,
   saveUserCredential,
   generateSecurePassword,
+  resetUserPassword,
   EmailCheckResult,
 } from '@/lib/db';
 import { ClientModel, ProjectModel, CustomRoleModel, ProjectStatus } from '@/lib/supabase/types';
@@ -86,6 +92,7 @@ import {
 } from '@/lib/client-services';
 import { useAuth } from '@/lib/auth-context';
 import { AdminAccessDenied } from '@/components/admin/AdminAccessDenied';
+import { OneTimeCredentialsModal } from '@/components/admin/OneTimeCredentialsModal';
 
 interface OnboardUserData {
   id?: string;
@@ -147,8 +154,25 @@ export default function ClientsManagementPage() {
   });
 
   // Debounced Email Check state for dialog
+  const [originalEmail, setOriginalEmail] = useState('');
   const [emailCheckStatus, setEmailCheckStatus] = useState<'idle' | 'checking' | 'available' | 'duplicate'>('idle');
   const [emailCheckResult, setEmailCheckResult] = useState<EmailCheckResult | null>(null);
+
+  // One-Time Credentials Modal state
+  const [isCredentialsModalOpen, setIsCredentialsModalOpen] = useState(false);
+  const [credentialsData, setCredentialsData] = useState<{
+    name: string;
+    email: string;
+    password: string;
+    roleDisplayName: string;
+    loginUrl: string;
+  } | null>(null);
+
+  // Reset Password Dialog state
+  const [isResetPasswordModalOpen, setIsResetPasswordModalOpen] = useState(false);
+  const [resetTargetClient, setResetTargetClient] = useState<ClientModel | null>(null);
+  const [newResetPassword, setNewResetPassword] = useState('');
+  const [showResetPassword, setShowResetPassword] = useState(false);
 
   // Assign Projects to existing client modal state
   const [isAssignProjectDialogOpen, setIsAssignProjectDialogOpen] = useState(false);
@@ -187,10 +211,17 @@ export default function ClientsManagementPage() {
       return;
     }
 
+    // If editing existing user and email is unchanged from original, it's valid & available
+    if (originalEmail && email === originalEmail.trim().toLowerCase()) {
+      setEmailCheckStatus('idle');
+      setEmailCheckResult(null);
+      return;
+    }
+
     setEmailCheckStatus('checking');
     const timer = setTimeout(async () => {
       try {
-        const result = await checkUserEmailExists(email, userData.id);
+        const result = await checkUserEmailExists(email, userData.id, originalEmail);
         if (result.exists) {
           setEmailCheckStatus('duplicate');
           setEmailCheckResult(result);
@@ -204,7 +235,7 @@ export default function ClientsManagementPage() {
     }, 350);
 
     return () => clearTimeout(timer);
-  }, [userData.email, userData.id]);
+  }, [userData.email, userData.id, originalEmail]);
 
   const handleApplyPlanPreset = (presetKey: string) => {
     const preset = PLAN_SERVICE_PRESETS[presetKey];
@@ -232,6 +263,7 @@ export default function ClientsManagementPage() {
 
   const openCreateDialog = () => {
     const defaultPreset = PLAN_SERVICE_PRESETS.growth;
+    setOriginalEmail('');
     setUserData({
       name: '',
       email: '',
@@ -258,6 +290,7 @@ export default function ClientsManagementPage() {
 
   const openEditDialog = (client: ClientModel) => {
     const cleanEmail = client.email.trim().toLowerCase();
+    setOriginalEmail(client.email);
     const clientProjects = projects
       .filter(
         (p) =>
@@ -315,6 +348,42 @@ export default function ClientsManagementPage() {
     setShowQuickCreateProject(false);
     setQuickProjectName(`${client.company_name || client.name} — Web Platform`);
     setIsAssignProjectDialogOpen(true);
+  };
+
+  const openResetPasswordModal = (client: ClientModel) => {
+    setResetTargetClient(client);
+    const pass = generateSecurePassword(12);
+    setNewResetPassword(pass);
+    setShowResetPassword(false);
+    setIsResetPasswordModalOpen(true);
+  };
+
+  const handleConfirmResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetTargetClient) return;
+    if (!newResetPassword.trim() || newResetPassword.trim().length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+
+    try {
+      const res = await resetUserPassword(resetTargetClient.email, newResetPassword.trim());
+      setIsResetPasswordModalOpen(false);
+      loadData();
+
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://xgro.in';
+      setCredentialsData({
+        name: resetTargetClient.name,
+        email: resetTargetClient.email,
+        password: res.password,
+        roleDisplayName: 'Client (Portal Workspace)',
+        loginUrl: `${origin}/login`,
+      });
+      setIsCredentialsModalOpen(true);
+      toast.success(`Password reset successfully for ${resetTargetClient.name}!`);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to reset password');
+    }
   };
 
   const handleSaveUser = async (e: React.FormEvent) => {
@@ -402,6 +471,16 @@ export default function ClientsManagementPage() {
             selected_plan: saved.selected_plan,
             status: saved.status,
           });
+
+          const origin = typeof window !== 'undefined' ? window.location.origin : 'https://xgro.in';
+          setCredentialsData({
+            name: saved.name,
+            email: saved.email,
+            password: generatedPass,
+            roleDisplayName: 'Client (Portal Workspace)',
+            loginUrl: `${origin}/login`,
+          });
+          setIsCredentialsModalOpen(true);
         }
 
         toast.success(userData.id ? 'Client account updated successfully!' : 'New client account created successfully!');
@@ -435,6 +514,17 @@ export default function ClientsManagementPage() {
             department: userData.department || 'Engineering',
             status: 'active',
           });
+
+          const origin = typeof window !== 'undefined' ? window.location.origin : 'https://xgro.in';
+          const roleDisplayName = roles.find((r) => r.key === userData.role)?.name || userData.role;
+          setCredentialsData({
+            name: userData.name.trim(),
+            email: userData.email.trim().toLowerCase(),
+            password: generatedPass,
+            roleDisplayName,
+            loginUrl: `${origin}/login`,
+          });
+          setIsCredentialsModalOpen(true);
         }
         toast.success(`Staff user "${userData.name}" saved successfully with role "${userData.role}"!`);
       }
@@ -921,6 +1011,15 @@ export default function ClientsManagementPage() {
                             className="rounded-full text-xs font-semibold h-8 px-2.5 border-border hover:border-cyan/40"
                           >
                             <Edit2 className="h-3 w-3 mr-1" /> Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openResetPasswordModal(client)}
+                            className="rounded-full text-xs font-semibold h-8 px-2.5 border-border hover:border-cyan/40"
+                            title="Reset Password & Download Credentials"
+                          >
+                            <KeyRound className="h-3 w-3 mr-1 text-cyan" /> Reset Password
                           </Button>
                         </div>
                         <Button
@@ -1518,6 +1617,90 @@ export default function ClientsManagementPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* One-Time Credentials Created / Reset Modal with Download (.txt) support */}
+      <OneTimeCredentialsModal
+        open={isCredentialsModalOpen}
+        onOpenChange={setIsCredentialsModalOpen}
+        data={credentialsData}
+      />
+
+      {/* Reset Client Password Modal */}
+      <Dialog open={isResetPasswordModalOpen} onOpenChange={setIsResetPasswordModalOpen}>
+        <DialogContent className="max-w-md rounded-3xl p-6 sm:p-8">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-extrabold flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-cyan" />
+              Reset Password for Client
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Generate a new secure temporary password for <strong>{resetTargetClient?.name}</strong> ({resetTargetClient?.email}). You will be able to download or copy the credentials document immediately.
+            </DialogDescription>
+          </DialogHeader>
+
+          {resetTargetClient && (
+            <form onSubmit={handleConfirmResetPassword} className="space-y-4 mt-2">
+              <div className="p-3 rounded-2xl bg-surface/60 border border-border text-xs space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Client Name:</span>
+                  <span className="font-bold text-foreground">{resetTargetClient.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Account Email:</span>
+                  <span className="font-mono text-cyan">{resetTargetClient.email}</span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-foreground">New Temporary Password *</label>
+                  <button
+                    type="button"
+                    onClick={() => setNewResetPassword(generateSecurePassword(12))}
+                    className="text-[11px] font-bold text-cyan hover:underline flex items-center gap-1"
+                  >
+                    <Dices className="h-3 w-3" /> Auto-Generate Strong
+                  </button>
+                </div>
+                <div className="relative">
+                  <Input
+                    type={showResetPassword ? 'text' : 'password'}
+                    value={newResetPassword}
+                    onChange={(e) => setNewResetPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    className="pr-10 text-xs font-mono rounded-xl h-9"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowResetPassword(!showResetPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showResetPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <DialogFooter className="pt-2 flex sm:justify-between items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsResetPasswordModalOpen(false)}
+                  className="rounded-full text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-6"
+                >
+                  Confirm & Show Credentials
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </div>

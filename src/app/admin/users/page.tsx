@@ -86,6 +86,7 @@ import {
 import { CustomRoleModel, ProjectModel } from '@/lib/supabase/types';
 import { useAuth } from '@/lib/auth-context';
 import { AdminAccessDenied } from '@/components/admin/AdminAccessDenied';
+import { OneTimeCredentialsModal } from '@/components/admin/OneTimeCredentialsModal';
 
 export default function UsersManagementPage() {
   const { user: currentAuthUser, isAdmin, hasPermission } = useAuth();
@@ -715,46 +716,12 @@ _Please keep these credentials secure. You can sign in and change your password 
 
                       {/* Credentials Status */}
                       <td className="p-4">
-                        {u.hasTemporaryPassword ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={async () => {
-                              const origin = typeof window !== 'undefined' ? window.location.origin : 'https://xgro.in';
-                              let pass = u.temporaryPassword;
-                              if (!pass) {
-                                try {
-                                  const res = await fetch('/api/auth/credentials/reveal', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ email: u.email }),
-                                  });
-                                  if (res.ok) {
-                                    const data = await res.json();
-                                    if (data.password) {
-                                      pass = data.password;
-                                    }
-                                  }
-                                } catch (e) {}
-                              }
-                              setCredentialsData({
-                                name: u.name,
-                                email: u.email,
-                                password: pass || 'Temporary Password Configured',
-                                roleDisplayName: u.roleDisplayName,
-                                loginUrl: `${origin}/login`,
-                              });
-                              setIsCredentialsModalOpen(true);
-                            }}
-                            className="h-7 text-[10px] font-bold rounded-full border-cyan/40 text-cyan hover:bg-cyan/10 px-2.5"
-                          >
-                            <Copy className="h-3 w-3 mr-1" /> Copy Credentials
-                          </Button>
-                        ) : (
-                          <span className="text-[10px] text-muted-foreground italic">
-                            Encrypted / User-Set
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Lock className="h-3.5 w-3.5 text-cyan/70 shrink-0" />
+                          <span className="text-[11px] font-medium font-sans">
+                            {u.status === 'inactive' ? 'Deactivated' : 'Encrypted / User-Set'}
                           </span>
-                        )}
+                        </div>
                       </td>
 
                       {/* Actions */}
@@ -777,7 +744,7 @@ _Please keep these credentials secure. You can sign in and change your password 
                             variant="outline"
                             onClick={() => openResetPasswordModal(u)}
                             className="h-7 text-[11px] font-semibold rounded-full border-border hover:border-cyan/40 px-2.5"
-                            title="Reset Password & Share"
+                            title="Reset Password & Download Credentials"
                           >
                             <KeyRound className="h-3 w-3 mr-1 text-cyan" /> Reset Password
                           </Button>
@@ -821,67 +788,12 @@ _Please keep these credentials secure. You can sign in and change your password 
         </div>
       )}
 
-      {/* Credentials Created / Ready to Share Modal */}
-      <Dialog open={isCredentialsModalOpen} onOpenChange={setIsCredentialsModalOpen}>
-        <DialogContent className="max-w-md rounded-3xl p-6 sm:p-8">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-extrabold flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-cyan" />
-              Login Credentials Ready
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Copy this formatted credential card to securely share with the user via WhatsApp, Email, or Slack.
-            </DialogDescription>
-          </DialogHeader>
-
-          {credentialsData && (
-            <div className="space-y-4 mt-2">
-              <div className="p-4 rounded-2xl bg-surface/80 border border-cyan/40 space-y-2.5 font-mono text-xs shadow-inner">
-                <div className="flex justify-between border-b border-border pb-2">
-                  <span className="text-muted-foreground font-sans">Name:</span>
-                  <span className="font-bold text-foreground font-sans">{credentialsData.name}</span>
-                </div>
-                <div className="flex justify-between border-b border-border pb-2">
-                  <span className="text-muted-foreground font-sans">Role:</span>
-                  <span className="font-bold text-cyan font-sans">{credentialsData.roleDisplayName}</span>
-                </div>
-                <div className="flex justify-between border-b border-border pb-2">
-                  <span className="text-muted-foreground font-sans">Email / Login ID:</span>
-                  <span className="font-bold text-foreground">{credentialsData.email}</span>
-                </div>
-                <div className="flex justify-between border-b border-border pb-2 items-center">
-                  <span className="text-muted-foreground font-sans">Temporary Password:</span>
-                  <span className="font-extrabold text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded-md">
-                    {credentialsData.password}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center pt-0.5">
-                  <span className="text-muted-foreground font-sans">Login Portal:</span>
-                  <span className="font-semibold text-cyan truncate max-w-[200px]">
-                    {credentialsData.loginUrl}
-                  </span>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Button
-                  onClick={handleCopyCredentials}
-                  className="w-full rounded-full bg-cyan text-slate-950 font-black text-xs h-10 shadow-md flex items-center justify-center gap-2"
-                >
-                  <Copy className="h-4 w-4" /> Copy Complete Credentials (WhatsApp / Email Format)
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setIsCredentialsModalOpen(false)}
-                  className="w-full rounded-full text-xs"
-                >
-                  Done
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* One-Time Credentials Created / Reset Modal with Download (.txt) support */}
+      <OneTimeCredentialsModal
+        open={isCredentialsModalOpen}
+        onOpenChange={setIsCredentialsModalOpen}
+        data={credentialsData}
+      />
 
       {/* Reset User Password Modal */}
       <Dialog open={isResetPasswordModalOpen} onOpenChange={setIsResetPasswordModalOpen}>

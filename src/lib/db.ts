@@ -573,17 +573,26 @@ export interface EmailCheckResult {
 
 export async function checkUserEmailExists(
   email: string,
-  excludeId?: string
+  excludeId?: string,
+  excludeEmail?: string
 ): Promise<EmailCheckResult> {
   const clean = (email || '').trim().toLowerCase();
   if (!clean) return { exists: false };
 
+  const cleanExcludeEmail = (excludeEmail || '').trim().toLowerCase();
+  // If the email being checked is identical to the user's current original email, it is their own account
+  if (cleanExcludeEmail && clean === cleanExcludeEmail) {
+    return { exists: false };
+  }
+
   const [clients, team] = await Promise.all([getClients(), getTeamMembers()]);
 
   // Check in clients list
-  const existingClient = clients.find(
-    (c) => c.email.trim().toLowerCase() === clean && (!excludeId || c.id !== excludeId)
-  );
+  const existingClient = clients.find((c) => {
+    const cEmail = (c.email || '').trim().toLowerCase();
+    const isExcluded = (excludeId && c.id === excludeId) || (cleanExcludeEmail && cEmail === cleanExcludeEmail);
+    return cEmail === clean && !isExcluded;
+  });
   if (existingClient) {
     return {
       exists: true,
@@ -595,9 +604,11 @@ export async function checkUserEmailExists(
   }
 
   // Check in team list
-  const existingTeam = team.find(
-    (t) => t.email.trim().toLowerCase() === clean && (!excludeId || t.id !== excludeId)
-  );
+  const existingTeam = team.find((t) => {
+    const tEmail = (t.email || '').trim().toLowerCase();
+    const isExcluded = (excludeId && t.id === excludeId) || (cleanExcludeEmail && tEmail === cleanExcludeEmail);
+    return tEmail === clean && !isExcluded;
+  });
   if (existingTeam) {
     return {
       exists: true,
@@ -612,13 +623,18 @@ export async function checkUserEmailExists(
   try {
     const remoteCred = await fetchUserCredential(clean);
     if (remoteCred && remoteCred.email) {
-      const isClient = remoteCred.role === 'client' || !remoteCred.role;
-      return {
-        exists: true,
-        type: isClient ? 'client' : 'team',
-        name: remoteCred.name || clean.split('@')[0],
-        role: remoteCred.role || (isClient ? 'Client (Portal User)' : 'Staff Member'),
-      };
+      const isExcluded =
+        (cleanExcludeEmail && clean === cleanExcludeEmail) ||
+        (excludeId && ((remoteCred as any).id === excludeId || remoteCred.email?.toLowerCase() === cleanExcludeEmail));
+      if (!isExcluded) {
+        const isClient = remoteCred.role === 'client' || !remoteCred.role;
+        return {
+          exists: true,
+          type: isClient ? 'client' : 'team',
+          name: remoteCred.name || clean.split('@')[0],
+          role: remoteCred.role || (isClient ? 'Client (Portal User)' : 'Staff Member'),
+        };
+      }
     }
   } catch (e) {
     // Ignore fetch error
