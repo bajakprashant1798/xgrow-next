@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createBrowserClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
 
@@ -14,6 +14,11 @@ export interface StoredUserCredential {
   address?: string;
   status?: 'active' | 'inactive' | 'pending_approval';
   selected_plan?: string;
+  services?: string[];
+  billing_cycle?: 'monthly' | 'yearly' | 'one_time';
+  subscription_tier?: string;
+  retainer_amount?: number;
+  notes?: string;
   updatedAt: string;
   createdByAdmin: boolean;
 }
@@ -107,6 +112,11 @@ const defaultCredentials: Record<string, StoredUserCredential & { id?: string }>
     role: 'client',
     company_name: 'Arora Growth Studio',
     temporaryPassword: 'ieg55k*%K$nY',
+    services: ['website', 'graphic_design', 'ai_automation', 'google_business', 'seo'],
+    selected_plan: 'Growth Engine Retainer (₹39,999/mo)',
+    billing_cycle: 'monthly',
+    subscription_tier: 'Growth',
+    retainer_amount: 39999,
     updatedAt: new Date().toISOString(),
     createdByAdmin: true,
     status: 'active',
@@ -162,7 +172,12 @@ function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
   if (!url || !anonKey || !url.startsWith('http')) return null;
-  return createBrowserClient(url, anonKey);
+  return createClient(url, anonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
 }
 
 // Strip sensitive passwords for public requests
@@ -231,6 +246,11 @@ export async function POST(request: NextRequest) {
         address: body.address || existing.address,
         status: body.status || existing.status || 'active',
         selected_plan: body.selected_plan || existing.selected_plan,
+        services: Array.isArray(body.services) ? body.services : existing.services,
+        billing_cycle: body.billing_cycle || existing.billing_cycle,
+        subscription_tier: body.subscription_tier || existing.subscription_tier,
+        retainer_amount: body.retainer_amount !== undefined ? body.retainer_amount : existing.retainer_amount,
+        notes: body.notes !== undefined ? body.notes : existing.notes,
         updatedAt: new Date().toISOString(),
         createdByAdmin: body.createdByAdmin ?? existing.createdByAdmin ?? true,
       };

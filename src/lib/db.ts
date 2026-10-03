@@ -473,24 +473,93 @@ export async function getClients(): Promise<ClientModel[]> {
     async () => {
       const supabase = getSupabaseClient();
       if (!supabase) return null;
-      const { data, error } = await supabase
+
+      // 1. Fetch base client rows from Supabase
+      const { data: supaClients, error: supaErr } = await supabase
         .from('clients')
         .select('*')
         .order('created_at', { ascending: false });
-      if (!error && data) {
-        return data as ClientModel[];
+
+      if (supaErr || !supaClients) return null;
+
+      // 2. Fetch dynamic client metadata from Supabase custom_roles (_sys_client_metadata)
+      let remoteMetaMap: Record<string, any> = {};
+      try {
+        const { data: roleData } = await supabase
+          .from('custom_roles')
+          .select('*')
+          .eq('key', '_sys_client_metadata')
+          .maybeSingle();
+
+        if (roleData?.permissions?.metadata && typeof roleData.permissions.metadata === 'object') {
+          remoteMetaMap = roleData.permissions.metadata;
+        }
+      } catch (e) {
+        console.warn('Error fetching client metadata from Supabase:', e);
       }
-      return null;
+
+      // 3. Read local cached clients to ensure immediate session edits are preserved
+      const localClients = getLocalItem<ClientModel[]>(STORAGE_KEYS.CLIENTS, initialClients) || [];
+
+      // 4. Merge Supabase client rows with persistent metadata, local edits, and seed data
+      const mergedList: ClientModel[] = supaClients.map((c) => {
+        const cleanEmail = (c.email || '').trim().toLowerCase();
+        const localMatch = localClients.find(
+          (l) => (l.id && l.id === c.id) || (l.email && l.email.trim().toLowerCase() === cleanEmail)
+        );
+        const seedMatch = initialClients.find(
+          (s) => (s.id && s.id === c.id) || (s.email && s.email.trim().toLowerCase() === cleanEmail)
+        );
+        const remoteMeta = remoteMetaMap[cleanEmail] || remoteMetaMap[c.id] || {};
+
+        const chosenPlan =
+          remoteMeta.selected_plan ||
+          localMatch?.selected_plan ||
+          seedMatch?.selected_plan ||
+          'Growth Engine Retainer (₹39,999/mo)';
+
+        // Priority for services: Remote Supabase Metadata -> Local edit -> Seed data -> Plan default
+        const chosenServices =
+          (Array.isArray(remoteMeta.services) ? remoteMeta.services : null) ??
+          (Array.isArray(localMatch?.services) ? localMatch?.services : null) ??
+          (Array.isArray(seedMatch?.services) ? seedMatch?.services : null) ??
+          getServicesForPlan(chosenPlan);
+
+        return {
+          id: c.id,
+          name: c.name || localMatch?.name || seedMatch?.name || 'Client',
+          email: cleanEmail,
+          phone: c.phone || localMatch?.phone || seedMatch?.phone || '',
+          company_name: c.company_name || localMatch?.company_name || seedMatch?.company_name || `${c.name}'s Business`,
+          avatar_url: c.avatar_url || localMatch?.avatar_url || seedMatch?.avatar_url,
+          address: c.address || localMatch?.address || seedMatch?.address || '',
+          status: c.status || localMatch?.status || seedMatch?.status || 'active',
+          selected_plan: chosenPlan,
+          services: chosenServices,
+          billing_cycle: remoteMeta.billing_cycle || localMatch?.billing_cycle || seedMatch?.billing_cycle || 'monthly',
+          subscription_tier: remoteMeta.subscription_tier || localMatch?.subscription_tier || seedMatch?.subscription_tier || 'Growth',
+          retainer_amount: remoteMeta.retainer_amount ?? localMatch?.retainer_amount ?? seedMatch?.retainer_amount ?? 39999,
+          notes: remoteMeta.notes || localMatch?.notes || seedMatch?.notes || '',
+          created_at: c.created_at || localMatch?.created_at || seedMatch?.created_at || new Date().toISOString(),
+        };
+      });
+
+      // Also include any local-created clients not yet in Supabase
+      for (const local of localClients) {
+        const clean = (local.email || '').trim().toLowerCase();
+        if (!mergedList.some((m) => (m.id && m.id === local.id) || m.email.trim().toLowerCase() === clean)) {
+          mergedList.push(local);
+        }
+      }
+
+      return mergedList;
     },
     initialClients
   );
 
   return (result || []).map((c) => ({
     ...c,
-    services:
-      c.services && c.services.length > 0
-        ? c.services
-        : getServicesForPlan(c.selected_plan),
+    services: Array.isArray(c.services) && c.services.length > 0 ? c.services : getServicesForPlan(c.selected_plan),
   }));
 }
 
@@ -620,10 +689,12 @@ export async function saveClient(client: Partial<ClientModel> & { name: string; 
     current.unshift(savedClient);
   }
 
+  // Update local storage & memory cache immediately
   setLocalItem(STORAGE_KEYS.CLIENTS, current);
 
   const supabase = getSupabaseClient();
   if (supabase) {
+    // 1. Sync basic client columns to Supabase clients table
     try {
       await supabase.from('clients').upsert({
         id: savedClient.id.includes('-') && savedClient.id.length > 30 ? savedClient.id : undefined,
@@ -638,6 +709,64 @@ export async function saveClient(client: Partial<ClientModel> & { name: string; 
     } catch (e) {
       console.warn('Error syncing client to Supabase:', e);
     }
+
+    // 2. Persist full dynamic client metadata (services, plan, billing, tier, retainer, notes) to Supabase custom_roles
+    try {
+      const { data: existingRole } = await supabase
+        .from('custom_roles')
+        .select('*')
+        .eq('key', '_sys_client_metadata')
+        .maybeSingle();
+
+      const metaStore = existingRole?.permissions?.metadata || {};
+      metaStore[cleanEmail] = {
+        services: savedClient.services,
+        selected_plan: savedClient.selected_plan,
+        billing_cycle: savedClient.billing_cycle,
+        subscription_tier: savedClient.subscription_tier,
+        retainer_amount: savedClient.retainer_amount,
+        notes: savedClient.notes,
+        updated_at: new Date().toISOString(),
+      };
+      if (savedClient.id) {
+        metaStore[savedClient.id] = metaStore[cleanEmail];
+      }
+
+      await supabase.from('custom_roles').upsert({
+        id: 'role-sys-client-metadata',
+        name: 'System Client Metadata Store',
+        key: '_sys_client_metadata',
+        description: 'Dynamic persistence store for client services, plans, and retainer metadata',
+        is_system: true,
+        permissions: { metadata: metaStore } as any,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.warn('Error syncing client metadata to Supabase custom_roles:', e);
+    }
+  }
+
+  // 3. Sync to credentials API in background for disk persistence
+  if (typeof window !== 'undefined') {
+    fetch('/api/auth/credentials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: cleanEmail,
+        name: savedClient.name,
+        role: 'client',
+        phone: savedClient.phone,
+        company_name: savedClient.company_name,
+        address: savedClient.address,
+        status: savedClient.status,
+        selected_plan: savedClient.selected_plan,
+        services: savedClient.services,
+        billing_cycle: savedClient.billing_cycle,
+        subscription_tier: savedClient.subscription_tier,
+        retainer_amount: savedClient.retainer_amount,
+        notes: savedClient.notes,
+      }),
+    }).catch(() => {});
   }
 
   return savedClient;
