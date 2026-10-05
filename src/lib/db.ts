@@ -3212,7 +3212,7 @@ export async function updateUserRoleAndProfile(data: {
 // ==========================================
 
 export async function getHeroBanners(): Promise<HeroBannerModel[]> {
-  // 1. Try to fetch from server API route for cross-browser & incognito consistency
+  // 1. Fetch from server API route dynamically
   if (typeof window !== 'undefined') {
     try {
       const res = await fetch('/api/hero-banners', { cache: 'no-store' });
@@ -3231,15 +3231,10 @@ export async function getHeroBanners(): Promise<HeroBannerModel[]> {
     }
   }
 
-  // 2. Fallback to local item / Supabase fetch
-  const localBanners = getLocalItem<HeroBannerModel[]>(STORAGE_KEYS.HERO_BANNERS, initialHeroBanners) || initialHeroBanners;
-  let activeId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.ACTIVE_HERO_ID) : null;
-
-  const banners = await fetchWithSWR<HeroBannerModel[]>(
-    STORAGE_KEYS.HERO_BANNERS,
-    async () => {
-      const supabase = getSupabaseClient();
-      if (!supabase) return null;
+  // 2. Direct Supabase query if offline/API failure
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
       const { data, error } = await supabase
         .from('hero_banners')
         .select('*')
@@ -3247,57 +3242,21 @@ export async function getHeroBanners(): Promise<HeroBannerModel[]> {
         .order('created_at', { ascending: false });
 
       if (!error && data && data.length > 0) {
-        const remoteList = data as HeroBannerModel[];
-        const map = new Map<string, HeroBannerModel>();
-
-        for (const item of remoteList) {
-          if (item && item.id) map.set(item.id, item);
+        let activeId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.ACTIVE_HERO_ID) : null;
+        const list = data as HeroBannerModel[];
+        if (!activeId) {
+          activeId = list.find((b) => b.is_active)?.id || 'hero-default';
         }
-        for (const item of localBanners) {
-          if (item && item.id) map.set(item.id, item);
-        }
-
-        return Array.from(map.values());
+        return list.map((b) => ({
+          ...b,
+          is_active: b.id === activeId,
+        }));
       }
-      return null;
-    },
-    localBanners
-  );
-
-  const rawList: HeroBannerModel[] = banners && banners.length > 0 ? [...banners] : [...initialHeroBanners];
-  const listMap = new Map<string, HeroBannerModel>();
-
-  listMap.set('hero-default', initialHeroBanners[0]);
-
-  for (const b of rawList) {
-    if (b && b.id) {
-      if (b.id === 'hero-default') {
-        listMap.set('hero-default', { ...initialHeroBanners[0], ...b, is_default: true, image_url: b.image_url || '/home/hero.png' });
-      } else {
-        listMap.set(b.id, b);
-      }
-    }
+    } catch (e) {}
   }
 
-  const list = Array.from(listMap.values());
-
-  if (!activeId) {
-    const foundActive = list.find((b) => b.is_active);
-    activeId = foundActive?.id || 'hero-default';
-  }
-
-  if (!list.some((b) => b.id === activeId)) {
-    activeId = 'hero-default';
-  }
-
-  const finalList = list.map((b) => ({
-    ...b,
-    is_active: b.id === activeId,
-  }));
-
-  setLocalItemSilent(STORAGE_KEYS.HERO_BANNERS, finalList);
-
-  return finalList;
+  const localBanners = getLocalItem<HeroBannerModel[]>(STORAGE_KEYS.HERO_BANNERS, initialHeroBanners);
+  return localBanners || initialHeroBanners;
 }
 
 export async function getActiveHeroBanner(): Promise<HeroBannerModel> {
