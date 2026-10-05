@@ -82,6 +82,23 @@ CREATE TABLE IF NOT EXISTS public.trusted_logos (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 4c. HERO & FESTIVAL BANNERS TABLE (CMS)
+CREATE TABLE IF NOT EXISTS public.hero_banners (
+    id TEXT PRIMARY KEY DEFAULT ('hero-' || gen_random_uuid()),
+    title TEXT NOT NULL,
+    subtitle TEXT,
+    badge_text TEXT,
+    image_url TEXT NOT NULL,
+    link_url TEXT,
+    button_text TEXT DEFAULT 'Claim Offer',
+    aspect_ratio TEXT DEFAULT 'auto',
+    is_active BOOLEAN DEFAULT false,
+    is_default BOOLEAN DEFAULT false,
+    display_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- 5. CLIENTS TABLE
 CREATE TABLE IF NOT EXISTS public.clients (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -242,6 +259,7 @@ ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.project_updates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.invoices_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.hero_banners ENABLE ROW LEVEL SECURITY;
 
 -- Public read access
 CREATE POLICY "Public can view published services" ON public.services FOR SELECT USING (status = 'published');
@@ -249,6 +267,7 @@ CREATE POLICY "Public can view published pricing" ON public.pricing_plans FOR SE
 CREATE POLICY "Public can view published testimonials" ON public.testimonials FOR SELECT USING (status = 'published');
 CREATE POLICY "Public can view published faqs" ON public.faqs FOR SELECT USING (status = 'published');
 CREATE POLICY "Public can view published trusted logos" ON public.trusted_logos FOR SELECT USING (status = 'published');
+CREATE POLICY "Allow all hero_banners" ON public.hero_banners FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Public read custom_roles" ON public.custom_roles FOR SELECT USING (true);
 
 -- Service role full access
@@ -308,6 +327,13 @@ VALUES
 ('Growth', 'growth', '₹39,999', '₹59,999', 'Most popular for local businesses', true, '["Up to 12 pages + dynamic blog", "Custom design & brand polish", "Local SEO setup + Google Business", "AI chatbot & WhatsApp lead capture", "Client management dashboard", "3 months dedicated support"]'::jsonb, 'published', 2),
 ('Scale', 'scale', 'Custom', NULL, 'Ecommerce & multi-location brands', false, '["Full custom web app or ecommerce", "Complete brand identity system", "Ongoing SEO + paid ad management", "Full CRM & AI workflow automation", "Monthly growth strategy calls", "Dedicated account manager & SLA"]'::jsonb, 'published', 3)
 ON CONFLICT (slug) DO NOTHING;
+
+-- Seed Hero Banners (Default & Festival)
+INSERT INTO public.hero_banners (id, title, subtitle, badge_text, image_url, link_url, button_text, aspect_ratio, is_active, is_default, display_order)
+VALUES
+('hero-default', 'Default Agency Showcase', 'XGRO AI Platform & Agency Growth Suite Mockup', '⚡ Core Showcase', '/home/hero.png', '/contact', 'Get Started', 'mockup', true, true, 0),
+('hero-festival-sample', 'Festival Growth Mega Bonanza', 'Flat 40% OFF on all Web Engine & AI Automation Deployments for Festival Season', '🎉 Festival Mega Offer • Limited Time', 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=1920&q=80', '/contact', 'Claim 40% Offer Now', 'banner', false, false, 1)
+ON CONFLICT (id) DO NOTHING;
 
 -- Seed Team Members (Super Admin Prashant Bajak)
 INSERT INTO public.team_members (name, email, phone, role, department, status)

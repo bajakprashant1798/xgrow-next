@@ -7,6 +7,7 @@ import {
   ClientModel,
   TeamMemberModel,
   TrustedLogoModel,
+  HeroBannerModel,
 } from './supabase/types';
 
 import {
@@ -18,6 +19,7 @@ import {
   initialClients,
   initialTeamMembers,
   initialTrustedLogos,
+  initialHeroBanners,
 } from './seed-data';
 
 import {
@@ -29,6 +31,8 @@ import {
   getClients,
   getTeamMembers,
   getTrustedLogos,
+  getHeroBanners,
+  getActiveHeroBanner,
 } from './db';
 
 // Safely fetch published services for SSR and Client pages
@@ -99,4 +103,21 @@ export async function getPublishedTrustedLogos(): Promise<TrustedLogoModel[]> {
   const all = await getTrustedLogos();
   return all.filter((l) => l.status === 'published');
 }
+
+// Safely fetch Active Hero Banner
+export async function getActiveHeroBannerForSite(): Promise<HeroBannerModel> {
+  if (typeof window === 'undefined') {
+    return initialHeroBanners.find((b) => b.is_active) || initialHeroBanners[0];
+  }
+  return await getActiveHeroBanner();
+}
+
+// Safely fetch all Hero Banners
+export async function getAllHeroBannersForSite(): Promise<HeroBannerModel[]> {
+  if (typeof window === 'undefined') {
+    return initialHeroBanners;
+  }
+  return await getHeroBanners();
+}
+
 

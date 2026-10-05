@@ -78,6 +78,7 @@ import {
 import { TestimonialModel, FaqModel, TrustedLogoModel } from '@/lib/supabase/types';
 import { compressImageFile } from '@/lib/image-compressor';
 import { AdminResourcesManager } from '@/components/admin/AdminResourcesManager';
+import { AdminHeroBannerManager } from '@/components/admin/AdminHeroBannerManager';
 import { useAuth } from '@/lib/auth-context';
 import { AdminAccessDenied } from '@/components/admin/AdminAccessDenied';
 
@@ -512,8 +513,12 @@ export default function CmsManagementPage() {
         </Button>
       </div>
 
-      <Tabs defaultValue="resources" className="space-y-6">
+      <Tabs defaultValue="hero-banner" className="space-y-6">
         <TabsList className="bg-surface/80 p-1 rounded-2xl border border-border flex-wrap h-auto gap-1">
+          <TabsTrigger value="hero-banner" className="rounded-xl text-xs font-bold px-4 py-2 flex items-center gap-1.5">
+            <Sparkles className="h-3.5 w-3.5 text-cyan" />
+            Hero & Festival Banners
+          </TabsTrigger>
           <TabsTrigger value="resources" className="rounded-xl text-xs font-bold px-4 py-2">
             Free Resources Hub
           </TabsTrigger>
@@ -527,6 +532,16 @@ export default function CmsManagementPage() {
             FAQs & Knowledge ({faqs.length})
           </TabsTrigger>
         </TabsList>
+
+        {/* ============================================================ */}
+        {/* HERO & FESTIVAL BANNERS CMS TAB                              */}
+        {/* ============================================================ */}
+        <TabsContent value="hero-banner" className="space-y-6">
+          <AdminHeroBannerManager
+            canCreateEdit={canCreateEdit}
+            canDelete={canDelete}
+          />
+        </TabsContent>
 
         {/* ============================================================ */}
         {/* 0. FREE RESOURCES HUB TAB                                    */}

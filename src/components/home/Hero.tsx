@@ -1,15 +1,41 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowUpRight, MessageCircle, Star, Sparkles, CheckCircle2 } from "lucide-react";
+import { ArrowUpRight, MessageCircle, Star, Sparkles, CheckCircle2, Tag } from "lucide-react";
 import { Counter, Reveal } from "@/components/site/Reveal";
 import { useLang } from "@/lib/i18n";
 import { site, stats } from "@/lib/site";
 import { Button } from "@/components/ui/button";
+import { getActiveHeroBanner, subscribeToDataChanges } from "@/lib/db";
+import { HeroBannerModel } from "@/lib/supabase/types";
+import { initialHeroBanners } from "@/lib/seed-data";
 
 export function Hero() {
   const { t } = useLang();
+  const [activeBanner, setActiveBanner] = useState<HeroBannerModel>(initialHeroBanners[0]);
+  const [imageError, setImageError] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadBanner() {
+      try {
+        const banner = await getActiveHeroBanner();
+        if (isMounted && banner) {
+          setActiveBanner(banner);
+          setImageError(false);
+        }
+      } catch (err) {
+        console.warn("Failed to load active hero banner:", err);
+      }
+    }
+    loadBanner();
+    return subscribeToDataChanges(loadBanner);
+  }, []);
+
+  const isCustomOfferBanner = !activeBanner?.is_default && activeBanner?.id !== "hero-default";
+  const displayImageUrl = activeBanner?.image_url || "/home/hero.png";
 
   return (
     <section className="relative overflow-hidden bg-surface pt-12 pb-16 sm:pt-20 sm:pb-24">
@@ -30,8 +56,12 @@ export function Hero() {
         <div className="mx-auto max-w-4xl text-center">
           <Reveal>
             <div className="inline-flex items-center gap-2 rounded-full border border-cyan/40 bg-cyan/10 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-cyan shadow-sm">
-              <Sparkles className="h-3.5 w-3.5 text-cyan" />
-              <span>5X Your Business Revenue with AI & High-Converting Web Engine</span>
+              <Sparkles className="h-3.5 w-3.5 text-cyan animate-pulse" />
+              <span>
+                {activeBanner?.badge_text?.trim()
+                  ? activeBanner.badge_text
+                  : "5X Your Business Revenue with AI & High-Converting Web Engine"}
+              </span>
             </div>
           </Reveal>
 
@@ -92,14 +122,48 @@ export function Hero() {
         {/* Featured Image Showcase Below Hero Text */}
         <Reveal delay={300} className="mt-12 sm:mt-16">
           <div className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl">
-            <Image
-              src="/home/hero.png"
-              alt="XGRO AI Platform & Agency Growth Suite"
-              width={1920}
-              height={1080}
-              priority
-              className="w-full h-auto object-cover rounded-3xl"
-            />
+            {activeBanner?.badge_text?.trim() && (
+              <div className="absolute top-3 left-3 sm:top-5 sm:left-5 z-20 pointer-events-none">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan/50 bg-slate-950/85 px-3.5 py-1.5 text-xs font-black uppercase tracking-wider text-cyan backdrop-blur-md shadow-xl">
+                  <Sparkles className="h-3.5 w-3.5 text-cyan animate-pulse" />
+                  {activeBanner.badge_text}
+                </span>
+              </div>
+            )}
+            {activeBanner?.link_url ? (
+              <Link
+                href={activeBanner.link_url}
+                className="block relative cursor-pointer"
+                target={activeBanner.link_url.startsWith("http") ? "_blank" : undefined}
+                rel={activeBanner.link_url.startsWith("http") ? "noreferrer" : undefined}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={displayImageUrl}
+                  alt={activeBanner?.title || "XGRO AI Platform & Agency Growth Suite"}
+                  className="w-full h-auto object-cover rounded-3xl"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    if (!target.src.endsWith("/home/hero.png")) {
+                      target.src = "/home/hero.png";
+                    }
+                  }}
+                />
+              </Link>
+            ) : (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={displayImageUrl}
+                alt={activeBanner?.title || "XGRO AI Platform & Agency Growth Suite"}
+                className="w-full h-auto object-cover rounded-3xl"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (!target.src.endsWith("/home/hero.png")) {
+                    target.src = "/home/hero.png";
+                  }
+                }}
+              />
+            )}
           </div>
         </Reveal>
 

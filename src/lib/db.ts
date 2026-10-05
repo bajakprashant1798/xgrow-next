@@ -16,6 +16,7 @@ import {
   ProjectStatus,
   CustomRoleModel,
   TrustedLogoModel,
+  HeroBannerModel,
 } from './supabase/types';
 
 import {
@@ -29,13 +30,14 @@ import {
   initialFaqs,
   initialRoles,
   initialTrustedLogos,
+  initialHeroBanners,
 } from './seed-data';
 
 import { initialResources, ResourceItem, ResourceType } from './resourcesData';
 import { getServicesForPlan } from './client-services';
 
 import { getSupabaseClient } from './supabase/client';
-import { compressDataUrl } from './image-compressor';
+import { compressDataUrl, compressImageFile } from './image-compressor';
 
 const STORAGE_KEYS = {
   SERVICES: 'xgro_cms_services',
@@ -51,6 +53,8 @@ const STORAGE_KEYS = {
   TRUSTED_LOGOS: 'xgro_trusted_logos',
   TRUSTED_SECTION_TITLE: 'xgro_trusted_section_title',
   USER_CREDENTIALS: 'xgro_user_credentials',
+  HERO_BANNERS: 'xgro_hero_banners',
+  ACTIVE_HERO_ID: 'xgro_active_hero_id',
 };
 
 // Clear stale legacy dummy data and huge uncompressed caches from browser localStorage on init
@@ -3202,3 +3206,349 @@ export async function updateUserRoleAndProfile(data: {
 
   return { success: true, message: `Successfully updated ${data.name}'s role to ${data.newRole}.` };
 }
+
+// ==========================================
+// HERO & FESTIVAL BANNERS CMS CRUD
+// ==========================================
+
+export async function getHeroBanners(): Promise<HeroBannerModel[]> {
+  // 1. Try to fetch from server API route for cross-browser & incognito consistency
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch('/api/hero-banners', { cache: 'no-store' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.banners) && json.banners.length > 0) {
+          setLocalItemSilent(STORAGE_KEYS.HERO_BANNERS, json.banners);
+          if (json.activeId) {
+            localStorage.setItem(STORAGE_KEYS.ACTIVE_HERO_ID, json.activeId);
+          }
+          return json.banners as HeroBannerModel[];
+        }
+      }
+    } catch (apiErr) {
+      console.warn('[db.ts] /api/hero-banners fetch notice:', apiErr);
+    }
+  }
+
+  // 2. Fallback to local item / Supabase fetch
+  const localBanners = getLocalItem<HeroBannerModel[]>(STORAGE_KEYS.HERO_BANNERS, initialHeroBanners) || initialHeroBanners;
+  let activeId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.ACTIVE_HERO_ID) : null;
+
+  const banners = await fetchWithSWR<HeroBannerModel[]>(
+    STORAGE_KEYS.HERO_BANNERS,
+    async () => {
+      const supabase = getSupabaseClient();
+      if (!supabase) return null;
+      const { data, error } = await supabase
+        .from('hero_banners')
+        .select('*')
+        .order('display_order', { ascending: true })
+        .order('created_at', { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        const remoteList = data as HeroBannerModel[];
+        const map = new Map<string, HeroBannerModel>();
+
+        for (const item of remoteList) {
+          if (item && item.id) map.set(item.id, item);
+        }
+        for (const item of localBanners) {
+          if (item && item.id) map.set(item.id, item);
+        }
+
+        return Array.from(map.values());
+      }
+      return null;
+    },
+    localBanners
+  );
+
+  const rawList: HeroBannerModel[] = banners && banners.length > 0 ? [...banners] : [...initialHeroBanners];
+  const listMap = new Map<string, HeroBannerModel>();
+
+  listMap.set('hero-default', initialHeroBanners[0]);
+
+  for (const b of rawList) {
+    if (b && b.id) {
+      if (b.id === 'hero-default') {
+        listMap.set('hero-default', { ...initialHeroBanners[0], ...b, is_default: true, image_url: b.image_url || '/home/hero.png' });
+      } else {
+        listMap.set(b.id, b);
+      }
+    }
+  }
+
+  const list = Array.from(listMap.values());
+
+  if (!activeId) {
+    const foundActive = list.find((b) => b.is_active);
+    activeId = foundActive?.id || 'hero-default';
+  }
+
+  if (!list.some((b) => b.id === activeId)) {
+    activeId = 'hero-default';
+  }
+
+  const finalList = list.map((b) => ({
+    ...b,
+    is_active: b.id === activeId,
+  }));
+
+  setLocalItemSilent(STORAGE_KEYS.HERO_BANNERS, finalList);
+
+  return finalList;
+}
+
+export async function getActiveHeroBanner(): Promise<HeroBannerModel> {
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch('/api/hero-banners', { cache: 'no-store' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.activeBanner) {
+          return json.activeBanner as HeroBannerModel;
+        }
+      }
+    } catch (err) {}
+  }
+
+  const all = await getHeroBanners();
+  const active = all.find((b) => b.is_active);
+  return active || all.find((b) => b.is_default) || initialHeroBanners[0];
+}
+
+export async function saveHeroBanner(
+  banner: Partial<HeroBannerModel> & { title: string; image_url: string }
+): Promise<HeroBannerModel> {
+  const current = await getHeroBanners();
+  const trimmedTitle = banner.title.trim();
+
+  let optimizedImageUrl = banner.image_url;
+  if (optimizedImageUrl && optimizedImageUrl.startsWith('data:image/')) {
+    try {
+      optimizedImageUrl = await compressDataUrl(optimizedImageUrl, 1920, 1080, 0.88);
+    } catch (_) {}
+  }
+
+  const existingIdx = banner.id ? current.findIndex((b) => b.id === banner.id) : -1;
+  const isDefault = banner.is_default || (existingIdx >= 0 && current[existingIdx].is_default) || banner.id === 'hero-default';
+
+  let saved: HeroBannerModel;
+  const now = new Date().toISOString();
+
+  if (existingIdx >= 0) {
+    saved = {
+      ...current[existingIdx],
+      ...banner,
+      title: trimmedTitle,
+      image_url: isDefault ? (banner.image_url || current[existingIdx].image_url) : (optimizedImageUrl || current[existingIdx].image_url),
+      is_default: isDefault,
+      updated_at: now,
+    };
+    current[existingIdx] = saved;
+  } else {
+    saved = {
+      id: banner.id || `hero-${Date.now()}`,
+      title: trimmedTitle,
+      subtitle: banner.subtitle || '',
+      badge_text: banner.badge_text || '',
+      image_url: optimizedImageUrl,
+      link_url: banner.link_url || '',
+      button_text: banner.button_text || 'Claim Offer',
+      aspect_ratio: banner.aspect_ratio || 'auto',
+      is_active: banner.is_active ?? true,
+      is_default: false,
+      display_order: banner.display_order ?? current.length,
+      created_at: now,
+      updated_at: now,
+    };
+    current.push(saved);
+  }
+
+  if (saved.is_active) {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_HERO_ID, saved.id);
+    }
+    for (let i = 0; i < current.length; i++) {
+      current[i].is_active = current[i].id === saved.id;
+    }
+  }
+
+  setLocalItem(STORAGE_KEYS.HERO_BANNERS, current);
+  notifyDataChanged();
+
+  // 1. Save to server API route for cross-browser persistence
+  if (typeof window !== 'undefined') {
+    try {
+      await fetch('/api/hero-banners', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save', banner: saved }),
+      });
+    } catch (apiErr) {
+      console.warn('[db.ts] /api/hero-banners save notice:', apiErr);
+    }
+  }
+
+  // 2. Direct Supabase sync
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      if (saved.is_active) {
+        await supabase.from('hero_banners').update({ is_active: false }).neq('id', saved.id);
+      }
+      await supabase.from('hero_banners').upsert({
+        id: saved.id,
+        title: saved.title,
+        subtitle: saved.subtitle,
+        badge_text: saved.badge_text,
+        image_url: saved.image_url,
+        link_url: saved.link_url,
+        button_text: saved.button_text,
+        aspect_ratio: saved.aspect_ratio,
+        is_active: saved.is_active,
+        is_default: saved.is_default,
+        display_order: saved.display_order,
+        updated_at: now,
+      });
+    } catch (e) {
+      console.warn('Supabase hero_banners upsert notice:', e);
+    }
+  }
+
+  return saved;
+}
+
+export async function setActiveHeroBanner(bannerId: string): Promise<HeroBannerModel | null> {
+  const current = await getHeroBanners();
+  const target = current.find((b) => b.id === bannerId);
+  if (!target) return null;
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_HERO_ID, bannerId);
+  }
+
+  const now = new Date().toISOString();
+  const updatedList = current.map((b) => ({
+    ...b,
+    is_active: b.id === bannerId,
+    updated_at: b.id === bannerId ? now : b.updated_at,
+  }));
+
+  setLocalItem(STORAGE_KEYS.HERO_BANNERS, updatedList);
+  notifyDataChanged();
+
+  // 1. Update server API route
+  if (typeof window !== 'undefined') {
+    try {
+      await fetch('/api/hero-banners', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_active', bannerId }),
+      });
+    } catch (apiErr) {
+      console.warn('[db.ts] /api/hero-banners set_active notice:', apiErr);
+    }
+  }
+
+  // 2. Direct Supabase sync
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      await supabase.from('hero_banners').update({ is_active: false }).neq('id', bannerId);
+      await supabase.from('hero_banners').update({ is_active: true, updated_at: now }).eq('id', bannerId);
+    } catch (e) {
+      console.warn('Supabase setActiveHeroBanner notice:', e);
+    }
+  }
+
+  return target;
+}
+
+export async function deleteHeroBanner(bannerId: string): Promise<boolean> {
+  const current = await getHeroBanners();
+  const target = current.find((b) => b.id === bannerId);
+  if (!target) return false;
+
+  if (target.is_default || target.id === 'hero-default') {
+    console.warn('Cannot delete the default hero banner.');
+    return false;
+  }
+
+  const wasActive = target.is_active;
+  let filtered = current.filter((b) => b.id !== bannerId);
+
+  if (wasActive) {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_HERO_ID, 'hero-default');
+    }
+    filtered = filtered.map((b) =>
+      b.is_default || b.id === 'hero-default' ? { ...b, is_active: true } : b
+    );
+  }
+
+  setLocalItem(STORAGE_KEYS.HERO_BANNERS, filtered);
+  notifyDataChanged();
+
+  // 1. Delete on server API route
+  if (typeof window !== 'undefined') {
+    try {
+      await fetch(`/api/hero-banners?id=${encodeURIComponent(bannerId)}`, {
+        method: 'DELETE',
+      });
+    } catch (apiErr) {}
+  }
+
+  // 2. Direct Supabase delete
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      await supabase.from('hero_banners').delete().eq('id', bannerId);
+      if (wasActive) {
+        await supabase.from('hero_banners').update({ is_active: true }).eq('is_default', true);
+      }
+    } catch (e) {
+      console.warn('Supabase deleteHeroBanner notice:', e);
+    }
+  }
+
+  return true;
+}
+
+export async function uploadHeroBannerImage(file: File): Promise<string> {
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      const ext = file.name.split('.').pop() || 'png';
+      const cleanFileName = `hero-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${ext}`;
+      const filePath = `banners/${cleanFileName}`;
+
+      const { data, error } = await supabase.storage
+        .from('hero_banners')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true,
+        });
+
+      if (!error && data) {
+        const { data: publicUrlData } = supabase.storage
+          .from('hero_banners')
+          .getPublicUrl(filePath);
+
+        if (publicUrlData?.publicUrl) {
+          return publicUrlData.publicUrl;
+        }
+      }
+    } catch (err) {
+      console.warn('Supabase storage upload notice, using compressed data URL:', err);
+    }
+  }
+
+  // Fallback to high-quality compressed data URL (< 120KB)
+  const compressed = await compressImageFile(file, 1920, 1080, 0.88);
+  return compressed;
+}
+
+
+

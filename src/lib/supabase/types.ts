@@ -297,3 +297,22 @@ export interface ResourceItemModel {
   updated_at?: string;
 }
 
+export type BannerAspectRatio = 'auto' | '16:9' | '21:9' | '4:3' | 'mockup' | 'banner';
+
+export interface HeroBannerModel {
+  id: string;
+  title: string;
+  subtitle?: string;
+  badge_text?: string;
+  image_url: string;
+  link_url?: string;
+  button_text?: string;
+  aspect_ratio?: BannerAspectRatio;
+  is_active: boolean;
+  is_default: boolean;
+  display_order: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+
