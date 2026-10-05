@@ -186,7 +186,9 @@ export function AdminHeroBannerManager({
     const toastId = toast.loading('Saving hero banner to database...');
 
     try {
-      const shouldBeActive = editingBanner.is_active ?? true;
+      const isDefault = editingBanner.is_default || editingBanner.id === 'hero-default';
+      const shouldBeActive = editingBanner.is_active ?? (editingBanner.id ? false : true);
+
       const saved = await saveHeroBanner({
         id: editingBanner.id,
         title: editingBanner.title.trim(),
@@ -197,7 +199,7 @@ export function AdminHeroBannerManager({
         button_text: editingBanner.button_text?.trim() || 'Claim Offer',
         aspect_ratio: (editingBanner.aspect_ratio as BannerAspectRatio) || 'auto',
         is_active: shouldBeActive,
-        is_default: editingBanner.is_default ?? false,
+        is_default: isDefault,
         display_order: editingBanner.display_order ?? banners.length,
       });
 
@@ -208,7 +210,7 @@ export function AdminHeroBannerManager({
       toast.success(
         editingBanner.id
           ? `Updated "${saved.title}" successfully!`
-          : `Created new banner "${saved.title}" and set as active!`,
+          : `Created new banner "${saved.title}"!`,
         { id: toastId }
       );
 
@@ -225,18 +227,41 @@ export function AdminHeroBannerManager({
 
   // Delete Banner Handler
   const handleDeleteBanner = async (bannerId: string) => {
+    if (bannerId === 'hero-default') {
+      toast.error('Cannot delete the default hero banner.');
+      setDeleteConfirmId(null);
+      return;
+    }
+    const target = banners.find((b) => b.id === bannerId);
+    if (target?.is_default) {
+      toast.error('Cannot delete the default hero banner.');
+      setDeleteConfirmId(null);
+      return;
+    }
+
+    // Optimistically update UI immediately
+    setBanners((prev) => prev.filter((b) => b.id !== bannerId));
+    if (activeBanner?.id === bannerId) {
+      const defaultBanner = banners.find((b) => b.is_default || b.id === 'hero-default');
+      if (defaultBanner) {
+        setActiveBanner({ ...defaultBanner, is_active: true });
+      }
+    }
+    setDeleteConfirmId(null);
+
     try {
       const success = await deleteHeroBanner(bannerId);
       if (success) {
         toast.success('Banner deleted successfully');
-        setDeleteConfirmId(null);
         await loadData();
       } else {
         toast.error('Cannot delete the default hero banner.');
+        await loadData();
       }
     } catch (err) {
       console.error('Error deleting banner:', err);
       toast.error('Failed to delete banner');
+      await loadData();
     }
   };
 
@@ -656,7 +681,7 @@ ON CONFLICT (id) DO NOTHING;`;
                       </Button>
                     )}
 
-                    {canDelete && !banner.is_default && (
+                    {canDelete && !banner.is_default && banner.id !== 'hero-default' && (
                       <Button
                         variant="outline"
                         size="sm"

@@ -3342,7 +3342,13 @@ export async function saveHeroBanner(
       ...current[existingIdx],
       ...banner,
       title: trimmedTitle,
+      subtitle: banner.subtitle !== undefined ? banner.subtitle.trim() : current[existingIdx].subtitle,
+      badge_text: banner.badge_text !== undefined ? banner.badge_text.trim() : current[existingIdx].badge_text,
       image_url: isDefault ? (banner.image_url || current[existingIdx].image_url) : (optimizedImageUrl || current[existingIdx].image_url),
+      link_url: banner.link_url !== undefined ? banner.link_url.trim() : current[existingIdx].link_url,
+      button_text: banner.button_text !== undefined ? banner.button_text.trim() : current[existingIdx].button_text,
+      aspect_ratio: banner.aspect_ratio || current[existingIdx].aspect_ratio || 'auto',
+      is_active: banner.is_active !== undefined ? banner.is_active : current[existingIdx].is_active,
       is_default: isDefault,
       updated_at: now,
     };
@@ -3351,11 +3357,11 @@ export async function saveHeroBanner(
     saved = {
       id: banner.id || `hero-${Date.now()}`,
       title: trimmedTitle,
-      subtitle: banner.subtitle || '',
-      badge_text: banner.badge_text || '',
+      subtitle: (banner.subtitle || '').trim(),
+      badge_text: (banner.badge_text || '').trim(),
       image_url: optimizedImageUrl,
-      link_url: banner.link_url || '',
-      button_text: banner.button_text || 'Claim Offer',
+      link_url: (banner.link_url || '').trim(),
+      button_text: (banner.button_text || 'Claim Offer').trim(),
       aspect_ratio: banner.aspect_ratio || 'auto',
       is_active: banner.is_active ?? true,
       is_default: false,
@@ -3381,11 +3387,20 @@ export async function saveHeroBanner(
   // 1. Save to server API route for cross-browser persistence
   if (typeof window !== 'undefined') {
     try {
-      await fetch('/api/hero-banners', {
+      const res = await fetch('/api/hero-banners', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'save', banner: saved }),
       });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.banners)) {
+          setLocalItemSilent(STORAGE_KEYS.HERO_BANNERS, data.banners);
+          if (data.activeId) {
+            localStorage.setItem(STORAGE_KEYS.ACTIVE_HERO_ID, data.activeId);
+          }
+        }
+      }
     } catch (apiErr) {
       console.warn('[db.ts] /api/hero-banners save notice:', apiErr);
     }
@@ -3442,11 +3457,17 @@ export async function setActiveHeroBanner(bannerId: string): Promise<HeroBannerM
   // 1. Update server API route
   if (typeof window !== 'undefined') {
     try {
-      await fetch('/api/hero-banners', {
+      const res = await fetch('/api/hero-banners', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'set_active', bannerId }),
       });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.banners)) {
+          setLocalItemSilent(STORAGE_KEYS.HERO_BANNERS, data.banners);
+        }
+      }
     } catch (apiErr) {
       console.warn('[db.ts] /api/hero-banners set_active notice:', apiErr);
     }
@@ -3467,19 +3488,43 @@ export async function setActiveHeroBanner(bannerId: string): Promise<HeroBannerM
 }
 
 export async function deleteHeroBanner(bannerId: string): Promise<boolean> {
-  const current = await getHeroBanners();
-  const target = current.find((b) => b.id === bannerId);
-  if (!target) return false;
-
-  if (target.is_default || target.id === 'hero-default') {
+  if (bannerId === 'hero-default') {
     console.warn('Cannot delete the default hero banner.');
     return false;
   }
 
-  const wasActive = target.is_active;
-  let filtered = current.filter((b) => b.id !== bannerId);
+  // 1. Delete on server API route
+  let serverList: HeroBannerModel[] | null = null;
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch(`/api/hero-banners?id=${encodeURIComponent(bannerId)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.banners)) {
+          serverList = data.banners;
+          if (data.activeId) {
+            localStorage.setItem(STORAGE_KEYS.ACTIVE_HERO_ID, data.activeId);
+          }
+        }
+      }
+    } catch (apiErr) {
+      console.warn('DELETE /api/hero-banners error:', apiErr);
+    }
+  }
 
-  if (wasActive) {
+  const current = await getHeroBanners();
+  const target = current.find((b) => b.id === bannerId);
+  if (target?.is_default) {
+    console.warn('Cannot delete default hero banner.');
+    return false;
+  }
+
+  const wasActive = target?.is_active;
+  let filtered = serverList || current.filter((b) => b.id !== bannerId);
+
+  if (wasActive && !serverList) {
     if (typeof window !== 'undefined') {
       localStorage.setItem(STORAGE_KEYS.ACTIVE_HERO_ID, 'hero-default');
     }
@@ -3491,22 +3536,13 @@ export async function deleteHeroBanner(bannerId: string): Promise<boolean> {
   setLocalItem(STORAGE_KEYS.HERO_BANNERS, filtered);
   notifyDataChanged();
 
-  // 1. Delete on server API route
-  if (typeof window !== 'undefined') {
-    try {
-      await fetch(`/api/hero-banners?id=${encodeURIComponent(bannerId)}`, {
-        method: 'DELETE',
-      });
-    } catch (apiErr) {}
-  }
-
   // 2. Direct Supabase delete
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
       await supabase.from('hero_banners').delete().eq('id', bannerId);
       if (wasActive) {
-        await supabase.from('hero_banners').update({ is_active: true }).eq('is_default', true);
+        await supabase.from('hero_banners').update({ is_active: true }).eq('id', 'hero-default');
       }
     } catch (e) {
       console.warn('Supabase deleteHeroBanner notice:', e);
