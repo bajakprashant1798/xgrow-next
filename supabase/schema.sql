@@ -328,12 +328,23 @@ VALUES
 ('Scale', 'scale', 'Custom', NULL, 'Ecommerce & multi-location brands', false, '["Full custom web app or ecommerce", "Complete brand identity system", "Ongoing SEO + paid ad management", "Full CRM & AI workflow automation", "Monthly growth strategy calls", "Dedicated account manager & SLA"]'::jsonb, 'published', 3)
 ON CONFLICT (slug) DO NOTHING;
 
--- Seed Hero Banners (Default & Festival)
+-- Seed Hero Banners (Only Indestructible Default Showcase)
 INSERT INTO public.hero_banners (id, title, subtitle, badge_text, image_url, link_url, button_text, aspect_ratio, is_active, is_default, display_order)
 VALUES
-('hero-default', 'Default Agency Showcase', 'XGRO AI Platform & Agency Growth Suite Mockup', '⚡ Core Showcase', '/home/hero.png', '/contact', 'Get Started', 'mockup', true, true, 0),
-('hero-festival-sample', 'Festival Growth Mega Bonanza', 'Flat 40% OFF on all Web Engine & AI Automation Deployments for Festival Season', '🎉 Festival Mega Offer • Limited Time', 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=1920&q=80', '/contact', 'Claim 40% Offer Now', 'banner', false, false, 1)
+('hero-default', 'Default Agency Showcase', 'XGRO AI Platform & Agency Growth Suite Mockup', '⚡ Core Showcase', '/home/hero.png', '/contact', 'Get Started', 'mockup', true, true, 0)
 ON CONFLICT (id) DO NOTHING;
+
+-- Storage Buckets Configuration
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('hero_banners', 'hero_banners', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+DROP POLICY IF EXISTS "Public Access hero_banners" ON storage.objects;
+CREATE POLICY "Public Access hero_banners"
+ON storage.objects FOR ALL
+TO anon, authenticated
+USING (bucket_id = 'hero_banners')
+WITH CHECK (bucket_id = 'hero_banners');
 
 -- Seed Team Members (Super Admin Prashant Bajak)
 INSERT INTO public.team_members (name, email, phone, role, department, status)

@@ -3212,66 +3212,72 @@ export async function updateUserRoleAndProfile(data: {
 // ==========================================
 
 export async function getHeroBanners(): Promise<HeroBannerModel[]> {
-  // 1. Fetch from server API route dynamically
-  if (typeof window !== 'undefined') {
-    try {
-      const res = await fetch('/api/hero-banners', { cache: 'no-store' });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && Array.isArray(json.banners) && json.banners.length > 0) {
-          setLocalItemSilent(STORAGE_KEYS.HERO_BANNERS, json.banners);
-          if (json.activeId) {
-            localStorage.setItem(STORAGE_KEYS.ACTIVE_HERO_ID, json.activeId);
+  const localBanners = getLocalItem<HeroBannerModel[]>(STORAGE_KEYS.HERO_BANNERS, initialHeroBanners) || initialHeroBanners;
+  let activeId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.ACTIVE_HERO_ID) : null;
+  const deletedIds = getLocalItem<string[]>('xgro_deleted_hero_ids', []);
+
+  return fetchWithSWR<HeroBannerModel[]>(
+    STORAGE_KEYS.HERO_BANNERS,
+    async () => {
+      const supabase = getSupabaseClient();
+      if (!supabase) return null;
+      try {
+        const { data, error } = await supabase
+          .from('hero_banners')
+          .select('*')
+          .order('display_order', { ascending: true })
+          .order('created_at', { ascending: false });
+
+        if (!error && data && data.length > 0) {
+          const remoteList = data as HeroBannerModel[];
+          const map = new Map<string, HeroBannerModel>();
+
+          // 1. Add current local items first so newly added local banners are never lost
+          for (const item of localBanners) {
+            if (item && item.id && !deletedIds.includes(item.id)) {
+              map.set(item.id, item);
+            }
           }
-          return json.banners as HeroBannerModel[];
+
+          // 2. Merge remote items from Supabase
+          for (const item of remoteList) {
+            if (item && item.id && !deletedIds.includes(item.id)) {
+              map.set(item.id, {
+                ...(map.get(item.id) || {}),
+                ...item,
+              });
+            }
+          }
+
+          // 3. Ensure default hero banner is always present
+          if (!map.has('hero-default')) {
+            map.set('hero-default', initialHeroBanners[0]);
+          }
+
+          return Array.from(map.values());
         }
+      } catch (e) {
+        console.warn('Supabase getHeroBanners notice:', e);
       }
-    } catch (apiErr) {
-      console.warn('[db.ts] /api/hero-banners fetch notice:', apiErr);
+      return null;
+    },
+    localBanners
+  ).then((list) => {
+    const items = list && list.length > 0 ? list : initialHeroBanners;
+    const hasDefault = items.some(b => b.is_default || b.id === 'hero-default');
+    const finalItems = hasDefault ? items : [initialHeroBanners[0], ...items];
+
+    if (!activeId) {
+      activeId = finalItems.find(b => b.is_active)?.id || 'hero-default';
     }
-  }
-
-  // 2. Direct Supabase query if offline/API failure
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('hero_banners')
-        .select('*')
-        .order('display_order', { ascending: true })
-        .order('created_at', { ascending: false });
-
-      if (!error && data && data.length > 0) {
-        let activeId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.ACTIVE_HERO_ID) : null;
-        const list = data as HeroBannerModel[];
-        if (!activeId) {
-          activeId = list.find((b) => b.is_active)?.id || 'hero-default';
-        }
-        return list.map((b) => ({
-          ...b,
-          is_active: b.id === activeId,
-        }));
-      }
-    } catch (e) {}
-  }
-
-  const localBanners = getLocalItem<HeroBannerModel[]>(STORAGE_KEYS.HERO_BANNERS, initialHeroBanners);
-  return localBanners || initialHeroBanners;
+    return finalItems.map(b => ({
+      ...b,
+      is_active: b.id === activeId,
+    }));
+  });
 }
 
 export async function getActiveHeroBanner(): Promise<HeroBannerModel> {
-  if (typeof window !== 'undefined') {
-    try {
-      const res = await fetch('/api/hero-banners', { cache: 'no-store' });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && json.activeBanner) {
-          return json.activeBanner as HeroBannerModel;
-        }
-      }
-    } catch (err) {}
-  }
-
   const all = await getHeroBanners();
   const active = all.find((b) => b.is_active);
   return active || all.find((b) => b.is_default) || initialHeroBanners[0];
@@ -3286,7 +3292,7 @@ export async function saveHeroBanner(
   let optimizedImageUrl = banner.image_url;
   if (optimizedImageUrl && optimizedImageUrl.startsWith('data:image/')) {
     try {
-      optimizedImageUrl = await compressDataUrl(optimizedImageUrl, 1920, 1080, 0.88);
+      optimizedImageUrl = await compressDataUrl(optimizedImageUrl, 1600, 900, 0.82);
     } catch (_) {}
   }
 
@@ -3314,7 +3320,7 @@ export async function saveHeroBanner(
     current[existingIdx] = saved;
   } else {
     saved = {
-      id: banner.id || `hero-${Date.now()}`,
+      id: banner.id || `hero-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       title: trimmedTitle,
       subtitle: (banner.subtitle || '').trim(),
       badge_text: (banner.badge_text || '').trim(),
@@ -3331,6 +3337,12 @@ export async function saveHeroBanner(
     current.push(saved);
   }
 
+  // Remove from deleted list if re-saving
+  const deletedIds = getLocalItem<string[]>('xgro_deleted_hero_ids', []);
+  if (deletedIds.includes(saved.id)) {
+    setLocalItem('xgro_deleted_hero_ids', deletedIds.filter(id => id !== saved.id));
+  }
+
   if (saved.is_active) {
     if (typeof window !== 'undefined') {
       localStorage.setItem(STORAGE_KEYS.ACTIVE_HERO_ID, saved.id);
@@ -3343,36 +3355,14 @@ export async function saveHeroBanner(
   setLocalItem(STORAGE_KEYS.HERO_BANNERS, current);
   notifyDataChanged();
 
-  // 1. Save to server API route for cross-browser persistence
-  if (typeof window !== 'undefined') {
-    try {
-      const res = await fetch('/api/hero-banners', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'save', banner: saved }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.banners)) {
-          setLocalItemSilent(STORAGE_KEYS.HERO_BANNERS, data.banners);
-          if (data.activeId) {
-            localStorage.setItem(STORAGE_KEYS.ACTIVE_HERO_ID, data.activeId);
-          }
-        }
-      }
-    } catch (apiErr) {
-      console.warn('[db.ts] /api/hero-banners save notice:', apiErr);
-    }
-  }
-
-  // 2. Direct Supabase sync
+  // 1. Direct Supabase sync (Works on live production Vercel)
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
       if (saved.is_active) {
         await supabase.from('hero_banners').update({ is_active: false }).neq('id', saved.id);
       }
-      await supabase.from('hero_banners').upsert({
+      const { error } = await supabase.from('hero_banners').upsert({
         id: saved.id,
         title: saved.title,
         subtitle: saved.subtitle,
@@ -3386,9 +3376,21 @@ export async function saveHeroBanner(
         display_order: saved.display_order,
         updated_at: now,
       });
+      if (error) {
+        console.warn('Supabase hero_banners upsert notice:', error.message);
+      }
     } catch (e) {
       console.warn('Supabase hero_banners upsert notice:', e);
     }
+  }
+
+  // 2. Server route sync (best effort)
+  if (typeof window !== 'undefined') {
+    fetch('/api/hero-banners', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save', banner: saved }),
+    }).catch(() => {});
   }
 
   return saved;
@@ -3413,26 +3415,7 @@ export async function setActiveHeroBanner(bannerId: string): Promise<HeroBannerM
   setLocalItem(STORAGE_KEYS.HERO_BANNERS, updatedList);
   notifyDataChanged();
 
-  // 1. Update server API route
-  if (typeof window !== 'undefined') {
-    try {
-      const res = await fetch('/api/hero-banners', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'set_active', bannerId }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.banners)) {
-          setLocalItemSilent(STORAGE_KEYS.HERO_BANNERS, data.banners);
-        }
-      }
-    } catch (apiErr) {
-      console.warn('[db.ts] /api/hero-banners set_active notice:', apiErr);
-    }
-  }
-
-  // 2. Direct Supabase sync
+  // 1. Direct Supabase sync
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
@@ -3441,6 +3424,15 @@ export async function setActiveHeroBanner(bannerId: string): Promise<HeroBannerM
     } catch (e) {
       console.warn('Supabase setActiveHeroBanner notice:', e);
     }
+  }
+
+  // 2. Server API route sync
+  if (typeof window !== 'undefined') {
+    fetch('/api/hero-banners', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'set_active', bannerId }),
+    }).catch(() => {});
   }
 
   return target;
@@ -3452,27 +3444,6 @@ export async function deleteHeroBanner(bannerId: string): Promise<boolean> {
     return false;
   }
 
-  // 1. Delete on server API route
-  let serverList: HeroBannerModel[] | null = null;
-  if (typeof window !== 'undefined') {
-    try {
-      const res = await fetch(`/api/hero-banners?id=${encodeURIComponent(bannerId)}`, {
-        method: 'DELETE',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.banners)) {
-          serverList = data.banners;
-          if (data.activeId) {
-            localStorage.setItem(STORAGE_KEYS.ACTIVE_HERO_ID, data.activeId);
-          }
-        }
-      }
-    } catch (apiErr) {
-      console.warn('DELETE /api/hero-banners error:', apiErr);
-    }
-  }
-
   const current = await getHeroBanners();
   const target = current.find((b) => b.id === bannerId);
   if (target?.is_default) {
@@ -3480,10 +3451,16 @@ export async function deleteHeroBanner(bannerId: string): Promise<boolean> {
     return false;
   }
 
-  const wasActive = target?.is_active;
-  let filtered = serverList || current.filter((b) => b.id !== bannerId);
+  // Track deletion to prevent revival by background queries
+  const deletedIds = getLocalItem<string[]>('xgro_deleted_hero_ids', []);
+  if (!deletedIds.includes(bannerId)) {
+    setLocalItem('xgro_deleted_hero_ids', [...deletedIds, bannerId]);
+  }
 
-  if (wasActive && !serverList) {
+  const wasActive = target?.is_active;
+  let filtered = current.filter((b) => b.id !== bannerId);
+
+  if (wasActive) {
     if (typeof window !== 'undefined') {
       localStorage.setItem(STORAGE_KEYS.ACTIVE_HERO_ID, 'hero-default');
     }
@@ -3495,7 +3472,7 @@ export async function deleteHeroBanner(bannerId: string): Promise<boolean> {
   setLocalItem(STORAGE_KEYS.HERO_BANNERS, filtered);
   notifyDataChanged();
 
-  // 2. Direct Supabase delete
+  // 1. Direct Supabase delete (Works on live production Vercel)
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
@@ -3506,6 +3483,13 @@ export async function deleteHeroBanner(bannerId: string): Promise<boolean> {
     } catch (e) {
       console.warn('Supabase deleteHeroBanner notice:', e);
     }
+  }
+
+  // 2. Server API route delete (best effort)
+  if (typeof window !== 'undefined') {
+    fetch(`/api/hero-banners?id=${encodeURIComponent(bannerId)}`, {
+      method: 'DELETE',
+    }).catch(() => {});
   }
 
   return true;
@@ -3540,9 +3524,8 @@ export async function uploadHeroBannerImage(file: File): Promise<string> {
     }
   }
 
-  // Fallback to high-quality compressed data URL (< 120KB)
-  const compressed = await compressImageFile(file, 1920, 1080, 0.88);
-  return compressed;
+  // Fallback: compress to optimized WebP (< 80KB)
+  return await compressImageFile(file, 1600, 900, 0.82);
 }
 
 

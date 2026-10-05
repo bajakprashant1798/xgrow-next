@@ -5,14 +5,18 @@ import path from 'path';
 import { HeroBannerModel } from '@/lib/supabase/types';
 import { initialHeroBanners } from '@/lib/seed-data';
 
-const DATA_DIR = path.join(process.cwd(), '.data');
-const HERO_BANNERS_FILE = path.join(DATA_DIR, 'hero_banners.json');
+let inMemoryData: StoredData | null = null;
 
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    try {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    } catch (e) {}
+function getStorageFilePath(): string {
+  try {
+    const localDir = path.join(process.cwd(), '.data');
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
+    }
+    return path.join(localDir, 'hero_banners.json');
+  } catch {
+    // Vercel serverless read-only filesystem fallback
+    return path.join('/tmp', 'hero_banners.json');
   }
 }
 
@@ -36,14 +40,14 @@ interface StoredData {
 }
 
 function readStoredBanners(): { banners: HeroBannerModel[]; activeId: string; deletedIds: string[] } {
-  ensureDataDir();
-  let banners: HeroBannerModel[] = [...initialHeroBanners];
-  let activeId = 'hero-default';
-  let deletedIds: string[] = [];
+  let banners: HeroBannerModel[] = inMemoryData?.banners ? [...inMemoryData.banners] : [...initialHeroBanners];
+  let activeId = inMemoryData?.activeId || 'hero-default';
+  let deletedIds: string[] = inMemoryData?.deletedIds || [];
 
+  const filePath = getStorageFilePath();
   try {
-    if (fs.existsSync(HERO_BANNERS_FILE)) {
-      const content = fs.readFileSync(HERO_BANNERS_FILE, 'utf-8');
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, 'utf-8');
       const parsed = JSON.parse(content) as StoredData;
       if (parsed) {
         if (Array.isArray(parsed.deletedIds)) {
@@ -56,7 +60,7 @@ function readStoredBanners(): { banners: HeroBannerModel[]; activeId: string; de
       }
     }
   } catch (e) {
-    console.warn('[Hero API] Error reading disk hero banners:', e);
+    // Use inMemoryData if file read failed
   }
 
   // Ensure default hero banner always exists and can never be removed
@@ -87,17 +91,19 @@ function readStoredBanners(): { banners: HeroBannerModel[]; activeId: string; de
 }
 
 function writeStoredBanners(banners: HeroBannerModel[], activeId: string, deletedIds: string[] = []) {
-  ensureDataDir();
+  const dataToSave: StoredData = {
+    banners,
+    activeId,
+    deletedIds,
+    updated_at: new Date().toISOString(),
+  };
+  inMemoryData = dataToSave;
+
+  const filePath = getStorageFilePath();
   try {
-    const dataToSave: StoredData = {
-      banners,
-      activeId,
-      deletedIds,
-      updated_at: new Date().toISOString(),
-    };
-    fs.writeFileSync(HERO_BANNERS_FILE, JSON.stringify(dataToSave, null, 2), 'utf-8');
+    fs.writeFileSync(filePath, JSON.stringify(dataToSave, null, 2), 'utf-8');
   } catch (e) {
-    console.warn('[Hero API] Error writing disk hero banners:', e);
+    // Silent in-memory fallback
   }
 }
 

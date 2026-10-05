@@ -24,6 +24,7 @@ import {
   Copy,
   Info,
   SlidersHorizontal,
+  X,
 } from 'lucide-react';
 import {
   Card,
@@ -71,6 +72,7 @@ export function AdminHeroBannerManager({
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   // Modal States
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -79,6 +81,10 @@ export function AdminHeroBannerManager({
   const [editingBanner, setEditingBanner] = useState<Partial<HeroBannerModel> | null>(null);
   const [previewingBanner, setPreviewingBanner] = useState<HeroBannerModel | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  // Form Validation State
+  const [titleError, setTitleError] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   // Form tab: 'upload' | 'url'
   const [imageInputMode, setImageInputMode] = useState<'upload' | 'url'>('upload');
@@ -112,6 +118,35 @@ export function AdminHeroBannerManager({
     return () => unsubscribe();
   }, []);
 
+  // Open Create Modal Helper
+  const openCreateModal = () => {
+    setEditingBanner({
+      id: undefined,
+      title: '',
+      subtitle: '',
+      badge_text: '🎉 Festival Mega Offer',
+      image_url: '',
+      link_url: '/contact',
+      button_text: 'Claim Offer',
+      aspect_ratio: 'banner',
+      is_active: true,
+      is_default: false,
+    });
+    setImageInputMode('upload');
+    setTitleError(false);
+    setImageError(false);
+    setIsEditModalOpen(true);
+  };
+
+  // Open Edit Modal Helper
+  const openEditModal = (banner: HeroBannerModel) => {
+    setEditingBanner({ ...banner });
+    setImageInputMode(banner.image_url?.startsWith('http') ? 'url' : 'upload');
+    setTitleError(false);
+    setImageError(false);
+    setIsEditModalOpen(true);
+  };
+
   // Quick 1-click banner activation
   const handleSetActive = async (banner: HeroBannerModel) => {
     try {
@@ -142,29 +177,44 @@ export function AdminHeroBannerManager({
     await handleSetActive(defaultBanner);
   };
 
-  // File Upload Handler
-  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  // Process and Upload Image File
+  const processImageFile = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       toast.error('Please upload a valid image file (PNG, JPG, WebP, SVG)');
       return;
     }
 
     setIsUploading(true);
+    setImageError(false);
     const toastId = toast.loading('Processing and optimizing banner image...');
 
     try {
       const resultUrl = await uploadHeroBannerImage(file);
-      setEditingBanner((prev) => (prev ? { ...prev, image_url: resultUrl } : null));
+      setEditingBanner((prev) => (prev ? { ...prev, image_url: resultUrl } : { image_url: resultUrl }));
       toast.success('Image ready for banner!', { id: toastId });
     } catch (err) {
       console.error('Failed to upload banner image:', err);
-      toast.error('Failed to upload image. Please try again or use an Image URL.', { id: toastId });
+      toast.error('Failed to process image. Please try again or use an Image URL.', { id: toastId });
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // File Upload Handlers
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      await processImageFile(file);
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      await processImageFile(file);
     }
   };
 
@@ -172,18 +222,29 @@ export function AdminHeroBannerManager({
   const handleSaveBanner = async () => {
     if (!editingBanner) return;
 
+    let hasError = false;
     if (!editingBanner.title?.trim()) {
-      toast.error('Please enter a banner title');
-      return;
+      setTitleError(true);
+      hasError = true;
+    } else {
+      setTitleError(false);
     }
 
     if (!editingBanner.image_url?.trim()) {
-      toast.error('Please upload an image or provide an image URL');
+      setImageError(true);
+      hasError = true;
+    } else {
+      setImageError(false);
+    }
+
+    if (hasError) {
+      toast.error('Please enter a banner title and select/upload a banner image');
       return;
     }
 
     setIsSaving(true);
-    const toastId = toast.loading('Saving hero banner to database...');
+    const isNew = !editingBanner.id;
+    const toastId = toast.loading(isNew ? 'Adding new banner to website...' : 'Saving changes...');
 
     try {
       const isDefault = editingBanner.is_default || editingBanner.id === 'hero-default';
@@ -191,10 +252,10 @@ export function AdminHeroBannerManager({
 
       const saved = await saveHeroBanner({
         id: editingBanner.id,
-        title: editingBanner.title.trim(),
+        title: editingBanner.title!.trim(),
         subtitle: editingBanner.subtitle?.trim() || '',
         badge_text: editingBanner.badge_text?.trim() || '',
-        image_url: editingBanner.image_url.trim(),
+        image_url: editingBanner.image_url!.trim(),
         link_url: editingBanner.link_url?.trim() || '',
         button_text: editingBanner.button_text?.trim() || 'Claim Offer',
         aspect_ratio: (editingBanner.aspect_ratio as BannerAspectRatio) || 'auto',
@@ -208,9 +269,9 @@ export function AdminHeroBannerManager({
       }
 
       toast.success(
-        editingBanner.id
-          ? `Updated "${saved.title}" successfully!`
-          : `Created new banner "${saved.title}"!`,
+        isNew
+          ? `Added "${saved.title}" successfully!`
+          : `Updated "${saved.title}" successfully!`,
         { id: toastId }
       );
 
@@ -315,7 +376,19 @@ CREATE POLICY "Allow all hero_banners"
 INSERT INTO public.hero_banners (id, title, subtitle, badge_text, image_url, link_url, button_text, aspect_ratio, is_active, is_default, display_order)
 VALUES
 ('hero-default', 'Default Agency Showcase', 'XGRO AI Platform & Agency Growth Suite Mockup', '⚡ Core Showcase', '/home/hero.png', '/contact', 'Get Started', 'mockup', true, true, 0)
-ON CONFLICT (id) DO NOTHING;`;
+ON CONFLICT (id) DO NOTHING;
+
+-- Create hero_banners Storage Bucket (Optional for Supabase Image Uploads)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('hero_banners', 'hero_banners', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+DROP POLICY IF EXISTS "Public Access hero_banners" ON storage.objects;
+CREATE POLICY "Public Access hero_banners"
+ON storage.objects FOR ALL
+TO anon, authenticated
+USING (bucket_id = 'hero_banners')
+WITH CHECK (bucket_id = 'hero_banners');`;
 
   return (
     <div className="space-y-8">
@@ -356,24 +429,10 @@ ON CONFLICT (id) DO NOTHING;`;
             <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
               {canCreateEdit && (
                 <Button
-                  onClick={() => {
-                    setEditingBanner({
-                      title: '',
-                      subtitle: '',
-                      badge_text: '🎉 Festival Mega Offer',
-                      image_url: '',
-                      link_url: '/contact',
-                      button_text: 'Claim Offer',
-                      aspect_ratio: 'banner',
-                      is_active: true,
-                      is_default: false,
-                    });
-                    setImageInputMode('upload');
-                    setIsEditModalOpen(true);
-                  }}
+                  onClick={openCreateModal}
                   className="rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs sm:text-sm px-5 h-10 shadow-md shadow-cyan/20 gap-2 flex-1 sm:flex-none"
                 >
-                  <Plus className="h-4 w-4" /> Upload New Offer Banner
+                  <Plus className="h-4 w-4" /> Add New Banner
                 </Button>
               )}
 
@@ -474,11 +533,7 @@ ON CONFLICT (id) DO NOTHING;`;
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      setEditingBanner(activeBanner);
-                      setImageInputMode(activeBanner.image_url.startsWith('http') ? 'url' : 'upload');
-                      setIsEditModalOpen(true);
-                    }}
+                    onClick={() => openEditModal(activeBanner)}
                     className="rounded-xl text-xs font-semibold h-9 px-3 gap-1.5"
                   >
                     <Edit2 className="h-3.5 w-3.5 text-muted-foreground" /> Edit
@@ -509,16 +564,26 @@ ON CONFLICT (id) DO NOTHING;`;
               Saved Hero Banners & Showcase Gallery
             </h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Select any previous festival or offer banner to put it live on the homepage with 1 click, or upload new creative banners.
+              Select any previous festival or offer banner to put it live on the homepage with 1 click, or add new creative banners.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {canCreateEdit && (
+              <Button
+                onClick={openCreateModal}
+                size="sm"
+                className="rounded-xl bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs h-9 px-3.5 gap-1.5 shadow-sm"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add Banner
+              </Button>
+            )}
+
             <Input
               placeholder="Search banners..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="text-xs rounded-xl h-9 w-44 sm:w-56 bg-surface"
+              className="text-xs rounded-xl h-9 w-40 sm:w-48 bg-surface"
             />
             <div className="flex items-center rounded-xl bg-surface p-1 border border-border">
               <button
@@ -669,11 +734,7 @@ ON CONFLICT (id) DO NOTHING;`;
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => {
-                          setEditingBanner(banner);
-                          setImageInputMode(banner.image_url.startsWith('http') ? 'url' : 'upload');
-                          setIsEditModalOpen(true);
-                        }}
+                        onClick={() => openEditModal(banner)}
                         className="rounded-xl text-xs font-semibold h-8 px-2.5"
                         title="Edit banner details"
                       >
@@ -700,12 +761,22 @@ ON CONFLICT (id) DO NOTHING;`;
         </div>
 
         {filteredBanners.length === 0 && !isLoading && (
-          <div className="p-12 text-center rounded-2xl border border-dashed border-border bg-card/40">
-            <ImageIcon className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-50" />
-            <h4 className="text-sm font-bold text-foreground">No hero banners found</h4>
-            <p className="text-xs text-muted-foreground mt-1">
-              Try adjusting your search query or upload a new festival offer banner.
-            </p>
+          <div className="p-12 text-center rounded-2xl border border-dashed border-border bg-card/40 space-y-3">
+            <ImageIcon className="h-10 w-10 text-muted-foreground mx-auto opacity-50" />
+            <div>
+              <h4 className="text-sm font-bold text-foreground">No hero banners found</h4>
+              <p className="text-xs text-muted-foreground mt-1">
+                Try adjusting your search query or add a new festival offer banner.
+              </p>
+            </div>
+            {canCreateEdit && (
+              <Button
+                onClick={openCreateModal}
+                className="rounded-xl bg-cyan text-slate-950 font-bold text-xs px-4 h-9 shadow-sm"
+              >
+                <Plus className="h-4 w-4 mr-1" /> Add Your First Banner
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -715,239 +786,272 @@ ON CONFLICT (id) DO NOTHING;`;
       {/* ============================================================ */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl bg-card border-border">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-cyan" />
-              {editingBanner?.id ? 'Edit Hero Banner' : 'Create & Upload New Hero Banner'}
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground">
-              Configure your hero image or festival promotion banner. Upload any size or ratio (mockup, 16:9, or 21:9 wide banner).
-            </DialogDescription>
-          </DialogHeader>
+          <form onSubmit={(e) => { e.preventDefault(); handleSaveBanner(); }}>
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-cyan" />
+                {editingBanner?.id ? 'Edit Hero Banner' : 'Add New Hero Banner'}
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                Configure your hero image or festival promotion banner. Upload any size or ratio (mockup, 16:9, or 21:9 wide banner).
+              </DialogDescription>
+            </DialogHeader>
 
-          <div className="space-y-4 py-2">
-            {/* Banner Title */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                Banner Title <span className="text-red-400">*</span>
-              </label>
-              <Input
-                placeholder="e.g. Diwali Mega Growth Bonanza / Festive 50% Off"
-                value={editingBanner?.title || ''}
-                onChange={(e) =>
-                  setEditingBanner((prev) => (prev ? { ...prev, title: e.target.value } : null))
-                }
-                className="text-xs rounded-xl h-10 bg-surface"
-              />
-            </div>
-
-            {/* Subtitle / Description */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground">
-                Subtitle / Promotional Tagline (Optional)
-              </label>
-              <Input
-                placeholder="e.g. Flat 50% discount on all website development & AI chatbot setups"
-                value={editingBanner?.subtitle || ''}
-                onChange={(e) =>
-                  setEditingBanner((prev) => (prev ? { ...prev, subtitle: e.target.value } : null))
-                }
-                className="text-xs rounded-xl h-10 bg-surface"
-              />
-            </div>
-
-            {/* Festival Badge Text */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-4 py-3">
+              {/* Banner Title */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                  <Tag className="h-3.5 w-3.5 text-cyan" />
-                  Offer / Festival Badge Text
+                <label className="text-xs font-bold text-foreground flex items-center justify-between">
+                  <span>Banner Title <span className="text-red-400">*</span></span>
+                  {titleError && <span className="text-[11px] text-red-400 font-semibold">Title is required</span>}
                 </label>
                 <Input
-                  placeholder="e.g. 🎉 Diwali Special • 50% Off"
-                  value={editingBanner?.badge_text || ''}
-                  onChange={(e) =>
-                    setEditingBanner((prev) => (prev ? { ...prev, badge_text: e.target.value } : null))
-                  }
-                  className="text-xs rounded-xl h-10 bg-surface"
+                  placeholder="e.g. Diwali Mega Growth Bonanza / Festive 50% Off"
+                  value={editingBanner?.title || ''}
+                  onChange={(e) => {
+                    setTitleError(false);
+                    setEditingBanner((prev) => (prev ? { ...prev, title: e.target.value } : { title: e.target.value }));
+                  }}
+                  className={`text-xs rounded-xl h-10 bg-surface ${titleError ? 'border-red-500 ring-1 ring-red-500/50' : ''}`}
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                  <SlidersHorizontal className="h-3.5 w-3.5 text-cyan" />
-                  Display Aspect Ratio Format
-                </label>
-                <select
-                  value={editingBanner?.aspect_ratio || 'auto'}
-                  onChange={(e) =>
-                    setEditingBanner((prev) =>
-                      prev ? { ...prev, aspect_ratio: e.target.value as BannerAspectRatio } : null
-                    )
-                  }
-                  className="w-full text-xs rounded-xl h-10 bg-surface border border-border px-3 text-foreground font-semibold focus:outline-none focus:ring-1 focus:ring-cyan"
-                >
-                  <option value="auto">Auto Adaptive (Recommended)</option>
-                  <option value="banner">Ultra-wide Banner (21:9 / Festival Promo)</option>
-                  <option value="16:9">Standard High-Res (16:9)</option>
-                  <option value="mockup">App & UI Mockup (like Default Hero)</option>
-                  <option value="4:3">Compact Card (4:3)</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Target Link & CTA Button Text */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                  <Link2 className="h-3.5 w-3.5 text-cyan" />
-                  Target Redirect URL (On Banner Click)
-                </label>
-                <Input
-                  placeholder="e.g. /contact or /pricing or https://wa.me/..."
-                  value={editingBanner?.link_url || ''}
-                  onChange={(e) =>
-                    setEditingBanner((prev) => (prev ? { ...prev, link_url: e.target.value } : null))
-                  }
-                  className="text-xs rounded-xl h-10 bg-surface"
-                />
-              </div>
-
+              {/* Subtitle / Description */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-foreground">
-                  Button Label
+                  Subtitle / Promotional Tagline (Optional)
                 </label>
                 <Input
-                  placeholder="e.g. Claim 50% Offer Now / Get Started"
-                  value={editingBanner?.button_text || ''}
+                  placeholder="e.g. Flat 50% discount on all website development & AI chatbot setups"
+                  value={editingBanner?.subtitle || ''}
                   onChange={(e) =>
-                    setEditingBanner((prev) => (prev ? { ...prev, button_text: e.target.value } : null))
+                    setEditingBanner((prev) => (prev ? { ...prev, subtitle: e.target.value } : null))
                   }
                   className="text-xs rounded-xl h-10 bg-surface"
                 />
               </div>
-            </div>
 
-            {/* Image Upload / URL Selector */}
-            <div className="space-y-2 pt-2 border-t border-border">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                  <ImageIcon className="h-3.5 w-3.5 text-cyan" />
-                  Banner Creative Image <span className="text-red-400">*</span>
-                </label>
-                <div className="flex items-center rounded-lg bg-surface p-0.5 border border-border">
-                  <button
-                    type="button"
-                    onClick={() => setImageInputMode('upload')}
-                    className={`px-2.5 py-0.5 text-[11px] font-bold rounded-md transition-all ${
-                      imageInputMode === 'upload'
-                        ? 'bg-cyan text-slate-950 shadow-sm'
-                        : 'text-muted-foreground'
-                    }`}
+              {/* Festival Badge Text */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Tag className="h-3.5 w-3.5 text-cyan" />
+                    Offer / Festival Badge Text (Optional)
+                  </label>
+                  <Input
+                    placeholder="e.g. 🎉 Diwali Special • 50% Off"
+                    value={editingBanner?.badge_text || ''}
+                    onChange={(e) =>
+                      setEditingBanner((prev) => (prev ? { ...prev, badge_text: e.target.value } : null))
+                    }
+                    className="text-xs rounded-xl h-10 bg-surface"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <SlidersHorizontal className="h-3.5 w-3.5 text-cyan" />
+                    Display Aspect Ratio Format
+                  </label>
+                  <select
+                    value={editingBanner?.aspect_ratio || 'auto'}
+                    onChange={(e) =>
+                      setEditingBanner((prev) =>
+                        prev ? { ...prev, aspect_ratio: e.target.value as BannerAspectRatio } : null
+                      )
+                    }
+                    className="w-full text-xs rounded-xl h-10 bg-surface border border-border px-3 text-foreground font-semibold focus:outline-none focus:ring-1 focus:ring-cyan"
                   >
-                    Upload File
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setImageInputMode('url')}
-                    className={`px-2.5 py-0.5 text-[11px] font-bold rounded-md transition-all ${
-                      imageInputMode === 'url'
-                        ? 'bg-cyan text-slate-950 shadow-sm'
-                        : 'text-muted-foreground'
-                    }`}
-                  >
-                    Image URL
-                  </button>
+                    <option value="auto">Auto Adaptive (Recommended)</option>
+                    <option value="banner">Ultra-wide Banner (21:9 / Festival Promo)</option>
+                    <option value="16:9">Standard High-Res (16:9)</option>
+                    <option value="mockup">App & UI Mockup (like Default Hero)</option>
+                    <option value="4:3">Compact Card (4:3)</option>
+                  </select>
                 </div>
               </div>
 
-              {imageInputMode === 'upload' ? (
-                <div>
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    accept="image/*"
-                    onChange={handleFileSelected}
-                    className="hidden"
+              {/* Target Link & CTA Button Text */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Link2 className="h-3.5 w-3.5 text-cyan" />
+                    Target Redirect URL (On Banner Click)
+                  </label>
+                  <Input
+                    placeholder="e.g. /contact or /pricing or https://wa.me/..."
+                    value={editingBanner?.link_url || ''}
+                    onChange={(e) =>
+                      setEditingBanner((prev) => (prev ? { ...prev, link_url: e.target.value } : null))
+                    }
+                    className="text-xs rounded-xl h-10 bg-surface"
                   />
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-border hover:border-cyan/60 bg-surface/50 hover:bg-surface rounded-2xl p-6 text-center cursor-pointer transition-all duration-200"
-                  >
-                    <Upload className="h-8 w-8 text-cyan mx-auto mb-2 opacity-80" />
-                    <p className="text-xs font-bold text-foreground">
-                      {isUploading ? 'Uploading & compressing image...' : 'Click to select or drop banner image'}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground mt-1">
-                      PNG, JPG, WebP, SVG supported • Saves directly to Supabase
-                    </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground">
+                    Button Label
+                  </label>
+                  <Input
+                    placeholder="e.g. Claim 50% Offer Now / Get Started"
+                    value={editingBanner?.button_text || ''}
+                    onChange={(e) =>
+                      setEditingBanner((prev) => (prev ? { ...prev, button_text: e.target.value } : null))
+                    }
+                    className="text-xs rounded-xl h-10 bg-surface"
+                  />
+                </div>
+              </div>
+
+              {/* Image Upload / URL Selector */}
+              <div className="space-y-2 pt-2 border-t border-border">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <ImageIcon className="h-3.5 w-3.5 text-cyan" />
+                    Banner Creative Image <span className="text-red-400">*</span>
+                  </label>
+                  <div className="flex items-center rounded-lg bg-surface p-0.5 border border-border">
+                    <button
+                      type="button"
+                      onClick={() => setImageInputMode('upload')}
+                      className={`px-2.5 py-0.5 text-[11px] font-bold rounded-md transition-all ${
+                        imageInputMode === 'upload'
+                          ? 'bg-cyan text-slate-950 shadow-sm'
+                          : 'text-muted-foreground'
+                      }`}
+                    >
+                      Upload File
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setImageInputMode('url')}
+                      className={`px-2.5 py-0.5 text-[11px] font-bold rounded-md transition-all ${
+                        imageInputMode === 'url'
+                          ? 'bg-cyan text-slate-950 shadow-sm'
+                          : 'text-muted-foreground'
+                      }`}
+                    >
+                      Image URL
+                    </button>
                   </div>
                 </div>
-              ) : (
-                <Input
-                  placeholder="https://example.com/festival-banner.png or /home/hero.png"
-                  value={editingBanner?.image_url || ''}
-                  onChange={(e) =>
-                    setEditingBanner((prev) => (prev ? { ...prev, image_url: e.target.value } : null))
-                  }
-                  className="text-xs rounded-xl h-10 bg-surface"
-                />
-              )}
 
-              {/* Image Preview inside modal */}
-              {editingBanner?.image_url && (
-                <div className="relative rounded-2xl overflow-hidden border border-border bg-black/40 mt-3 max-h-48 flex items-center justify-center">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={editingBanner.image_url}
-                    alt="Banner preview"
-                    className="w-full h-auto max-h-48 object-contain"
+                {imageInputMode === 'upload' ? (
+                  <div>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept="image/*"
+                      onChange={handleFileSelected}
+                      className="hidden"
+                    />
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                      onDragLeave={() => setIsDragging(false)}
+                      onDrop={handleDrop}
+                      className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all duration-200 ${
+                        isDragging
+                          ? 'border-cyan bg-cyan/10 scale-[0.99]'
+                          : imageError
+                          ? 'border-red-500 bg-red-500/5'
+                          : 'border-border hover:border-cyan/60 bg-surface/50 hover:bg-surface'
+                      }`}
+                    >
+                      <Upload className="h-8 w-8 text-cyan mx-auto mb-2 opacity-80" />
+                      <p className="text-xs font-bold text-foreground">
+                        {isUploading ? 'Uploading & optimizing image...' : 'Click or drop banner image here'}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        PNG, JPG, WebP, SVG supported • Saves directly to database
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <Input
+                    placeholder="https://example.com/festival-banner.png or /home/hero.png"
+                    value={editingBanner?.image_url || ''}
+                    onChange={(e) => {
+                      setImageError(false);
+                      setEditingBanner((prev) =>
+                        prev ? { ...prev, image_url: e.target.value } : { image_url: e.target.value }
+                      );
+                    }}
+                    className={`text-xs rounded-xl h-10 bg-surface ${imageError ? 'border-red-500 ring-1 ring-red-500/50' : ''}`}
                   />
-                  <span className="absolute bottom-2 right-2 bg-black/75 px-2 py-0.5 rounded text-[10px] text-slate-300 font-mono">
-                    Image Selected
-                  </span>
-                </div>
-              )}
-            </div>
+                )}
 
-            {/* Set as Active toggle checkbox */}
-            <div className="p-3 rounded-xl bg-surface/80 border border-border flex items-center justify-between">
-              <div className="space-y-0.5">
-                <p className="text-xs font-bold text-foreground">Make this banner live immediately</p>
-                <p className="text-[11px] text-muted-foreground">
-                  When enabled, this banner will automatically replace the currently active hero on the homepage.
-                </p>
+                {imageError && (
+                  <p className="text-[11px] text-red-400 font-semibold mt-1">
+                    Please upload an image file or provide an image URL.
+                  </p>
+                )}
+
+                {/* Image Preview inside modal */}
+                {editingBanner?.image_url && (
+                  <div className="relative rounded-2xl overflow-hidden border border-border bg-black/40 mt-3 max-h-48 flex items-center justify-center group">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={editingBanner.image_url}
+                      alt="Banner preview"
+                      className="w-full h-auto max-h-48 object-contain"
+                    />
+                    <div className="absolute top-2 right-2 flex items-center gap-1.5">
+                      <span className="bg-black/75 px-2 py-0.5 rounded text-[10px] text-slate-300 font-mono">
+                        Image Ready
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setEditingBanner((prev) => prev ? { ...prev, image_url: '' } : null)}
+                        className="bg-black/80 hover:bg-red-600 text-white rounded-full p-1 transition-colors"
+                        title="Remove image"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-              <input
-                type="checkbox"
-                checked={editingBanner?.is_active ?? false}
-                onChange={(e) =>
-                  setEditingBanner((prev) => (prev ? { ...prev, is_active: e.target.checked } : null))
-                }
-                className="h-4 w-4 rounded accent-cyan cursor-pointer"
-              />
-            </div>
-          </div>
 
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsEditModalOpen(false);
-                setEditingBanner(null);
-              }}
-              className="rounded-xl text-xs"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveBanner}
-              disabled={isSaving || isUploading}
-              className="rounded-xl bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-5 shadow-md shadow-cyan/20"
-            >
-              {isSaving ? 'Saving...' : editingBanner?.id ? 'Save Changes' : 'Publish Hero Banner'}
-            </Button>
-          </DialogFooter>
+              {/* Set as Active toggle checkbox */}
+              <div className="p-3 rounded-xl bg-surface/80 border border-border flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <p className="text-xs font-bold text-foreground">Make this banner live immediately</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    When enabled, this banner will automatically replace the currently active hero on the homepage.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={editingBanner?.is_active ?? false}
+                  onChange={(e) =>
+                    setEditingBanner((prev) => (prev ? { ...prev, is_active: e.target.checked } : null))
+                  }
+                  className="h-4 w-4 rounded accent-cyan cursor-pointer"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsEditModalOpen(false);
+                  setEditingBanner(null);
+                }}
+                className="rounded-xl text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSaving || isUploading}
+                className="rounded-xl bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs px-5 shadow-md shadow-cyan/20"
+              >
+                {isSaving ? 'Saving...' : isUploading ? 'Uploading...' : editingBanner?.id ? 'Save Changes' : '+ Add Banner & Publish'}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -971,7 +1075,7 @@ ON CONFLICT (id) DO NOTHING;`;
               <div className="text-center max-w-2xl mx-auto space-y-3 pb-6">
                 <div className="inline-flex items-center gap-2 rounded-full border border-cyan/40 bg-cyan/10 px-4 py-1 text-[11px] font-bold uppercase tracking-widest text-cyan">
                   <Sparkles className="h-3 w-3 text-cyan" />
-                  <span>5X Your Business Revenue with AI Engine</span>
+                  <span>{previewingBanner.badge_text || '5X Your Business Revenue with AI Engine'}</span>
                 </div>
                 <h2 className="text-2xl sm:text-3xl font-black text-foreground">
                   Your Digital Growth <span className="text-cyan">Partner</span>
