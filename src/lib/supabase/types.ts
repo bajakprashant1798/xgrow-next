@@ -284,8 +284,12 @@ export interface ResourceItemModel {
   thumbnail_url?: string;
   thumbnailUrl?: string;
   downloadUrl?: string;
+  download_url?: string;
   linkUrl?: string;
+  link_url?: string;
+  pdf_file?: string;
   promptContent?: string;
+  prompt_content?: string;
   dateAdded?: string;
   downloadCount?: number;
   featured?: boolean;
@@ -295,6 +299,22 @@ export interface ResourceItemModel {
   display_order?: number;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface ResourceLeadModel {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  business_name?: string;
+  country?: string;
+  notes?: string;
+  resource_id?: string;
+  resource_title: string;
+  resource_type?: string;
+  coupon_code: string;
+  calc_data?: any;
+  created_at: string;
 }
 
 export type BannerAspectRatio = 'auto' | '16:9' | '21:9' | '4:3' | 'mockup' | 'banner';

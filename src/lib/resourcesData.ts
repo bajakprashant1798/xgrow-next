@@ -22,8 +22,12 @@ export interface ResourceItem {
   thumbnail_url?: string;
   thumbnailUrl?: string;
   downloadUrl?: string;
+  download_url?: string;
   linkUrl?: string;
+  link_url?: string;
+  pdf_file?: string;
   promptContent?: string;
+  prompt_content?: string;
   dateAdded: string;
   downloadCount: number;
   featured?: boolean;

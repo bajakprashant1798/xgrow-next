@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import {
   Dialog,
   DialogContent,
@@ -25,16 +25,24 @@ import {
   MessageSquare,
   Sparkles,
   Ticket,
+  ExternalLink,
+  Link as LinkIcon,
+  ShieldCheck,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { site } from "@/lib/site";
 import { downloadQuotationPDF, downloadPriceListPDF, type QuoteDetails } from "@/lib/pdfGenerator";
+import { ResourceItem } from "@/lib/resourcesData";
+import { getUnlockedLead, saveResourceLead, setUnlockedLead } from "@/lib/db";
+import { sendLeadNotificationEmail } from "@/lib/email-service";
 
 export interface QuotationDownloadModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   type: "calculator" | "pricelist" | "resource";
   resourceTitle?: string;
+  resource?: ResourceItem | null;
   calcData?: {
     businessType: string;
     pagesCount: string;
@@ -54,6 +62,7 @@ export function QuotationDownloadModal({
   onOpenChange,
   type,
   resourceTitle = "Official Price List & Rate Card 2026",
+  resource,
   calcData,
 }: QuotationDownloadModalProps) {
   const [name, setName] = useState("");
@@ -65,9 +74,35 @@ export function QuotationDownloadModal({
 
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [generatedCoupon, setGeneratedCoupon] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [isExistingUser, setIsExistingUser] = useState(false);
+  const [generatedCoupon, setGeneratedCoupon] = useState("XGROW-SAVE15");
+  const [copiedCoupon, setCopiedCoupon] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const [errors, setErrors] = useState<{ name?: string; email?: string; phone?: string }>({});
+
+  const effectiveTitle = resource?.title || resourceTitle;
+  const effectiveLink = resource?.linkUrl || resource?.link_url || "";
+  const effectiveDownload = resource?.downloadUrl || resource?.download_url || resource?.pdf_file || "";
+
+  // Auto-detect if visitor already filled details once before
+  useEffect(() => {
+    if (open) {
+      const existingLead = getUnlockedLead();
+      if (existingLead) {
+        setName(existingLead.name || "");
+        setBusinessName(existingLead.business_name || "");
+        setEmail(existingLead.email || "");
+        setPhone(existingLead.phone || "");
+        setGeneratedCoupon(existingLead.coupon_code || "XGROW-SAVE15");
+        setIsExistingUser(true);
+        // Automatically set submitted = true so they get instant access without refilling!
+        setSubmitted(true);
+      } else {
+        setIsExistingUser(false);
+        setSubmitted(false);
+      }
+    }
+  }, [open, resource]);
 
   const validate = (): boolean => {
     const newErrors: { name?: string; email?: string; phone?: string } = {};
@@ -114,7 +149,7 @@ export function QuotationDownloadModal({
     return true;
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
 
     if (!validate()) {
@@ -123,48 +158,56 @@ export function QuotationDownloadModal({
 
     setLoading(true);
 
-    setTimeout(() => {
+    try {
       // Generate a unique 15% discount coupon
       const randomSuffix = Math.floor(1000 + Math.random() * 9000);
       const coupon = `XGROW-SAVE15-${randomSuffix}`;
       setGeneratedCoupon(coupon);
 
-      const fullPhone = `${country.dialCode} ${phone.trim()}`;
+      const fullPhone = phone.startsWith("+") ? phone.trim() : `${country.dialCode} ${phone.trim()}`;
 
-      // Save lead to local CRM storage so marketing team has visitor info
-      try {
-        const existingLeads = JSON.parse(localStorage.getItem("xgro_leads") || "[]");
-        const newLead = {
-          id: `LEAD-${Date.now()}`,
-          name: name.trim(),
-          businessName: businessName.trim(),
-          email: email.trim(),
-          phone: fullPhone,
-          country: `${country.flag} ${country.name} (${country.dialCode})`,
-          notes: notes.trim(),
-          type,
-          resourceTitle: type === "calculator" ? "Custom Calculator Quote" : resourceTitle,
-          coupon,
-          calcData: calcData || null,
-          createdAt: new Date().toISOString(),
-        };
-        existingLeads.unshift(newLead);
-        localStorage.setItem("xgro_leads", JSON.stringify(existingLeads));
-      } catch (err) {
-        console.error("Local lead save error:", err);
-      }
+      // Save lead to CRM database & Supabase
+      const savedLead = await saveResourceLead({
+        name: name.trim(),
+        business_name: businessName.trim(),
+        email: email.trim(),
+        phone: fullPhone,
+        country: `${country.flag} ${country.name} (${country.dialCode})`,
+        notes: notes.trim(),
+        resource_id: resource?.id,
+        resource_title: type === "calculator" ? "Custom Calculator Quote" : effectiveTitle,
+        resource_type: resource?.type || type,
+        coupon_code: coupon,
+        calc_data: calcData || null,
+      });
 
-      setLoading(false);
+      // Dispatch notification email to admin
+      sendLeadNotificationEmail({
+        lead: savedLead,
+        resourceTitle: effectiveTitle,
+      }).catch(() => {});
+
       setSubmitted(true);
-      toast.success("Details saved! Your discount coupon and PDF download are ready.");
-    }, 600);
+      toast.success("All-access pass activated! Your resource & 15% discount voucher are unlocked.");
+    } catch (err) {
+      toast.error("Failed to save details. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCopyCoupon = () => {
     navigator.clipboard.writeText(generatedCoupon);
-    setCopied(true);
+    setCopiedCoupon(true);
     toast.success("Coupon code copied to clipboard!");
-    setTimeout(() => setCopied(false), 3000);
+    setTimeout(() => setCopiedCoupon(false), 3000);
+  };
+
+  const handleCopyLink = (linkToCopy: string) => {
+    navigator.clipboard.writeText(linkToCopy);
+    setCopiedLink(true);
+    toast.success("Direct resource link copied to clipboard!");
+    setTimeout(() => setCopiedLink(false), 3000);
   };
 
   const handleDownloadPDF = () => {
@@ -179,7 +222,14 @@ export function QuotationDownloadModal({
       day: "numeric",
     });
 
-    const fullPhone = `${country.dialCode} ${phone.trim()}`;
+    const fullPhone = phone.startsWith("+") ? phone.trim() : `${country.dialCode} ${phone.trim()}`;
+
+    // If resource has a direct uploaded PDF or external URL (like Google Drive, cloud link, or static PDF)
+    if (effectiveDownload && (effectiveDownload.startsWith("http://") || effectiveDownload.startsWith("https://") || effectiveDownload.startsWith("data:") || effectiveDownload.endsWith(".pdf"))) {
+      window.open(effectiveDownload, "_blank");
+      toast.success(`Opening "${effectiveTitle}" in new tab...`);
+      return;
+    }
 
     if (type === "calculator" && calcData) {
       const quoteDetails: QuoteDetails = {
@@ -206,7 +256,7 @@ export function QuotationDownloadModal({
       toast.success("Quotation PDF opened! Click 'Print / Save as PDF' in the window.");
     } else {
       downloadPriceListPDF({
-        resourceTitle: resourceTitle,
+        resourceTitle: effectiveTitle,
         resourceCategory: type === "pricelist" ? "Price List" : "Resource Hub",
         clientName: name.trim(),
         clientEmail: email.trim(),
@@ -215,7 +265,7 @@ export function QuotationDownloadModal({
         couponCode: generatedCoupon || "XGROW-SAVE15",
         date: today,
       });
-      toast.success("Official Price List PDF opened! Click 'Print / Save as PDF' in window.");
+      toast.success("Official PDF document opened! Click 'Print / Save as PDF' in window.");
     }
   };
 
@@ -224,15 +274,13 @@ export function QuotationDownloadModal({
     if (type === "calculator" && calcData) {
       msg += `I just used your AI Cost Calculator for my ${calcData.businessType} project (${calcData.pagesCount}). Estimated quote: ${calcData.currencySymbol}${calcData.finalMinPrice.toLocaleString()} - ${calcData.currencySymbol}${calcData.finalMaxPrice.toLocaleString()}. My Discount Coupon Code is ${generatedCoupon}. I'd like to proceed!`;
     } else {
-      msg += `I requested the ${resourceTitle} with discount coupon ${generatedCoupon}. I'd like to discuss my project requirement.`;
+      msg += `I unlocked the "${effectiveTitle}" with discount coupon ${generatedCoupon}. I'd like to discuss my project requirements.`;
     }
     const encoded = encodeURIComponent(msg);
     window.open(`https://wa.me/91${site.phone}?text=${encoded}`, "_blank");
   };
 
   const handleReset = () => {
-    setSubmitted(false);
-    setGeneratedCoupon("");
     onOpenChange(false);
   };
 
@@ -244,16 +292,16 @@ export function QuotationDownloadModal({
             <DialogHeader className="pr-9">
               <div className="flex items-center gap-2">
                 <Badge className="bg-cyan/15 text-cyan hover:bg-cyan/20 border-cyan/30 px-3 py-1 font-bold">
-                  <Gift className="mr-1.5 h-3.5 w-3.5" /> 15% OFF DISCOUNT COUPON
+                  <Gift className="mr-1.5 h-3.5 w-3.5" /> 15% OFF DISCOUNT & ALL-ACCESS PASS
                 </Badge>
               </div>
               <DialogTitle className="mt-2 text-xl sm:text-2xl font-black text-foreground">
                 {type === "calculator"
                   ? "Get Detailed Quote & Claim Coupon"
-                  : `Download ${resourceTitle}`}
+                  : `Unlock "${effectiveTitle}"`}
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground">
-                Enter your details to receive your customized PDF quotation, official rate card, and instant 15% discount code!
+                Fill in your details once to unlock instant PDF downloads, cloud links, Canva kits, and your personalized 15% discount coupon!
               </DialogDescription>
             </DialogHeader>
 
@@ -340,7 +388,7 @@ export function QuotationDownloadModal({
                 <Textarea
                   id="visitor-notes"
                   rows={2}
-                  placeholder="Tell us any specific features, launch date or requirements..."
+                  placeholder="Tell us any specific project features, launch date or requirements..."
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   className="rounded-xl text-xs"
@@ -348,9 +396,9 @@ export function QuotationDownloadModal({
               </div>
 
               <div className="rounded-2xl border border-cyan/30 bg-cyan/10 p-3.5 text-xs text-foreground flex items-center gap-3">
-                <Sparkles className="h-5 w-5 text-cyan shrink-0" />
+                <ShieldCheck className="h-5 w-5 text-cyan shrink-0" />
                 <p className="leading-snug">
-                  <strong className="text-cyan font-bold">Marketing Guarantee:</strong> You will instantly receive a printable PDF download link + 15% discount voucher.
+                  <strong className="text-cyan font-bold">1-Time Unlock:</strong> After filling this once, you can freely download and access all resources without filling this form again!
                 </p>
               </div>
 
@@ -370,11 +418,11 @@ export function QuotationDownloadModal({
                 >
                   {loading ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Unlocking...
                     </>
                   ) : (
                     <>
-                      <Gift className="mr-2 h-4 w-4" /> Unlock & Download PDF
+                      <Gift className="mr-2 h-4 w-4" /> Unlock & Access Now
                     </>
                   )}
                 </Button>
@@ -382,25 +430,90 @@ export function QuotationDownloadModal({
             </form>
           </>
         ) : (
-          <div className="py-2 text-center">
+          <div className="py-2 text-center space-y-5">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
               <CheckCircle2 className="h-8 w-8" />
             </div>
 
-            <h3 className="mt-4 text-2xl font-black text-foreground">
-              Quote & Discount Unlocked!
-            </h3>
-            <p className="mt-1 text-xs text-muted-foreground max-w-sm mx-auto">
-              Thank you, <span className="text-foreground font-bold">{name}</span>! Here is your exclusive discount coupon code and PDF document download.
-            </p>
+            <div>
+              <h3 className="text-2xl font-black text-foreground">
+                Resource & Discount Unlocked!
+              </h3>
+              <p className="mt-1 text-xs text-muted-foreground max-w-sm mx-auto">
+                {name ? (
+                  <>Welcome back, <span className="text-foreground font-bold">{name}</span>! Your resource access and discount coupon are ready below.</>
+                ) : (
+                  <>Your resource access and exclusive discount coupon code are ready below.</>
+                )}
+              </p>
+            </div>
+
+            {/* Direct Link Section (If resource has a Link URL) */}
+            {effectiveLink && (
+              <div className="rounded-2xl border border-border bg-card/80 p-4 text-left space-y-2.5">
+                <div className="flex items-center justify-between text-xs font-bold text-cyan">
+                  <span className="flex items-center gap-1.5">
+                    <LinkIcon className="h-3.5 w-3.5" /> Direct Resource Link
+                  </span>
+                  <Badge variant="outline" className="text-[9px] border-cyan/30 text-cyan">
+                    Cloud / Web Link
+                  </Badge>
+                </div>
+                <div className="p-2.5 rounded-xl bg-surface border border-border font-mono text-xs text-muted-foreground truncate select-all">
+                  {effectiveLink}
+                </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <Button
+                    onClick={() => {
+                      if (effectiveLink.startsWith("/")) {
+                        window.location.href = effectiveLink;
+                      } else {
+                        window.open(effectiveLink, "_blank");
+                      }
+                    }}
+                    className="flex-1 rounded-xl bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs h-9"
+                  >
+                    <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Open in New Tab
+                  </Button>
+                  <Button
+                    onClick={() => handleCopyLink(effectiveLink)}
+                    variant="outline"
+                    className="rounded-xl text-xs font-bold h-9"
+                  >
+                    {copiedLink ? <CheckCircle2 className="h-3.5 w-3.5 mr-1 text-emerald-400" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
+                    {copiedLink ? "Copied!" : "Copy Link"}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Direct PDF Download / Document Button */}
+            {(type === "calculator" || type === "pricelist" || resource?.type === "pdf" || resource?.type === "checklist" || effectiveDownload) && (
+              <div className="rounded-2xl border border-border bg-card/80 p-4 text-left space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-foreground">
+                  <span className="flex items-center gap-1.5 text-cyan">
+                    <FileText className="h-3.5 w-3.5" /> {effectiveTitle}
+                  </span>
+                  <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[9px] font-bold">
+                    Ready to Download
+                  </Badge>
+                </div>
+                <Button
+                  onClick={handleDownloadPDF}
+                  className="w-full rounded-xl bg-cyan text-slate-950 hover:bg-cyan/90 font-extrabold text-xs h-10 shadow-md"
+                >
+                  <Download className="mr-1.5 h-4 w-4" /> Download / View PDF Document
+                </Button>
+              </div>
+            )}
 
             {/* Coupon Code Display Box */}
-            <div className="mt-6 rounded-2xl border border-dashed border-cyan/60 bg-gradient-to-br from-cyan/10 via-surface to-cyan/5 p-5">
+            <div className="rounded-2xl border border-dashed border-cyan/60 bg-gradient-to-br from-cyan/10 via-surface to-cyan/5 p-4">
               <div className="flex items-center justify-center gap-2 text-xs font-bold text-cyan uppercase tracking-wider">
                 <Ticket className="h-4 w-4" /> 15% Instant Discount Coupon
               </div>
               <div className="mt-2 flex items-center justify-center gap-3">
-                <span className="font-mono text-2xl font-black tracking-widest text-foreground bg-background px-4 py-2 rounded-xl border border-border">
+                <span className="font-mono text-xl sm:text-2xl font-black tracking-widest text-foreground bg-background px-4 py-2 rounded-xl border border-border">
                   {generatedCoupon}
                 </span>
                 <Button
@@ -410,7 +523,7 @@ export function QuotationDownloadModal({
                   title="Copy Coupon"
                   className="h-10 w-10 rounded-xl"
                 >
-                  {copied ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+                  {copiedCoupon ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
                 </Button>
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">
@@ -418,29 +531,29 @@ export function QuotationDownloadModal({
               </p>
             </div>
 
-            {/* Actions: Download PDF & WhatsApp */}
-            <div className="mt-6 flex flex-col sm:flex-row gap-3">
-              <Button
-                onClick={handleDownloadPDF}
-                className="flex-1 rounded-full bg-cyan text-slate-950 hover:bg-cyan/90 font-extrabold text-xs py-5 shadow-lg"
-              >
-                <Download className="mr-2 h-4 w-4" /> Download PDF Quotation
-              </Button>
+            {/* WhatsApp Contact Button */}
+            <div className="pt-1">
               <Button
                 onClick={handleWhatsAppRedirect}
                 variant="outline"
-                className="flex-1 rounded-full border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 font-bold text-xs py-5"
+                className="w-full rounded-2xl border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 font-bold text-xs h-10"
               >
-                <MessageSquare className="mr-2 h-4 w-4 text-emerald-400" /> Share on WhatsApp
+                <MessageSquare className="mr-2 h-4 w-4 text-emerald-400" /> Chat on WhatsApp with Project Lead
               </Button>
             </div>
 
-            <div className="mt-6 border-t border-border pt-4 text-center">
+            {/* One-Time Unlock Badge Note */}
+            <div className="pt-2 text-center text-[11px] text-muted-foreground flex items-center justify-center gap-1.5">
+              <Sparkles className="h-3.5 w-3.5 text-cyan" />
+              <span>All-Access Pass Active — explore other resources without refilling!</span>
+            </div>
+
+            <div className="border-t border-border pt-3 text-center">
               <button
                 onClick={handleReset}
                 className="text-xs text-muted-foreground hover:text-foreground underline font-semibold"
               >
-                Close & Return to Site
+                Close & Continue Browsing
               </button>
             </div>
           </div>

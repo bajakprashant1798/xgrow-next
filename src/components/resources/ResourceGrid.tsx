@@ -50,6 +50,7 @@ export function ResourceGrid() {
 
   // Modals state
   const [leadModalOpen, setLeadModalOpen] = useState(false);
+  const [selectedResourceForModal, setSelectedResourceForModal] = useState<ResourceItem | null>(null);
   const [activeDownloadTitle, setActiveDownloadTitle] = useState("");
   const [activeDownloadType, setActiveDownloadType] = useState<"pricelist" | "resource" | "calculator">("resource");
 
@@ -96,18 +97,8 @@ export function ResourceGrid() {
     if (res.type === "prompt") {
       setActivePromptResource(res);
       setPromptModalOpen(true);
-    } else if (res.type === "canva" || res.type === "link") {
-      if (res.linkUrl) {
-        if (res.linkUrl.startsWith("/")) {
-          router.push(res.linkUrl);
-        } else {
-          window.open(res.linkUrl, "_blank");
-        }
-      }
-    } else if (res.type === "tool") {
-      if (res.linkUrl) router.push(res.linkUrl);
     } else {
-      // PDF or Checklist -> open Lead & Download Modal
+      setSelectedResourceForModal(res);
       setActiveDownloadTitle(res.title);
       setActiveDownloadType(res.category === "PDF Guides" ? "pricelist" : "resource");
       setLeadModalOpen(true);
@@ -306,10 +297,15 @@ export function ResourceGrid() {
       )}
 
       {/* Lead & PDF Download Modal */}
+      {/* Lead, Link & PDF Download Modal */}
       <QuotationDownloadModal
         open={leadModalOpen}
-        onOpenChange={setLeadModalOpen}
+        onOpenChange={(open) => {
+          setLeadModalOpen(open);
+          if (!open) setSelectedResourceForModal(null);
+        }}
         type={activeDownloadType}
+        resource={selectedResourceForModal}
         resourceTitle={activeDownloadTitle}
       />
 

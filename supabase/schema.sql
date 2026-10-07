@@ -242,12 +242,36 @@ CREATE TABLE IF NOT EXISTS public.notifications (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 14. FREE RESOURCES TABLE (CMS)
+CREATE TABLE IF NOT EXISTS public.resources (
+    id TEXT PRIMARY KEY DEFAULT ('res-' || gen_random_uuid()),
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ('prompt', 'canva', 'pdf', 'tool', 'link', 'checklist')),
+    file_format TEXT NOT NULL DEFAULT 'PDF Document',
+    file_size TEXT DEFAULT 'Instant',
+    thumbnail_url TEXT,
+    download_url TEXT,
+    link_url TEXT,
+    prompt_content TEXT,
+    gradient TEXT DEFAULT 'from-purple-600 via-pink-600 to-rose-600',
+    tags TEXT[] DEFAULT '{}',
+    featured BOOLEAN DEFAULT false,
+    status TEXT NOT NULL DEFAULT 'published' CHECK (status IN ('published', 'draft')),
+    download_count INTEGER NOT NULL DEFAULT 0,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- ==============================================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- ==============================================================================
 
 ALTER TABLE public.services ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pricing_plans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.resources ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.testimonials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.faqs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;

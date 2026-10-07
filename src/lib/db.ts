@@ -17,6 +17,7 @@ import {
   CustomRoleModel,
   TrustedLogoModel,
   HeroBannerModel,
+  ResourceLeadModel,
 } from './supabase/types';
 
 import {
@@ -55,6 +56,7 @@ const STORAGE_KEYS = {
   USER_CREDENTIALS: 'xgro_user_credentials',
   HERO_BANNERS: 'xgro_hero_banners',
   ACTIVE_HERO_ID: 'xgro_active_hero_id',
+  RESOURCE_LEADS: 'xgro_resource_leads',
 };
 
 // Clear stale legacy dummy data and huge uncompressed caches from browser localStorage on init
@@ -2204,27 +2206,29 @@ export async function getResources(options?: { includeDrafts?: boolean }): Promi
 
 export async function saveResource(res: Partial<ResourceItem> & { title: string; category: string; type: ResourceType }): Promise<ResourceItem> {
   const current = await getResources({ includeDrafts: true });
-  const existingIdx = current.findIndex((r) => r.id === res.id);
+  const existingIdx = res.id ? current.findIndex((r) => r.id === res.id) : -1;
   let saved: ResourceItem;
 
-  let thumbnail = res.thumbnail_url || res.thumbnailUrl;
+  let thumbnail = res.thumbnail_url !== undefined ? res.thumbnail_url : res.thumbnailUrl;
   if (thumbnail && thumbnail.startsWith('data:image/')) {
-    thumbnail = await compressDataUrl(thumbnail, 600, 400, 0.85);
+    try {
+      thumbnail = await compressDataUrl(thumbnail, 600, 400, 0.85);
+    } catch (_) {}
   }
 
   if (existingIdx >= 0) {
     saved = {
       ...current[existingIdx],
       ...res,
-      thumbnail_url: thumbnail,
-      thumbnailUrl: thumbnail,
-      tags: Array.isArray(res.tags) ? res.tags : [],
+      thumbnail_url: thumbnail !== undefined ? (thumbnail || '') : current[existingIdx].thumbnail_url,
+      thumbnailUrl: thumbnail !== undefined ? (thumbnail || '') : current[existingIdx].thumbnailUrl,
+      tags: Array.isArray(res.tags) ? res.tags : current[existingIdx].tags || [],
       updated_at: new Date().toISOString(),
     };
     current[existingIdx] = saved;
   } else {
     saved = {
-      id: res.id || `res-${Date.now()}`,
+      id: res.id || `res-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       title: res.title,
       description: res.description || '',
       category: res.category,
@@ -2241,8 +2245,8 @@ export async function saveResource(res: Partial<ResourceItem> & { title: string;
           ? 'PDF Checklist'
           : 'PDF Document'),
       fileSize: res.fileSize || (res.type === 'prompt' ? 'Instant Copy' : 'Instant'),
-      thumbnail_url: thumbnail,
-      thumbnailUrl: thumbnail,
+      thumbnail_url: thumbnail || '',
+      thumbnailUrl: thumbnail || '',
       downloadUrl: res.downloadUrl,
       linkUrl: res.linkUrl,
       promptContent: res.promptContent,
@@ -2260,35 +2264,38 @@ export async function saveResource(res: Partial<ResourceItem> & { title: string;
   }
 
   setLocalItem(STORAGE_KEYS.RESOURCES, current);
+  notifyDataChanged();
 
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
-      const isUUID = saved.id && saved.id.includes('-') && saved.id.length > 30;
-      const { data: upserted, error } = await supabase.from('resources').upsert({
-        id: isUUID ? saved.id : undefined,
+      const payload: any = {
+        id: saved.id,
         title: saved.title,
         description: saved.description,
         category: saved.category,
         type: saved.type,
         file_format: saved.fileFormat,
         file_size: saved.fileSize,
-        thumbnail_url: saved.thumbnail_url || saved.thumbnailUrl,
-        download_url: saved.downloadUrl,
-        link_url: saved.linkUrl,
-        prompt_content: saved.promptContent,
-        gradient: saved.gradient,
-        tags: saved.tags,
-        featured: saved.featured,
+        thumbnail_url: saved.thumbnail_url || saved.thumbnailUrl || null,
+        download_url: saved.downloadUrl || null,
+        link_url: saved.linkUrl || null,
+        prompt_content: saved.promptContent || null,
+        gradient: saved.gradient || null,
+        tags: saved.tags || [],
+        featured: saved.featured || false,
         status: saved.status || 'published',
-        download_count: saved.downloadCount,
-        display_order: saved.display_order,
-      }).select().single();
+        download_count: saved.downloadCount || 0,
+        display_order: saved.display_order || 0,
+      };
+
+      const { data: upserted, error } = await supabase.from('resources').upsert(payload, { onConflict: 'id' }).select().single();
 
       if (!error && upserted) {
+        const oldId = saved.id;
         saved.id = upserted.id;
         const updatedList = current.map((r) =>
-          r.id === saved.id ? { ...saved, id: upserted.id } : r
+          r.id === oldId || r.id === upserted.id ? { ...saved, id: upserted.id } : r
         );
         setLocalItem(STORAGE_KEYS.RESOURCES, updatedList);
       }
@@ -2303,9 +2310,10 @@ export async function saveResource(res: Partial<ResourceItem> & { title: string;
 export async function deleteResource(id: string): Promise<void> {
   const current = await getResources({ includeDrafts: true });
   setLocalItem(STORAGE_KEYS.RESOURCES, current.filter((r) => r.id !== id));
+  notifyDataChanged();
 
   const supabase = getSupabaseClient();
-  if (supabase && id.length > 30) {
+  if (supabase) {
     try {
       await supabase.from('resources').delete().eq('id', id);
     } catch (e) {
@@ -2323,11 +2331,110 @@ export async function incrementResourceDownloads(id: string): Promise<void> {
   setLocalItem(STORAGE_KEYS.RESOURCES, current);
 
   const supabase = getSupabaseClient();
-  if (supabase && id.length > 30) {
+  if (supabase) {
     try {
       await supabase.from('resources').update({ download_count: item.downloadCount }).eq('id', id);
     } catch (e) {
       console.warn('Error updating download count in Supabase:', e);
+    }
+  }
+}
+
+// ==============================================================================
+// VISITOR LEADS & RESOURCE UNLOCKS (ONE-TIME FORM SUBMISSION STATE)
+// ==============================================================================
+export function getUnlockedLead(): ResourceLeadModel | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const item = localStorage.getItem('xgro_unlocked_lead');
+    if (!item) return null;
+    const parsed = JSON.parse(item);
+    return parsed || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+export function setUnlockedLead(lead: ResourceLeadModel): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('xgro_unlocked_lead', JSON.stringify(lead));
+  } catch (_) {}
+}
+
+export function clearUnlockedLead(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem('xgro_unlocked_lead');
+  } catch (_) {}
+}
+
+export async function getResourceLeads(): Promise<ResourceLeadModel[]> {
+  return fetchWithSWR<ResourceLeadModel[]>(
+    STORAGE_KEYS.RESOURCE_LEADS,
+    async () => {
+      const supabase = getSupabaseClient();
+      if (!supabase) return null;
+      try {
+        const { data, error } = await supabase
+          .from('resource_leads')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!error && data && data.length > 0) return data as ResourceLeadModel[];
+      } catch (e) {}
+      return null;
+    },
+    []
+  );
+}
+
+export async function saveResourceLead(lead: Partial<ResourceLeadModel> & { name: string; email: string; phone: string; resource_title: string }): Promise<ResourceLeadModel> {
+  const current = await getResourceLeads();
+  const saved: ResourceLeadModel = {
+    id: lead.id || `lead-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    name: lead.name.trim(),
+    email: lead.email.trim(),
+    phone: lead.phone.trim(),
+    business_name: lead.business_name?.trim() || '',
+    country: lead.country || '',
+    notes: lead.notes?.trim() || '',
+    resource_id: lead.resource_id,
+    resource_title: lead.resource_title,
+    resource_type: lead.resource_type || 'resource',
+    coupon_code: lead.coupon_code || 'XGROW-SAVE15',
+    calc_data: lead.calc_data || null,
+    created_at: lead.created_at || new Date().toISOString(),
+  };
+
+  const updated = [saved, ...current.filter((l) => l.id !== saved.id)];
+  setLocalItem(STORAGE_KEYS.RESOURCE_LEADS, updated);
+  setUnlockedLead(saved);
+  notifyDataChanged();
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      await supabase.from('resource_leads').upsert(saved, { onConflict: 'id' });
+    } catch (e) {
+      console.warn('Error saving resource lead to Supabase:', e);
+    }
+  }
+
+  return saved;
+}
+
+export async function deleteResourceLead(id: string): Promise<void> {
+  const current = await getResourceLeads();
+  const updated = current.filter((l) => l.id !== id);
+  setLocalItem(STORAGE_KEYS.RESOURCE_LEADS, updated);
+  notifyDataChanged();
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      await supabase.from('resource_leads').delete().eq('id', id);
+    } catch (e) {
+      console.warn('Error deleting resource lead from Supabase:', e);
     }
   }
 }

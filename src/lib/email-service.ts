@@ -5,8 +5,14 @@
  * and seamless fallback simulation when keys are pending setup.
  */
 
-import { InvoiceDocumentModel, ClientModel, ProjectModel } from './supabase/types';
+import { InvoiceDocumentModel, ClientModel, ProjectModel, ResourceLeadModel } from './supabase/types';
 import { addNotification } from './db';
+
+export interface SendLeadNotificationParams {
+  lead: ResourceLeadModel;
+  resourceTitle?: string;
+  adminEmail?: string;
+}
 
 export interface SendInvoiceEmailParams {
   invoice: InvoiceDocumentModel;
@@ -205,4 +211,38 @@ export function generateInvoiceEmailHtml(params: {
 </body>
 </html>
 `;
+}
+
+/**
+ * Dispatches lead capture notification email to admin when a visitor unlocks resources or requests a quote
+ */
+export async function sendLeadNotificationEmail(params: SendLeadNotificationParams): Promise<EmailDispatchResult> {
+  const { lead, resourceTitle } = params;
+  const adminEmail = params.adminEmail || 'info@xgro.in';
+  const subject = `🔥 New Lead Unlocked: "${resourceTitle || lead.resource_title}" by ${lead.name}`;
+  const timestamp = new Date().toISOString();
+  const messageId = `lead-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+  console.log(`%c[XGRO Lead Capture Service]`, 'color: #10b981; font-weight: bold;');
+  console.log({
+    messageId,
+    leadName: lead.name,
+    email: lead.email,
+    phone: lead.phone,
+    business: lead.business_name || 'N/A',
+    resource: resourceTitle || lead.resource_title,
+    coupon: lead.coupon_code,
+    timestamp,
+    notifiedAdmin: adminEmail,
+  });
+
+  return {
+    success: true,
+    simulated: true,
+    recipient: adminEmail,
+    subject,
+    messageId,
+    timestamp,
+    details: `Lead for "${lead.name}" (${lead.email}) recorded and queued for admin notification.`,
+  };
 }
