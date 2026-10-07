@@ -643,18 +643,7 @@ export const initialProjects: ProjectModel[] = [
   }
 ];
 
-export const initialNotifications: NotificationModel[] = [
-  {
-    id: 'notif-r1',
-    client_id: 'cli-rock',
-    project_id: 'proj-rock',
-    title: 'Milestone 2 Completed: High-Fidelity UI Approved',
-    message: 'Figma interactive prototype approved by Rock Global. Core Next.js development and AI WhatsApp bot integration have commenced.',
-    link: '/client',
-    is_read: false,
-    created_at: '2026-02-28T14:00:00Z'
-  }
-];
+export const initialNotifications: NotificationModel[] = [];
 
 export const initialTestimonials: TestimonialModel[] = [
   {

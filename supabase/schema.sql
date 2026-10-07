@@ -255,6 +255,7 @@ CREATE TABLE IF NOT EXISTS public.notifications (
     message TEXT NOT NULL,
     link TEXT,
     is_read BOOLEAN DEFAULT false,
+    dedup_key TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 

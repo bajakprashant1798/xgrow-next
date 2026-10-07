@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import {
@@ -15,6 +15,12 @@ import {
   ExternalLink,
   ChevronDown,
   ArrowUp,
+  Clock,
+  Sparkles,
+  CheckCircle2,
+  AlertCircle,
+  Zap,
+  Trash2,
 } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
 import { Button } from '@/components/ui/button';
@@ -26,11 +32,37 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { getActiveClient, getActiveClientId } from '@/lib/client-auth';
-import { getNotifications, markAllNotificationsAsRead, getClients } from '@/lib/db';
+import { getActiveClient } from '@/lib/client-auth';
+import {
+  getNotifications,
+  markAllNotificationsAsRead,
+  markNotificationAsRead,
+  deleteNotification,
+  clearAllClientNotifications,
+  syncClientDueDatesNotifications,
+  subscribeToDataChanges,
+} from '@/lib/db';
 import { ClientModel, NotificationModel } from '@/lib/supabase/types';
 import { Logo } from '@/components/site/Logo';
 import { useAuth } from '@/lib/auth-context';
+
+function formatNotificationTime(dateStr?: string) {
+  if (!dateStr) return 'Recent';
+  try {
+    const diffMs = Date.now() - new Date(dateStr).getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+    if (diffSec < 60) return 'Just now';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDays = Math.floor(diffHr / 24);
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return new Date(dateStr).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+  } catch {
+    return 'Recent';
+  }
+}
 
 export default function ClientLayout({
   children,
@@ -44,7 +76,7 @@ export default function ClientLayout({
 
   const [activeClient, setActiveClient] = useState<ClientModel | null>(null);
   const [notifications, setNotifications] = useState<NotificationModel[]>([]);
-  const [unreadCount, setUnreadCount] = useState<number>(0);
+  const unreadCount = useMemo(() => notifications.filter((n) => !n.is_read).length, [notifications]);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [activeSection, setActiveSection] = useState<string>('dashboard');
 
@@ -106,28 +138,91 @@ export default function ClientLayout({
     if (isLoginPage) return;
 
     if (!isLoading && !user) {
-      router.replace('/login');
-      return;
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('xgro_current_auth_user') : null;
+      if (!stored) {
+        router.replace('/login');
+        return;
+      }
     }
+
+    let isMounted = true;
 
     async function load() {
       const client = await getActiveClient();
+      if (!isMounted) return;
       setActiveClient(client);
 
       if (client) {
-        const notifs = await getNotifications(client.id);
-        setNotifications(notifs);
-        setUnreadCount(notifs.filter((n) => !n.is_read).length);
+        const notifs = await getNotifications(client.id, client.email);
+        if (isMounted) {
+          setNotifications(notifs);
+        }
       }
     }
+
     load();
+
+    // One-time background due date check on mount
+    getActiveClient().then((c) => {
+      if (c && isMounted) {
+        syncClientDueDatesNotifications(c).then(() => {
+          if (isMounted) load();
+        });
+      }
+    });
+
+    const unsubscribe = subscribeToDataChanges(load);
+    const onFocus = () => {
+      if (isMounted) load();
+    };
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('storage', onFocus);
+    const interval = setInterval(load, 15000);
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('storage', onFocus);
+      clearInterval(interval);
+    };
   }, [isLoginPage, isLoading, user, router]);
 
   const handleMarkAllRead = async () => {
     if (activeClient) {
-      await markAllNotificationsAsRead(activeClient.id);
+      await markAllNotificationsAsRead(activeClient.id, activeClient.email);
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-      setUnreadCount(0);
+    }
+  };
+
+  const handleDeleteNotification = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    await deleteNotification(id);
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
+
+  const handleClearAll = async () => {
+    if (activeClient) {
+      await clearAllClientNotifications(activeClient.id, activeClient.email);
+      setNotifications([]);
+    }
+  };
+
+  const handleNotificationClick = async (notif: NotificationModel) => {
+    if (!notif.is_read) {
+      await markNotificationAsRead(notif.id);
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n))
+      );
+    }
+
+    if (notif.link) {
+      if (notif.link.includes('#')) {
+        const hash = notif.link.split('#')[1];
+        scrollToSection(hash);
+      } else {
+        router.push(notif.link);
+      }
     }
   };
 
@@ -242,41 +337,115 @@ export default function ClientLayout({
               >
                 <Bell className="h-4 w-4 text-foreground" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-cyan text-[9px] font-black text-slate-950 animate-pulse">
-                    {unreadCount}
+                  <span className="absolute -top-1.5 -right-1.5 flex h-4.5 min-w-[18px] px-1 items-center justify-center rounded-full bg-cyan text-[10px] font-black text-slate-950 shadow-md ring-2 ring-background z-20 animate-pulse">
+                    {unreadCount > 99 ? '99+' : unreadCount}
                   </span>
                 )}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80 rounded-2xl p-2 shadow-2xl border-border">
+            <DropdownMenuContent align="end" className="w-80 sm:w-96 rounded-2xl p-2 shadow-2xl border-border bg-card/95 backdrop-blur-xl">
               <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-                <span className="text-xs font-bold text-foreground">Project Updates</span>
-                {unreadCount > 0 && (
-                  <button
-                    onClick={handleMarkAllRead}
-                    className="text-[10px] text-cyan font-bold hover:underline"
-                  >
-                    Mark all read
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-foreground">Project Alerts & Updates</span>
+                  {unreadCount > 0 && (
+                    <span className="bg-cyan/15 text-cyan text-[10px] font-black px-2 py-0.5 rounded-full border border-cyan/30">
+                      {unreadCount} new
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={handleMarkAllRead}
+                      className="text-[11px] text-cyan font-bold hover:underline"
+                    >
+                      Mark all read
+                    </button>
+                  )}
+                  {notifications.length > 0 && (
+                    <button
+                      onClick={handleClearAll}
+                      className="text-[10px] text-muted-foreground hover:text-destructive hover:underline"
+                      title="Clear all notifications"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="max-h-72 overflow-y-auto divide-y divide-border py-1">
+              <div className="max-h-80 overflow-y-auto divide-y divide-border/60 py-1 space-y-0.5">
                 {notifications.length === 0 ? (
-                  <div className="p-4 text-center text-xs text-muted-foreground">
-                    No new notifications.
+                  <div className="p-6 text-center text-xs text-muted-foreground space-y-1">
+                    <Bell className="h-6 w-6 text-muted-foreground/40 mx-auto mb-2" />
+                    <p className="font-semibold text-foreground">No new notifications</p>
+                    <p className="text-[11px]">Due dates and project changes will alert here.</p>
                   </div>
                 ) : (
-                  notifications.map((n) => (
-                    <div key={n.id} className={`p-3 text-xs ${!n.is_read ? 'bg-cyan/5' : ''}`}>
-                      <div className="flex items-center justify-between font-bold text-foreground">
-                        <span>{n.title}</span>
-                        {!n.is_read && <span className="h-1.5 w-1.5 rounded-full bg-cyan" />}
+                  notifications.map((n) => {
+                    const isDueDate = n.type === 'due_date' || n.title.toLowerCase().includes('due') || n.title.toLowerCase().includes('delivery') || n.title.toLowerCase().includes('completion');
+                    const isInvoice = n.type === 'invoice' || n.title.toLowerCase().includes('invoice') || n.title.toLowerCase().includes('quotation');
+                    const isTimeline = n.type === 'service_timeline' || n.title.toLowerCase().includes('timeline') || n.title.toLowerCase().includes('scope');
+
+                    return (
+                      <div
+                        key={n.id}
+                        onClick={() => handleNotificationClick(n)}
+                        className={`group p-3 text-xs rounded-xl transition-all cursor-pointer hover:bg-surface/80 relative ${
+                          !n.is_read ? 'bg-cyan/5 border-l-2 border-cyan' : ''
+                        }`}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <div className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                            isDueDate
+                              ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                              : isInvoice
+                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                              : isTimeline
+                              ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
+                              : 'bg-cyan/15 text-cyan border border-cyan/30'
+                          }`}>
+                            {isDueDate ? (
+                              <Clock className="h-3.5 w-3.5" />
+                            ) : isInvoice ? (
+                              <FileText className="h-3.5 w-3.5" />
+                            ) : isTimeline ? (
+                              <Sparkles className="h-3.5 w-3.5" />
+                            ) : (
+                              <FolderKanban className="h-3.5 w-3.5" />
+                            )}
+                          </div>
+
+                          <div className="flex-1 min-w-0 pr-6">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-bold text-foreground text-[12px] truncate">
+                                {n.title}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground font-mono shrink-0">
+                                {formatNotificationTime(n.created_at)}
+                              </span>
+                            </div>
+                            <p className="mt-0.5 text-muted-foreground text-[11px] leading-relaxed line-clamp-2">
+                              {n.message}
+                            </p>
+                            {n.link && (
+                              <span className="mt-1 text-[10px] text-cyan font-semibold flex items-center gap-1 hover:underline">
+                                View details →
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Delete Action Button */}
+                          <button
+                            onClick={(e) => handleDeleteNotification(e, n.id)}
+                            className="opacity-0 group-hover:opacity-100 hover:text-destructive text-muted-foreground p-1 transition-opacity absolute right-2 top-3 rounded-md hover:bg-destructive/10"
+                            title="Delete notification"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
-                      <p className="mt-1 text-muted-foreground text-[11px] leading-relaxed">
-                        {n.message}
-                      </p>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </DropdownMenuContent>

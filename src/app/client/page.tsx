@@ -28,6 +28,7 @@ import {
   ShieldAlert,
   ArrowRight,
   Zap,
+  Trash2,
 } from 'lucide-react';
 import {
   Card,
@@ -44,8 +45,27 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { getActiveClient } from '@/lib/client-auth';
-import { getProjects, getTeamMembers, getPricingPlans, saveClient, subscribeToDataChanges } from '@/lib/db';
-import { ProjectModel, ClientModel, TeamMemberModel, PricingPlanModel, InvoiceDocumentModel } from '@/lib/supabase/types';
+import {
+  getProjects,
+  getTeamMembers,
+  getPricingPlans,
+  saveClient,
+  subscribeToDataChanges,
+  getNotifications,
+  syncClientDueDatesNotifications,
+  markAllNotificationsAsRead,
+  markNotificationAsRead,
+  deleteNotification,
+  clearAllClientNotifications,
+} from '@/lib/db';
+import {
+  ProjectModel,
+  ClientModel,
+  TeamMemberModel,
+  PricingPlanModel,
+  InvoiceDocumentModel,
+  NotificationModel,
+} from '@/lib/supabase/types';
 import { InvoiceViewModal } from '@/components/invoices/InvoiceViewModal';
 import { ClientServicesWidget } from '@/components/clients/ClientServicesWidget';
 import { getServicesForPlan } from '@/lib/client-services';
@@ -56,6 +76,7 @@ export default function ClientDashboardPage() {
   const [selectedProject, setSelectedProject] = useState<ProjectModel | null>(null);
   const [team, setTeam] = useState<TeamMemberModel[]>([]);
   const [pricingPlans, setPricingPlans] = useState<PricingPlanModel[]>([]);
+  const [notifications, setNotifications] = useState<NotificationModel[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Invoices Modal state
@@ -78,6 +99,9 @@ export default function ClientDashboardPage() {
       ]);
 
       if (currentClient) {
+        const notifs = await getNotifications(currentClient.id, currentClient.email);
+        setNotifications(notifs);
+
         // Strict client isolation: match by client_id OR matching email!
         const isolated = allProjects.filter(
           (p) =>
@@ -101,8 +125,24 @@ export default function ClientDashboardPage() {
   };
 
   useEffect(() => {
+    let isMounted = true;
     loadData();
-    return subscribeToDataChanges(loadData);
+
+    const unsubscribe = subscribeToDataChanges(() => {
+      if (isMounted) loadData();
+    });
+    const onFocus = () => {
+      if (isMounted) loadData();
+    };
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('storage', onFocus);
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('storage', onFocus);
+    };
   }, []);
 
   const handleSelectPlan = async (plan: PricingPlanModel) => {
@@ -134,6 +174,16 @@ export default function ClientDashboardPage() {
 
     toast.success('Your message has been dispatched to your dedicated Project Lead on WhatsApp and Email!');
     setSupportMessage('');
+  };
+
+  const scrollToSection = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+      if (typeof window !== 'undefined') {
+        window.history.replaceState(null, '', `#${id}`);
+      }
+    }
   };
 
   if (loading && !client) {
@@ -175,14 +225,36 @@ export default function ClientDashboardPage() {
       <div className="text-center py-16 space-y-4">
         <h2 className="text-2xl font-bold">Please log in to your Client Portal</h2>
         <Button asChild className="rounded-full">
-          <Link href="/client/login">Go to Login</Link>
+          <Link href="/login">Go to Login</Link>
         </Button>
       </div>
     );
   }
 
-  const isPendingApproval = client.status === 'pending_approval' || (clientProjects.length === 0 && client.status !== 'active');
-  const activeProj = selectedProject || clientProjects[0];
+  const fallbackProject: ProjectModel = {
+    id: `proj-${client.id}`,
+    client_id: client.id,
+    project_name: client.selected_plan
+      ? `${client.company_name} — ${client.selected_plan.split('(')[0].trim()}`
+      : `${client.company_name} Digital Workspace`,
+    service_name: client.selected_plan || 'Digital Marketing & Growth',
+    status: 'development',
+    progress_percentage: 25,
+    start_date: client.created_at ? new Date(client.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : 'Feb 2026',
+    expected_completion_date: 'Active Retainer',
+    project_value: 0,
+    assigned_employee_ids: [],
+    milestones: [
+      { id: 'm1', project_id: `proj-${client.id}`, title: 'Strategy & Requirements Alignment', status: 'completed', order_index: 1 },
+      { id: 'm2', project_id: `proj-${client.id}`, title: 'Active Deliverables Implementation', status: 'in_progress', order_index: 2 },
+      { id: 'm3', project_id: `proj-${client.id}`, title: 'Quality Assurance & Delivery', status: 'pending', order_index: 3 },
+    ],
+    updates: [],
+    invoices: [],
+  };
+
+  const isPendingApproval = client.status === 'pending_approval';
+  const activeProj = selectedProject || clientProjects[0] || (client.status === 'active' ? fallbackProject : null);
   const completedMilestones = (activeProj?.milestones || []).filter((m) => m.status === 'completed').length;
   const totalMilestones = (activeProj?.milestones || []).length;
 
@@ -453,6 +525,201 @@ export default function ClientDashboardPage() {
       </div>
 
       <div className="space-y-8">
+        {/* 1.5 Live Project Alerts & Due Date Notifications Stream */}
+        {notifications.length > 0 && (
+          <div className="rounded-3xl border border-cyan/30 bg-gradient-to-br from-card via-surface/80 to-card p-5 sm:p-6 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/70">
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 rounded-full bg-cyan/15 text-cyan flex items-center justify-center border border-cyan/30 shrink-0">
+                  <Bell className="h-4 w-4 text-cyan" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-extrabold text-foreground tracking-tight">
+                      Live Project Alerts & Deadline Notifications
+                    </h3>
+                    {notifications.some((n) => !n.is_read) && (
+                      <span className="bg-cyan text-slate-950 text-[9px] font-black uppercase px-2 py-0.5 rounded-full animate-pulse">
+                        {notifications.filter((n) => !n.is_read).length} New
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Instant updates for individual service finish dates, milestones & administrative changes.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {notifications.some((n) => !n.is_read) && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      if (client) {
+                        await markAllNotificationsAsRead(client.id, client.email);
+                        setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+                        toast.success('All project alerts marked as read');
+                      }
+                    }}
+                    className="rounded-full text-xs font-bold h-8 border-border bg-surface/60 hover:bg-surface text-cyan"
+                  >
+                    <Check className="h-3.5 w-3.5 mr-1" /> Mark All Read
+                  </Button>
+                )}
+                {notifications.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={async () => {
+                      if (client) {
+                        await clearAllClientNotifications(client.id, client.email);
+                        setNotifications([]);
+                        toast.success('Cleared notifications');
+                      }
+                    }}
+                    className="rounded-full text-xs text-muted-foreground hover:text-destructive h-8 px-3"
+                  >
+                    Clear All
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {notifications.slice(0, 6).map((notif) => {
+                const isDueDate =
+                  notif.type === 'due_date' ||
+                  notif.title.toLowerCase().includes('due') ||
+                  notif.title.toLowerCase().includes('delivery') ||
+                  notif.title.toLowerCase().includes('completion') ||
+                  notif.title.toLowerCase().includes('target');
+                const isInvoice =
+                  notif.type === 'invoice' ||
+                  notif.title.toLowerCase().includes('invoice') ||
+                  notif.title.toLowerCase().includes('quotation');
+                const isTimeline =
+                  notif.type === 'service_timeline' ||
+                  notif.title.toLowerCase().includes('timeline') ||
+                  notif.title.toLowerCase().includes('scope');
+
+                return (
+                  <div
+                    key={notif.id}
+                    onClick={async () => {
+                      if (!notif.is_read) {
+                        await markNotificationAsRead(notif.id);
+                        setNotifications((prev) =>
+                          prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n))
+                        );
+                      }
+                      if (notif.link) {
+                        if (notif.link.includes('#')) {
+                          scrollToSection(notif.link.split('#')[1]);
+                        }
+                      }
+                    }}
+                    className={`group p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between relative ${
+                      !notif.is_read
+                        ? isDueDate
+                          ? 'border-amber-400/50 bg-amber-400/5 hover:bg-amber-400/10 shadow-sm'
+                          : isInvoice
+                          ? 'border-emerald-500/50 bg-emerald-500/5 hover:bg-emerald-500/10 shadow-sm'
+                          : 'border-cyan/50 bg-cyan/5 hover:bg-cyan/10 shadow-sm'
+                        : 'border-border bg-card/60 hover:bg-surface/60 opacity-85 hover:opacity-100'
+                    }`}
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <div className="flex items-center gap-1.5">
+                          {isDueDate ? (
+                            <Clock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                          ) : isInvoice ? (
+                            <FileText className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                          ) : isTimeline ? (
+                            <Sparkles className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+                          ) : (
+                            <FolderKanban className="h-3.5 w-3.5 text-cyan shrink-0" />
+                          )}
+                          <span
+                            className={`text-[9.5px] font-mono font-bold uppercase tracking-wider ${
+                              isDueDate
+                                ? 'text-amber-400'
+                                : isInvoice
+                                ? 'text-emerald-400'
+                                : isTimeline
+                                ? 'text-indigo-400'
+                                : 'text-cyan'
+                            }`}
+                          >
+                            {isDueDate
+                              ? 'Timeline Alert'
+                              : isInvoice
+                              ? 'Billing Update'
+                              : isTimeline
+                              ? 'Scope Update'
+                              : 'Project Feed'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {!notif.is_read && (
+                            <span className="h-2 w-2 rounded-full bg-cyan animate-pulse shrink-0" />
+                          )}
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              await deleteNotification(notif.id);
+                              setNotifications((prev) => prev.filter((n) => n.id !== notif.id));
+                              toast.success('Notification removed');
+                            }}
+                            className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-opacity"
+                            title="Delete notification"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <h4 className="text-xs font-extrabold text-foreground leading-snug group-hover:text-cyan transition-colors pr-2">
+                        {notif.title}
+                      </h4>
+
+                      <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                        {notif.message}
+                      </p>
+                    </div>
+
+                    <div className="pt-2 mt-2 border-t border-border/50 flex items-center justify-between text-[10px]">
+                      {notif.link ? (
+                        <span className="text-cyan font-bold flex items-center gap-1">
+                          <span>Open Details</span>
+                          <ArrowRight className="h-3 w-3 group-hover:translate-x-0.5 transition-transform" />
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">Client Workspace</span>
+                      )}
+                      {!notif.is_read && (
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            await markNotificationAsRead(notif.id);
+                            setNotifications((prev) =>
+                              prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n))
+                            );
+                          }}
+                          className="text-muted-foreground hover:text-cyan font-medium hover:underline text-[10px]"
+                        >
+                          Mark read
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* 2. Main Live Progress Gauge Card */}
         <Card className="rounded-3xl border-border bg-card/60 backdrop-blur-sm p-6 sm:p-8 shadow-sm">
           <div className="space-y-6">

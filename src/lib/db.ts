@@ -35,7 +35,13 @@ import {
 } from './seed-data';
 
 import { initialResources, ResourceItem, ResourceType } from './resourcesData';
-import { getServicesForPlan } from './client-services';
+import {
+  getServicesForPlan,
+  getServiceDefinition,
+  formatTimelineDate,
+  calculateTimelineStatus,
+  getDefaultDueDateForService,
+} from './client-services';
 
 import { getSupabaseClient } from './supabase/client';
 import { compressDataUrl, compressImageFile } from './image-compressor';
@@ -78,6 +84,8 @@ if (typeof window !== 'undefined') {
 
 // Simple event dispatcher for real-time reactivity across components
 const listeners = new Set<() => void>();
+let notifyTimeout: any = null;
+let isNotifying = false;
 
 export function subscribeToDataChanges(callback: () => void) {
   listeners.add(callback);
@@ -88,13 +96,22 @@ export function subscribeToDataChanges(callback: () => void) {
 
 function notifyDataChanged() {
   if (typeof window !== 'undefined') {
-    listeners.forEach((cb) => {
+    if (isNotifying) return;
+    if (notifyTimeout) clearTimeout(notifyTimeout);
+    notifyTimeout = setTimeout(() => {
+      isNotifying = true;
       try {
-        cb();
-      } catch (err) {
-        console.warn('Error executing store subscriber callback', err);
+        listeners.forEach((cb) => {
+          try {
+            cb();
+          } catch (err) {
+            console.warn('Error executing store subscriber callback', err);
+          }
+        });
+      } finally {
+        isNotifying = false;
       }
-    });
+    }, 50);
   }
 }
 
@@ -671,6 +688,7 @@ export async function saveClient(client: Partial<ClientModel> & { name: string; 
   const existingIdx = current.findIndex(
     (c) => (client.id && c.id === client.id) || c.email.trim().toLowerCase() === cleanEmail
   );
+  const previousClientSnapshot: ClientModel | null = existingIdx >= 0 ? JSON.parse(JSON.stringify(current[existingIdx])) : null;
   let savedClient: ClientModel;
 
   if (existingIdx >= 0) {
@@ -803,6 +821,70 @@ export async function saveClient(client: Partial<ClientModel> & { name: string; 
         notes: savedClient.notes,
       }),
     }).catch(() => {});
+  }
+
+  // Auto-notify client on portal about updated services & timelines
+  if (savedClient.id) {
+    if (previousClientSnapshot) {
+      const prevSchedules = previousClientSnapshot.service_schedules || {};
+      const nextSchedules = client.service_schedules || savedClient.service_schedules || {};
+      const allSvcIds = Array.from(new Set([...Object.keys(prevSchedules), ...Object.keys(nextSchedules)]));
+
+      let individualNotifsCreated = 0;
+      for (const sId of allSvcIds) {
+        const prevS = prevSchedules[sId];
+        const nextS = nextSchedules[sId];
+        const sDef = getServiceDefinition(sId);
+
+        if (nextS) {
+          // A. Status Changed to Completed
+          if (nextS.status === 'completed' && prevS?.status !== 'completed') {
+            await addNotification({
+              client_id: savedClient.id,
+              client_email: savedClient.email,
+              type: 'due_date',
+              title: `✓ Deliverable Completed: ${sDef.shortName}`,
+              message: `${sDef.name} sprint has been delivered & launched for your project.`,
+              link: '/client#services',
+              is_read: false,
+              dedup_key: `due_completed_${savedClient.id}_${sId}_${Date.now()}`,
+            });
+            individualNotifsCreated++;
+          }
+          // B. Due Date Changed
+          else if (nextS.due_date && (!prevS || prevS.due_date !== nextS.due_date)) {
+            await addNotification({
+              client_id: savedClient.id,
+              client_email: savedClient.email,
+              type: 'service_timeline',
+              title: `📅 Due Date Updated: ${sDef.shortName}`,
+              message: `Target completion date for ${sDef.name} has been updated to ${formatTimelineDate(nextS.due_date)}.`,
+              link: '/client#services',
+              is_read: false,
+              dedup_key: `schedule_changed_${savedClient.id}_${sId}_${nextS.due_date}`,
+            });
+            individualNotifsCreated++;
+          }
+        }
+      }
+
+      // If general plan or services changed without individual due date alerts
+      if (individualNotifsCreated === 0) {
+        const hasServicesChanged = client.services && JSON.stringify(previousClientSnapshot.services) !== JSON.stringify(client.services);
+        const hasPlanChanged = client.selected_plan && previousClientSnapshot.selected_plan !== client.selected_plan;
+        if (hasServicesChanged || hasPlanChanged) {
+          await addNotification({
+            client_id: savedClient.id,
+            client_email: savedClient.email,
+            type: 'service_timeline',
+            title: 'Service Scope & Plan Updated',
+            message: `Admin updated your active deliverable package scope. Check your roadmap in the portal.`,
+            link: '/client#services',
+            is_read: false,
+          });
+        }
+      }
+    }
   }
 
   return savedClient;
@@ -1175,6 +1257,28 @@ export async function saveProject(project: Partial<ProjectModel> & { project_nam
     }
   }
 
+  // Auto-notify client on portal about project progress, status, or date changes
+  if (savedProject.client_id) {
+    if (existingIdx >= 0) {
+      const old = current[existingIdx];
+      const hasProgressChanged = old.progress_percentage !== savedProject.progress_percentage;
+      const hasStatusChanged = old.status !== savedProject.status;
+      const hasDueChanged = old.expected_completion_date !== savedProject.expected_completion_date;
+
+      if (hasProgressChanged || hasStatusChanged || hasDueChanged) {
+        await addNotification({
+          client_id: savedProject.client_id,
+          project_id: savedProject.id,
+          type: 'project_update',
+          title: `Project Progress Updated (${savedProject.progress_percentage}%)`,
+          message: `Workspace "${savedProject.project_name}" updated — Stage: ${savedProject.status.replace('_', ' ').toUpperCase()} (${savedProject.progress_percentage}% completed). ${savedProject.expected_completion_date ? `Target Delivery: ${savedProject.expected_completion_date}` : ''}`,
+          link: '/client',
+          is_read: false,
+        });
+      }
+    }
+  }
+
   return savedProject;
 }
 
@@ -1502,6 +1606,22 @@ export async function toggleMilestoneStatus(
     }
   }
 
+  // Auto-notify client on portal about milestone change
+  if (project.client_id) {
+    const updatedMilestone = project.milestones.find((m) => m.id === milestoneId);
+    if (updatedMilestone) {
+      await addNotification({
+        client_id: project.client_id,
+        project_id: projectId,
+        type: 'project_update',
+        title: `Milestone Status: ${updatedMilestone.title}`,
+        message: `Milestone "${updatedMilestone.title}" has been updated to ${newStatus.replace('_', ' ').toUpperCase()} (${project.progress_percentage}% overall progress).`,
+        link: '/client#milestones',
+        is_read: false,
+      });
+    }
+  }
+
   return project;
 }
 
@@ -1556,6 +1676,22 @@ export async function editMilestone(
       }
     } catch (e) {
       console.warn('Error updating milestone in Supabase:', e);
+    }
+  }
+
+  // Auto-notify client on milestone edits
+  if (project.client_id && updates.status) {
+    const updatedMilestone = project.milestones.find((m) => m.id === milestoneId);
+    if (updatedMilestone) {
+      await addNotification({
+        client_id: project.client_id,
+        project_id: projectId,
+        type: 'project_update',
+        title: `Milestone Updated: ${updatedMilestone.title}`,
+        message: `Milestone status changed to ${updates.status.replace('_', ' ').toUpperCase()} (${project.progress_percentage}% overall project progress).`,
+        link: '/client#milestones',
+        is_read: false,
+      });
     }
   }
 
@@ -1631,6 +1767,18 @@ export async function addMilestone(projectId: string, title: string, description
     } catch (e) {
       console.warn('Error inserting milestone in Supabase:', e);
     }
+  }
+
+  if (project.client_id) {
+    await addNotification({
+      client_id: project.client_id,
+      project_id: projectId,
+      type: 'project_update',
+      title: `New Deliverable Milestone Added`,
+      message: `A new deliverable milestone "${title}" was scheduled for your project roadmap.`,
+      link: '/client#milestones',
+      is_read: false,
+    });
   }
 
   return project;
@@ -1902,6 +2050,21 @@ export async function addProjectInvoice(
     }
   }
 
+  // Auto-notify client on portal about newly created invoice/quotation
+  if (invoice.client_id) {
+    const docTypeLabel = invoice.type === 'quotation' ? 'Quotation' : 'Invoice';
+    await addNotification({
+      client_id: invoice.client_id,
+      client_email: invoice.client_email,
+      project_id: projectId,
+      type: 'invoice',
+      title: `New ${docTypeLabel} Issued: #${invoice.reference_number || 'DOC'}`,
+      message: `${invoice.title} for ₹${Number(invoice.amount).toLocaleString('en-IN')} has been generated. Due: ${invoice.due_date || 'Upon Receipt'}.`,
+      link: '/client#billing',
+      is_read: false,
+    });
+  }
+
   return project;
 }
 
@@ -1936,6 +2099,23 @@ export async function updateProjectInvoice(
     }
   }
 
+  // Auto-notify client about invoice changes
+  if (project.client_id && (updates.status || updates.amount || updates.due_date)) {
+    const targetInv = project.invoices.find((i) => i.id === invoiceId);
+    if (targetInv) {
+      const docTypeLabel = targetInv.type === 'quotation' ? 'Quotation' : 'Invoice';
+      await addNotification({
+        client_id: project.client_id,
+        project_id: projectId,
+        type: 'invoice',
+        title: `${docTypeLabel} #${targetInv.reference_number || targetInv.id} Updated`,
+        message: `Status: ${(targetInv.status || 'Updated').toUpperCase()} · Amount: ₹${Number(targetInv.amount).toLocaleString('en-IN')} · Due: ${targetInv.due_date || 'Upon Receipt'}.`,
+        link: '/client#billing',
+        is_read: false,
+      });
+    }
+  }
+
   return project;
 }
 
@@ -1964,43 +2144,353 @@ export async function deleteProjectInvoice(
 
 
 // ==============================================================================
-// NOTIFICATIONS
+// NOTIFICATIONS & CLIENT DUE DATE ALERTS (DATABASE-BACKED VIA /api/notifications)
 // ==============================================================================
-export async function getNotifications(clientId?: string): Promise<NotificationModel[]> {
-  const all = getLocalItem<NotificationModel[]>(STORAGE_KEYS.NOTIFICATIONS, initialNotifications);
-  if (clientId) {
-    return all.filter(n => n.client_id === clientId || !n.client_id);
+const notifMemoryCache: Record<string, { data: NotificationModel[]; timestamp: number } | undefined> = {};
+const notifInflightPromises: Record<string, Promise<NotificationModel[]>> = {};
+const lastDueDateSyncMap: Record<string, number> = {};
+
+function invalidateNotifCache(clientId?: string, clientEmail?: string) {
+  if (clientId || clientEmail) {
+    const key = `${clientId || ''}_${(clientEmail || '').trim().toLowerCase()}`;
+    delete notifMemoryCache[key];
+    delete notifMemoryCache['global'];
+  } else {
+    for (const k in notifMemoryCache) delete notifMemoryCache[k];
   }
-  return all;
 }
 
-export async function addNotification(notification: Omit<NotificationModel, 'id' | 'created_at'>): Promise<NotificationModel> {
-  const current = getLocalItem<NotificationModel[]>(STORAGE_KEYS.NOTIFICATIONS, initialNotifications);
+export async function getNotifications(clientId?: string, clientEmail?: string): Promise<NotificationModel[]> {
+  const cleanEmail = clientEmail?.trim().toLowerCase();
+  const cacheKey = clientId || cleanEmail ? `${clientId || ''}_${cleanEmail || ''}` : 'global';
+  const now = Date.now();
+
+  // 1. Check in-memory fresh cache (15s TTL)
+  const cached = notifMemoryCache[cacheKey];
+  if (cached && now - cached.timestamp < 15000) {
+    return cached.data;
+  }
+
+  // 2. Reuse in-flight fetch promise if one is already pending
+  const existingPromise = notifInflightPromises[cacheKey];
+  if (existingPromise) {
+    return existingPromise;
+  }
+
+  const fetchPromise = (async () => {
+    // A. Fetch from database API
+    if (typeof window !== 'undefined') {
+      try {
+        const params = new URLSearchParams();
+        if (clientId) params.set('clientId', clientId);
+        if (cleanEmail) params.set('clientEmail', cleanEmail);
+        const res = await fetch(`/api/notifications?${params.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.notifications)) {
+            setLocalItemSilent(STORAGE_KEYS.NOTIFICATIONS, data.notifications);
+            notifMemoryCache[cacheKey] = { data: data.notifications, timestamp: Date.now() };
+            return data.notifications;
+          }
+        }
+      } catch {}
+    }
+
+    // B. Fallback to local cache
+    const all = getLocalItem<NotificationModel[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+    const filtered = (clientId || cleanEmail)
+      ? all.filter((n) => {
+          if (n.client_id && clientId && n.client_id === clientId) return true;
+          if (n.client_email && cleanEmail && n.client_email.toLowerCase() === cleanEmail) return true;
+          return false;
+        })
+      : all;
+
+    notifMemoryCache[cacheKey] = { data: filtered, timestamp: Date.now() };
+    return filtered;
+  })();
+
+  notifInflightPromises[cacheKey] = fetchPromise;
+  try {
+    const result = await fetchPromise;
+    return result;
+  } finally {
+    delete notifInflightPromises[cacheKey];
+  }
+}
+
+export async function addNotification(
+  notification: Omit<NotificationModel, 'id' | 'created_at'> & { id?: string; created_at?: string }
+): Promise<NotificationModel> {
   const newNotif: NotificationModel = {
     ...notification,
-    id: `notif-${Date.now()}`,
-    created_at: new Date().toISOString(),
+    id: notification.id || `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    created_at: notification.created_at || new Date().toISOString(),
+    is_read: notification.is_read ?? false,
   };
+
+  invalidateNotifCache(newNotif.client_id, newNotif.client_email);
+
+  // 1. Persist to server database API
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notification: newNotif }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.notification) {
+          const returnedNotif = data.notification;
+          const current = getLocalItem<NotificationModel[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+          if (!current.some((n) => n.id === returnedNotif.id)) {
+            current.unshift(returnedNotif);
+            setLocalItemSilent(STORAGE_KEYS.NOTIFICATIONS, current);
+          }
+          return returnedNotif;
+        }
+      }
+    } catch {}
+  }
+
+  // 2. Fallback cache with deduplication
+  const current = getLocalItem<NotificationModel[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+  if (newNotif.dedup_key) {
+    const existing = current.find(
+      (n) =>
+        n.dedup_key === newNotif.dedup_key &&
+        (n.client_id === newNotif.client_id || n.client_email === newNotif.client_email)
+    );
+    if (existing) return existing;
+  }
   current.unshift(newNotif);
   setLocalItem(STORAGE_KEYS.NOTIFICATIONS, current);
   return newNotif;
 }
 
 export async function markNotificationAsRead(id: string): Promise<void> {
-  const current = getLocalItem<NotificationModel[]>(STORAGE_KEYS.NOTIFICATIONS, initialNotifications);
-  const updated = current.map(n => n.id === id ? { ...n, is_read: true } : n);
-  setLocalItem(STORAGE_KEYS.NOTIFICATIONS, updated);
+  invalidateNotifCache();
+  // 1. Update local cache immediately
+  const current = getLocalItem<NotificationModel[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+  const updated = current.map((n) => (n.id === id ? { ...n, is_read: true } : n));
+  setLocalItemSilent(STORAGE_KEYS.NOTIFICATIONS, updated);
+
+  // 2. Persist to database
+  if (typeof window !== 'undefined') {
+    try {
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'mark_read', id }),
+      });
+    } catch {}
+  }
 }
 
-export async function markAllNotificationsAsRead(clientId?: string): Promise<void> {
-  const current = getLocalItem<NotificationModel[]>(STORAGE_KEYS.NOTIFICATIONS, initialNotifications);
-  const updated = current.map(n => {
-    if (!clientId || n.client_id === clientId) {
+export async function markAllNotificationsAsRead(clientId?: string, clientEmail?: string): Promise<void> {
+  invalidateNotifCache(clientId, clientEmail);
+  const cleanEmail = clientEmail?.trim().toLowerCase();
+  const current = getLocalItem<NotificationModel[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+  const updated = current.map((n) => {
+    if (
+      (!clientId && !cleanEmail) ||
+      (clientId && n.client_id === clientId) ||
+      (cleanEmail && n.client_email?.toLowerCase() === cleanEmail)
+    ) {
       return { ...n, is_read: true };
     }
     return n;
   });
-  setLocalItem(STORAGE_KEYS.NOTIFICATIONS, updated);
+  setLocalItemSilent(STORAGE_KEYS.NOTIFICATIONS, updated);
+
+  // Persist to database
+  if (typeof window !== 'undefined') {
+    try {
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'mark_all_read', clientId, clientEmail: cleanEmail }),
+      });
+    } catch {}
+  }
+}
+
+export async function deleteNotification(id: string): Promise<void> {
+  invalidateNotifCache();
+  const current = getLocalItem<NotificationModel[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+  const updated = current.filter((n) => n.id !== id);
+  setLocalItemSilent(STORAGE_KEYS.NOTIFICATIONS, updated);
+
+  if (typeof window !== 'undefined') {
+    try {
+      await fetch(`/api/notifications?id=${id}`, {
+        method: 'DELETE',
+      });
+    } catch {}
+  }
+}
+
+export async function clearAllClientNotifications(clientId?: string, clientEmail?: string): Promise<void> {
+  invalidateNotifCache(clientId, clientEmail);
+  const cleanEmail = clientEmail?.trim().toLowerCase();
+  const current = getLocalItem<NotificationModel[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+  const updated = current.filter((n) => {
+    if (clientId && n.client_id === clientId) return false;
+    if (cleanEmail && n.client_email?.toLowerCase() === cleanEmail) return false;
+    return true;
+  });
+  setLocalItemSilent(STORAGE_KEYS.NOTIFICATIONS, updated);
+
+  if (typeof window !== 'undefined') {
+    try {
+      const params = new URLSearchParams();
+      if (clientId) params.set('clientId', clientId);
+      if (cleanEmail) params.set('clientEmail', cleanEmail);
+      await fetch(`/api/notifications?${params.toString()}`, {
+        method: 'DELETE',
+      });
+    } catch {}
+  }
+}
+
+/**
+ * Evaluates a client's individual service delivery due dates and creates timely in-portal alerts
+ * with deterministic deduplication so notifications NEVER repeat.
+ */
+export async function syncClientDueDatesNotifications(client: ClientModel): Promise<NotificationModel[]> {
+  if (!client || !client.id) return [];
+  const clientKey = `${client.id}_${client.email || ''}`;
+  const now = Date.now();
+  // Throttle sync evaluation to at most once per 60 seconds per client
+  if (lastDueDateSyncMap[clientKey] && now - lastDueDateSyncMap[clientKey] < 60000) {
+    return [];
+  }
+  lastDueDateSyncMap[clientKey] = now;
+
+  const existingNotifs = await getNotifications(client.id, client.email);
+  const activeServiceIds =
+    client.services && client.services.length > 0
+      ? client.services
+      : getServicesForPlan(client.selected_plan);
+  const schedules = client.service_schedules || {};
+  const addedNotifs: NotificationModel[] = [];
+
+  for (const sId of activeServiceIds) {
+    const sDef = getServiceDefinition(sId);
+    const sched = schedules[sId];
+    const dueDate =
+      sched?.due_date ||
+      getDefaultDueDateForService(
+        sId,
+        client.created_at ? new Date(client.created_at) : new Date()
+      );
+    const status = sched?.status || (client.status === 'active' ? 'in_progress' : 'pending');
+    const timeline = calculateTimelineStatus(dueDate, status);
+    const clientKey = client.id || client.email;
+
+    // 1. Service Completed — automatically clean up old pending deadline alerts and post completion badge
+    if (status === 'completed') {
+      // Clean up past pending alerts for this service
+      const pastAlerts = existingNotifs.filter(
+        (n) =>
+          (n.dedup_key?.startsWith(`due_soon_${clientKey}_${sId}`) ||
+            n.dedup_key?.startsWith(`due_today_${clientKey}_${sId}`) ||
+            n.dedup_key?.startsWith(`due_overdue_${clientKey}_${sId}`))
+      );
+      for (const old of pastAlerts) {
+        deleteNotification(old.id).catch(() => {});
+      }
+
+      const dedupKey = `due_completed_${clientKey}_${sId}`;
+      const alreadyExists = existingNotifs.some(
+        (n) => n.dedup_key === dedupKey || (n.title.includes(sDef.shortName) && (n.title.includes('Delivered') || n.title.includes('Completed')))
+      );
+      if (!alreadyExists) {
+        const notif = await addNotification({
+          client_id: client.id,
+          client_email: client.email,
+          dedup_key: dedupKey,
+          type: 'due_date',
+          title: `✓ Deliverable Completed: ${sDef.shortName}`,
+          message: `${sDef.name} sprint has been delivered & launched for your project.`,
+          link: '/client#services',
+          is_read: false,
+        });
+        addedNotifs.push(notif);
+      }
+      continue;
+    }
+
+    // 2. Due Soon (Comes before 3 days of the due date and stays active until completed)
+    if (timeline.daysRemaining <= 3 && timeline.daysRemaining > 0) {
+      const dedupKey = `due_soon_${clientKey}_${sId}`;
+      const alreadyExists = existingNotifs.some(
+        (n) => n.dedup_key === dedupKey || (n.title.includes(sDef.shortName) && n.title.includes('Approaching'))
+      );
+      if (!alreadyExists) {
+        const notif = await addNotification({
+          client_id: client.id,
+          client_email: client.email,
+          dedup_key: dedupKey,
+          type: 'due_date',
+          title: `⏳ Target Delivery Approaching: ${sDef.shortName}`,
+          message: `${sDef.name} is scheduled for completion on ${formatTimelineDate(dueDate)} (${timeline.daysRemaining} day${timeline.daysRemaining > 1 ? 's' : ''} left). Sprint is on track.`,
+          link: '/client#services',
+          is_read: false,
+        });
+        addedNotifs.push(notif);
+      }
+      continue;
+    }
+
+    // 3. Due Today (Stays active until completed)
+    if (timeline.isToday) {
+      const todayDateStr = new Date().toISOString().split('T')[0];
+      const dedupKey = `due_today_${clientKey}_${sId}_${todayDateStr}`;
+      const alreadyExists = existingNotifs.some(
+        (n) => n.dedup_key === dedupKey || (n.title.includes(sDef.shortName) && n.title.includes('Due Today') && n.created_at.startsWith(todayDateStr))
+      );
+      if (!alreadyExists) {
+        const notif = await addNotification({
+          client_id: client.id,
+          client_email: client.email,
+          dedup_key: dedupKey,
+          type: 'due_date',
+          title: `⚡ Target Completion Today: ${sDef.shortName}`,
+          message: `Your ${sDef.name} milestone is scheduled for target completion today (${formatTimelineDate(dueDate)}). Team is in final deployment.`,
+          link: '/client#services',
+          is_read: false,
+        });
+        addedNotifs.push(notif);
+      }
+      continue;
+    }
+
+    // 4. Overdue Notice (Stays active until marked completed)
+    if (timeline.isOverdue) {
+      const dedupKey = `due_overdue_${clientKey}_${sId}`;
+      const overdueDays = Math.abs(timeline.daysRemaining);
+      const alreadyExists = existingNotifs.some(
+        (n) => n.dedup_key === dedupKey || (n.title.includes(sDef.shortName) && n.title.includes('Review Notice'))
+      );
+      if (!alreadyExists) {
+        const notif = await addNotification({
+          client_id: client.id,
+          client_email: client.email,
+          dedup_key: dedupKey,
+          type: 'due_date',
+          title: `⚠️ Milestone Review Notice: ${sDef.shortName}`,
+          message: `${sDef.name} is in final quality assurance & review (${overdueDays} day${overdueDays > 1 ? 's' : ''} past initial sprint estimate). Engineering lead is finalizing polish.`,
+          link: '/client#services',
+          is_read: false,
+        });
+        addedNotifs.push(notif);
+      }
+    }
+  }
+
+  return addedNotifs;
 }
 
 // ==============================================================================

@@ -216,7 +216,10 @@ export interface NotificationModel {
   id: string;
   user_id?: string;
   client_id?: string;
+  client_email?: string;
   project_id?: string;
+  dedup_key?: string;
+  type?: 'due_date' | 'project_update' | 'invoice' | 'service_timeline' | 'system';
   title: string;
   message: string;
   link?: string;

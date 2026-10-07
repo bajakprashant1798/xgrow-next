@@ -39,10 +39,27 @@ export async function getActiveClient(): Promise<ClientModel | null> {
       if (authStored) {
         const authUser = JSON.parse(authStored);
         if (authUser?.email) {
+          const cleanEmail = authUser.email.toLowerCase().trim();
           const matched = clients.find(
-            (c) => c.email.toLowerCase() === authUser.email.toLowerCase() || (authUser.id && c.id === authUser.id)
+            (c) =>
+              c.email.toLowerCase().trim() === cleanEmail ||
+              (authUser.id && c.id === authUser.id)
           );
           if (matched) return matched;
+
+          if (authUser.role === 'client') {
+            const newClient: ClientModel = {
+              id: authUser.id || `client-${Date.now()}`,
+              name: authUser.name || cleanEmail.split('@')[0],
+              email: cleanEmail,
+              company_name: authUser.company_name || `${authUser.name || cleanEmail.split('@')[0]}'s Workspace`,
+              status: authUser.status || 'pending_approval',
+              created_at: new Date().toISOString(),
+              services: [],
+              service_schedules: {},
+            };
+            return newClient;
+          }
         }
       }
     } catch (e) {}

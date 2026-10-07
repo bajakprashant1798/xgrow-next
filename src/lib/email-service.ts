@@ -246,3 +246,214 @@ export async function sendLeadNotificationEmail(params: SendLeadNotificationPara
     details: `Lead for "${lead.name}" (${lead.email}) recorded and queued for admin notification.`,
   };
 }
+
+export interface SendDueDateReminderParams {
+  client: ClientModel | { id?: string; name: string; email: string; company_name?: string };
+  serviceName: string;
+  dueDate: string;
+  daysRemaining: number;
+  status: 'pending' | 'in_progress' | 'completed' | 'ongoing';
+  notes?: string;
+  recipientEmail?: string;
+}
+
+/**
+ * Dispatches or queues an automated Service Due Date / Delivery Countdown notification email to client
+ */
+export async function sendDueDateReminderEmail(params: SendDueDateReminderParams): Promise<EmailDispatchResult> {
+  const { client, serviceName, dueDate, daysRemaining, status, notes, recipientEmail } = params;
+  const targetEmail = recipientEmail || client.email;
+  const clientName = client.name || 'Valued Client';
+  const timestamp = new Date().toISOString();
+  const messageId = `due-notif-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+  let timingLabel = `${daysRemaining} days remaining`;
+  let subjectPrefix = '⏳ Target Delivery Approaching';
+  if (status === 'completed') {
+    timingLabel = 'Delivered & Completed';
+    subjectPrefix = '✓ Deliverable Ready';
+  } else if (daysRemaining === 0) {
+    timingLabel = 'Due Today';
+    subjectPrefix = '⚡ Delivery Milestone Today';
+  } else if (daysRemaining < 0) {
+    timingLabel = `${Math.abs(daysRemaining)} days in final review`;
+    subjectPrefix = '⚠️ Delivery Status Update';
+  }
+
+  const subject = `${subjectPrefix}: "${serviceName}" for ${client.company_name || clientName}`;
+
+  // Check if live Resend API key is present
+  const resendApiKey = typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_RESEND_API_KEY || process.env?.RESEND_API_KEY : undefined;
+
+  if (resendApiKey && resendApiKey.startsWith('re_')) {
+    try {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: 'XGRO Project Delivery <updates@xgro.in>',
+          to: [targetEmail],
+          subject,
+          html: `
+            <div style="font-family: sans-serif; background: #0B1120; color: #F8FAFC; padding: 32px; border-radius: 16px;">
+              <h2 style="color: #06B6D4;">${subjectPrefix}</h2>
+              <p>Hi ${clientName},</p>
+              <p>Here is your delivery milestone update for <strong>${serviceName}</strong>:</p>
+              <div style="background: #1E293B; padding: 16px; border-radius: 12px; margin: 20px 0;">
+                <p style="margin: 0; font-size: 16px;"><strong>Target Finish Date:</strong> ${dueDate}</p>
+                <p style="margin: 8px 0 0 0; color: #06B6D4; font-weight: bold;">Status: ${timingLabel}</p>
+                ${notes ? `<p style="margin: 8px 0 0 0; font-size: 13px; color: #94A3B8;"><em>"${notes}"</em></p>` : ''}
+              </div>
+              <p>You can track real-time progress and milestones in your <a href="https://xgro.in/client#services" style="color: #06B6D4;">Client Portal</a>.</p>
+            </div>
+          `,
+        }),
+      });
+    } catch (e) {
+      console.warn('Live due date email dispatch error:', e);
+    }
+  }
+
+  // Simulated email dispatch log
+  console.log(`%c[XGRO Service Due Date Notification Email]`, 'color: #06b6d4; font-weight: bold;');
+  console.log({
+    messageId,
+    to: targetEmail,
+    client: clientName,
+    service: serviceName,
+    dueDate,
+    daysRemaining,
+    status,
+    timestamp,
+    note: 'Email notification setup is ready. Connect live RESEND_API_KEY / SMTP in .env when ready.',
+  });
+
+  // Record in-app notification in client portal database
+  if (client.id) {
+    try {
+      await addNotification({
+        client_id: client.id,
+        type: 'due_date',
+        title: `${subjectPrefix}: ${serviceName}`,
+        message: `Your target delivery for ${serviceName} is scheduled for ${dueDate} (${timingLabel}). ${notes ? `Scope: ${notes}` : ''}`,
+        link: '/client#services',
+        is_read: false,
+      });
+    } catch (e) {
+      // Ignore in mock environment
+    }
+  }
+
+  return {
+    success: true,
+    simulated: true,
+    recipient: targetEmail,
+    subject,
+    messageId,
+    timestamp,
+    details: `Service due date notification for "${serviceName}" logged and client portal notification created for ${targetEmail}.`,
+  };
+}
+
+export interface SendProjectUpdateParams {
+  client: ClientModel | { id?: string; name: string; email: string; company_name?: string };
+  projectId: string;
+  projectName: string;
+  updateTitle: string;
+  updateMessage: string;
+  progressPercent?: number;
+  status?: string;
+  recipientEmail?: string;
+}
+
+/**
+ * Dispatches or queues a Project Workspace Update notification email to client
+ */
+export async function sendProjectUpdateEmail(params: SendProjectUpdateParams): Promise<EmailDispatchResult> {
+  const { client, projectId, projectName, updateTitle, updateMessage, progressPercent, status, recipientEmail } = params;
+  const targetEmail = recipientEmail || client.email;
+  const clientName = client.name || 'Valued Client';
+  const timestamp = new Date().toISOString();
+  const messageId = `proj-notif-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  const subject = `🚀 Project Workspace Update: "${projectName}" — ${updateTitle}`;
+
+  // Check if live Resend API key is present
+  const resendApiKey = typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_RESEND_API_KEY || process.env?.RESEND_API_KEY : undefined;
+
+  if (resendApiKey && resendApiKey.startsWith('re_')) {
+    try {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: 'XGRO Project Management <projects@xgro.in>',
+          to: [targetEmail],
+          subject,
+          html: `
+            <div style="font-family: sans-serif; background: #0B1120; color: #F8FAFC; padding: 32px; border-radius: 16px;">
+              <h2 style="color: #06B6D4;">🚀 Project Update</h2>
+              <p>Hi ${clientName},</p>
+              <p>A new progress milestone has been published for <strong>${projectName}</strong>:</p>
+              <div style="background: #1E293B; padding: 20px; border-radius: 12px; margin: 20px 0;">
+                <h3 style="margin: 0 0 8px 0; color: #F8FAFC;">${updateTitle}</h3>
+                <p style="margin: 0; color: #CBD5E1; font-size: 14px; line-height: 1.6;">${updateMessage}</p>
+                ${progressPercent !== undefined ? `<p style="margin: 12px 0 0 0; color: #06B6D4; font-weight: bold;">Overall Completion: ${progressPercent}%</p>` : ''}
+              </div>
+              <p>View the live progress gauge and milestone checklist in your <a href="https://xgro.in/client" style="color: #06B6D4;">Client Portal</a>.</p>
+            </div>
+          `,
+        }),
+      });
+    } catch (e) {
+      console.warn('Live project update email dispatch error:', e);
+    }
+  }
+
+  // Simulated email dispatch log
+  console.log(`%c[XGRO Project Update Email]`, 'color: #06b6d4; font-weight: bold;');
+  console.log({
+    messageId,
+    to: targetEmail,
+    client: clientName,
+    project: projectName,
+    updateTitle,
+    progress: progressPercent,
+    status,
+    timestamp,
+    note: 'Email notification setup is ready. Connect live RESEND_API_KEY / SMTP in .env when ready.',
+  });
+
+  // Record in-app notification in client portal database
+  if (client.id) {
+    try {
+      await addNotification({
+        client_id: client.id,
+        project_id: projectId,
+        type: 'project_update',
+        title: `Project Update: ${updateTitle}`,
+        message: `${updateMessage} (Progress: ${progressPercent || 0}%)`,
+        link: '/client#milestones',
+        is_read: false,
+      });
+    } catch (e) {
+      // Ignore in mock environment
+    }
+  }
+
+  return {
+    success: true,
+    simulated: true,
+    recipient: targetEmail,
+    subject,
+    messageId,
+    timestamp,
+    details: `Project update notification for "${projectName}" logged and client portal notification created for ${targetEmail}.`,
+  };
+}
+
