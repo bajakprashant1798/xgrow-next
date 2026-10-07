@@ -748,7 +748,7 @@ export async function saveClient(client: Partial<ClientModel> & { name: string; 
   if (supabase) {
     // 1. Sync basic client columns to Supabase clients table
     try {
-      await supabase.from('clients').upsert({
+      const { data: upsertedClient, error } = await supabase.from('clients').upsert({
         id: savedClient.id.includes('-') && savedClient.id.length > 30 ? savedClient.id : undefined,
         name: savedClient.name,
         email: savedClient.email,
@@ -757,7 +757,21 @@ export async function saveClient(client: Partial<ClientModel> & { name: string; 
         avatar_url: savedClient.avatar_url,
         address: savedClient.address,
         status: savedClient.status,
-      });
+        selected_plan: savedClient.selected_plan,
+        services: savedClient.services,
+        service_schedules: savedClient.service_schedules,
+        billing_cycle: savedClient.billing_cycle,
+        subscription_tier: savedClient.subscription_tier,
+        retainer_amount: savedClient.retainer_amount,
+        notes: savedClient.notes,
+      }, { onConflict: 'email' }).select().single();
+
+      if (!error && upsertedClient?.id) {
+        savedClient.id = upsertedClient.id;
+        const idx = current.findIndex((c) => c.email.toLowerCase() === savedClient.email.toLowerCase());
+        if (idx >= 0) current[idx] = savedClient;
+        setLocalItemSilent(STORAGE_KEYS.CLIENTS, current);
+      }
     } catch (e) {
       console.warn('Error syncing client to Supabase:', e);
     }
@@ -824,7 +838,7 @@ export async function saveClient(client: Partial<ClientModel> & { name: string; 
   }
 
   // Auto-notify client on portal about updated services & timelines
-  if (savedClient.id) {
+  if (savedClient.id || savedClient.email) {
     if (previousClientSnapshot) {
       const prevSchedules = previousClientSnapshot.service_schedules || {};
       const nextSchedules = client.service_schedules || savedClient.service_schedules || {};
@@ -847,21 +861,31 @@ export async function saveClient(client: Partial<ClientModel> & { name: string; 
               message: `${sDef.name} sprint has been delivered & launched for your project.`,
               link: '/client#services',
               is_read: false,
-              dedup_key: `due_completed_${savedClient.id}_${sId}_${Date.now()}`,
+              dedup_key: `due_completed_${savedClient.email}_${sId}_${Date.now()}`,
             });
             individualNotifsCreated++;
           }
-          // B. Due Date Changed
-          else if (nextS.due_date && (!prevS || prevS.due_date !== nextS.due_date)) {
+          // B. Due Date Changed or Status Changed
+          else if (
+            (nextS.due_date && (!prevS || prevS.due_date !== nextS.due_date)) ||
+            (nextS.status && (!prevS || prevS.status !== nextS.status))
+          ) {
+            const statusLabel =
+              nextS.status === 'in_progress'
+                ? 'In Progress'
+                : nextS.status === 'pending'
+                ? 'Pending'
+                : nextS.status;
+
             await addNotification({
               client_id: savedClient.id,
               client_email: savedClient.email,
               type: 'service_timeline',
               title: `📅 Due Date Updated: ${sDef.shortName}`,
-              message: `Target completion date for ${sDef.name} has been updated to ${formatTimelineDate(nextS.due_date)}.`,
+              message: `Target completion date for ${sDef.name} has been updated to ${formatTimelineDate(nextS.due_date)} (${statusLabel}).`,
               link: '/client#services',
               is_read: false,
-              dedup_key: `schedule_changed_${savedClient.id}_${sId}_${nextS.due_date}`,
+              dedup_key: `schedule_changed_${savedClient.email}_${sId}_${nextS.due_date}_${nextS.status}`,
             });
             individualNotifsCreated++;
           }

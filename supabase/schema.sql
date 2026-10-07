@@ -250,6 +250,8 @@ CREATE TABLE IF NOT EXISTS public.notifications (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID,
     client_id UUID REFERENCES public.clients(id) ON DELETE CASCADE,
+    client_email TEXT,
+    type TEXT DEFAULT 'general',
     project_id UUID REFERENCES public.projects(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     message TEXT NOT NULL,
@@ -258,6 +260,11 @@ CREATE TABLE IF NOT EXISTS public.notifications (
     dedup_key TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Migration helpers if table already exists in existing Supabase instances
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS client_email TEXT;
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'general';
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS dedup_key TEXT;
 
 -- 14. FREE RESOURCES TABLE (CMS)
 CREATE TABLE IF NOT EXISTS public.resources (

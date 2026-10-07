@@ -81,6 +81,8 @@ export async function GET(req: NextRequest) {
   const clientEmail = searchParams.get('clientEmail')?.trim().toLowerCase();
 
   const supabase = getSupabaseServerClient();
+  let supabaseNotifs: NotificationModel[] = [];
+
   if (supabase) {
     try {
       let targetClientId = clientId && clientId.length > 30 ? clientId : undefined;
@@ -92,16 +94,21 @@ export async function GET(req: NextRequest) {
       }
 
       let query = supabase.from('notifications').select('*').order('created_at', { ascending: false });
-      if (targetClientId) {
+      if (targetClientId && clientEmail) {
+        query = query.or(`client_id.eq.${targetClientId},client_email.eq.${clientEmail}`);
+      } else if (targetClientId) {
         query = query.eq('client_id', targetClientId);
+      } else if (clientEmail) {
+        query = query.eq('client_email', clientEmail);
       }
+
       const { data, error } = await query;
       if (!error && data && Array.isArray(data)) {
-        const mapped: NotificationModel[] = data.map((d: any) => ({
+        supabaseNotifs = data.map((d: any) => ({
           id: d.id,
           user_id: d.user_id,
           client_id: d.client_id,
-          client_email: clientEmail || undefined,
+          client_email: d.client_email || clientEmail || undefined,
           project_id: d.project_id,
           type: d.type,
           dedup_key: d.dedup_key,
@@ -111,31 +118,26 @@ export async function GET(req: NextRequest) {
           is_read: Boolean(d.is_read),
           created_at: d.created_at,
         }));
-
-        const { unique, duplicateIds } = deduplicateNotifications(mapped);
-
-        // Async cleanup of duplicate records from Supabase
-        if (duplicateIds.length > 0) {
-          Promise.resolve(supabase.from('notifications').delete().in('id', duplicateIds)).catch(() => {});
-        }
-
-        return NextResponse.json({ success: true, notifications: unique });
       }
     } catch {}
   }
 
   // Fallback to local disk/memory database
-  const all = readStoredNotifications();
-  const filtered = all.filter((n) => {
+  const allStored = readStoredNotifications();
+  const diskFiltered = allStored.filter((n) => {
     if (!clientId && !clientEmail) return true;
     if (clientId && n.client_id === clientId) return true;
     if (clientEmail && n.client_email?.toLowerCase() === clientEmail) return true;
     return false;
   });
 
-  const { unique, duplicateIds } = deduplicateNotifications(filtered);
-  if (duplicateIds.length > 0) {
-    writeStoredNotifications(unique);
+  // Combine both sources (Supabase taking priority)
+  const combined = [...supabaseNotifs, ...diskFiltered];
+  const { unique, duplicateIds } = deduplicateNotifications(combined);
+
+  // Async cleanup of duplicate records from Supabase
+  if (supabase && duplicateIds.length > 0) {
+    Promise.resolve(supabase.from('notifications').delete().in('id', duplicateIds)).catch(() => {});
   }
 
   return NextResponse.json({ success: true, notifications: unique });
@@ -149,8 +151,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid notification data' }, { status: 400 });
     }
 
+    const cleanEmail = notification.client_email ? notification.client_email.toLowerCase().trim() : undefined;
     const newNotif: NotificationModel = {
       ...notification,
+      client_email: cleanEmail,
       id: notification.id || `notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       is_read: false,
       created_at: notification.created_at || new Date().toISOString(),
@@ -163,7 +167,7 @@ export async function POST(req: NextRequest) {
       const existing = current.find(
         (n) =>
           n.dedup_key === newNotif.dedup_key &&
-          (n.client_id === newNotif.client_id || (n.client_email && n.client_email === newNotif.client_email))
+          (n.client_id === newNotif.client_id || (cleanEmail && n.client_email === cleanEmail))
       );
       if (existing) {
         return NextResponse.json({ success: true, notification: existing, duplicated: true });
@@ -178,9 +182,9 @@ export async function POST(req: NextRequest) {
     if (supabase) {
       try {
         let targetClientId = newNotif.client_id && newNotif.client_id.length > 30 ? newNotif.client_id : undefined;
-        if (!targetClientId && newNotif.client_email) {
+        if (!targetClientId && cleanEmail) {
           try {
-            const { data: cRow } = await supabase.from('clients').select('id').ilike('email', newNotif.client_email).maybeSingle();
+            const { data: cRow } = await supabase.from('clients').select('id').ilike('email', cleanEmail).maybeSingle();
             if (cRow?.id) {
               targetClientId = cRow.id;
               newNotif.client_id = cRow.id;
@@ -191,6 +195,8 @@ export async function POST(req: NextRequest) {
         await supabase.from('notifications').insert({
           id: newNotif.id.includes('-') && newNotif.id.length > 30 ? newNotif.id : undefined,
           client_id: targetClientId,
+          client_email: cleanEmail,
+          type: newNotif.type || 'service_timeline',
           project_id: newNotif.project_id && newNotif.project_id.length > 30 ? newNotif.project_id : undefined,
           title: newNotif.title,
           message: newNotif.message,
