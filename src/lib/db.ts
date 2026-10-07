@@ -2153,6 +2153,84 @@ export async function deleteFaq(id: string): Promise<void> {
 // ==============================================================================
 // FREE RESOURCES CRUD & SUPABASE PERSISTENCE
 // ==============================================================================
+export async function uploadResourceThumbnail(file: File): Promise<string> {
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    const bucketsToTry = ['resources', 'hero_banners', 'public'];
+    for (const bucket of bucketsToTry) {
+      try {
+        const ext = file.name.split('.').pop() || 'png';
+        const cleanFileName = `thumb-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${ext}`;
+        const filePath = `thumbnails/${cleanFileName}`;
+
+        const { data, error } = await supabase.storage
+          .from(bucket)
+          .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: true,
+          });
+
+        if (!error && data) {
+          const { data: publicUrlData } = supabase.storage
+            .from(bucket)
+            .getPublicUrl(filePath);
+
+          if (publicUrlData?.publicUrl) {
+            return publicUrlData.publicUrl;
+          }
+        }
+      } catch (err) {
+        // try next bucket or fallback
+      }
+    }
+  }
+
+  // Fallback: compress to optimized WebP
+  return await compressImageFile(file, 800, 500, 0.85);
+}
+
+export async function uploadResourcePdf(file: File): Promise<string> {
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    const bucketsToTry = ['resources', 'hero_banners', 'public'];
+    for (const bucket of bucketsToTry) {
+      try {
+        const ext = file.name.split('.').pop() || 'pdf';
+        const cleanFileName = `doc-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${ext}`;
+        const filePath = `docs/${cleanFileName}`;
+
+        const { data, error } = await supabase.storage
+          .from(bucket)
+          .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: true,
+            contentType: 'application/pdf',
+          });
+
+        if (!error && data) {
+          const { data: publicUrlData } = supabase.storage
+            .from(bucket)
+            .getPublicUrl(filePath);
+
+          if (publicUrlData?.publicUrl) {
+            return publicUrlData.publicUrl;
+          }
+        }
+      } catch (err) {
+        // try next bucket or fallback
+      }
+    }
+  }
+
+  // Fallback: read as Data URL
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 export async function getResources(options?: { includeDrafts?: boolean }): Promise<ResourceItem[]> {
   const items = await fetchWithSWR<ResourceItem[]>(
     STORAGE_KEYS.RESOURCES,
@@ -2173,11 +2251,14 @@ export async function getResources(options?: { includeDrafts?: boolean }): Promi
             type: item.type,
             fileFormat: item.file_format || item.fileFormat || 'PDF Document',
             fileSize: item.file_size || item.fileSize || 'Instant',
-            thumbnail_url: item.thumbnail_url || item.thumbnailUrl,
-            thumbnailUrl: item.thumbnail_url || item.thumbnailUrl,
-            downloadUrl: item.download_url || item.downloadUrl,
-            linkUrl: item.link_url || item.linkUrl,
-            promptContent: item.prompt_content || item.promptContent,
+            thumbnail_url: item.thumbnail_url || item.thumbnailUrl || '',
+            thumbnailUrl: item.thumbnail_url || item.thumbnailUrl || '',
+            download_url: item.download_url || item.downloadUrl || '',
+            downloadUrl: item.download_url || item.downloadUrl || '',
+            link_url: item.link_url || item.linkUrl || '',
+            linkUrl: item.link_url || item.linkUrl || '',
+            prompt_content: item.prompt_content || item.promptContent || '',
+            promptContent: item.prompt_content || item.promptContent || '',
             dateAdded: item.date_added || item.dateAdded || (item.created_at ? new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }) : 'Aug 12, 2026'),
             downloadCount: item.download_count ?? item.downloadCount ?? 0,
             featured: !!item.featured,
@@ -2212,9 +2293,13 @@ export async function saveResource(res: Partial<ResourceItem> & { title: string;
   let thumbnail = res.thumbnail_url !== undefined ? res.thumbnail_url : res.thumbnailUrl;
   if (thumbnail && thumbnail.startsWith('data:image/')) {
     try {
-      thumbnail = await compressDataUrl(thumbnail, 600, 400, 0.85);
+      thumbnail = await compressDataUrl(thumbnail, 800, 500, 0.85);
     } catch (_) {}
   }
+
+  const downloadVal = res.download_url !== undefined ? res.download_url : (res.downloadUrl !== undefined ? res.downloadUrl : (res.pdf_file !== undefined ? res.pdf_file : ''));
+  const linkVal = res.link_url !== undefined ? res.link_url : (res.linkUrl !== undefined ? res.linkUrl : '');
+  const promptVal = res.prompt_content !== undefined ? res.prompt_content : (res.promptContent !== undefined ? res.promptContent : '');
 
   if (existingIdx >= 0) {
     saved = {
@@ -2222,6 +2307,13 @@ export async function saveResource(res: Partial<ResourceItem> & { title: string;
       ...res,
       thumbnail_url: thumbnail !== undefined ? (thumbnail || '') : current[existingIdx].thumbnail_url,
       thumbnailUrl: thumbnail !== undefined ? (thumbnail || '') : current[existingIdx].thumbnailUrl,
+      download_url: downloadVal || current[existingIdx].download_url || current[existingIdx].downloadUrl || '',
+      downloadUrl: downloadVal || current[existingIdx].downloadUrl || current[existingIdx].download_url || '',
+      link_url: linkVal || current[existingIdx].link_url || current[existingIdx].linkUrl || '',
+      linkUrl: linkVal || current[existingIdx].linkUrl || current[existingIdx].link_url || '',
+      pdf_file: res.pdf_file !== undefined ? res.pdf_file : current[existingIdx].pdf_file,
+      prompt_content: promptVal || current[existingIdx].prompt_content || current[existingIdx].promptContent || '',
+      promptContent: promptVal || current[existingIdx].promptContent || current[existingIdx].prompt_content || '',
       tags: Array.isArray(res.tags) ? res.tags : current[existingIdx].tags || [],
       updated_at: new Date().toISOString(),
     };
@@ -2247,9 +2339,13 @@ export async function saveResource(res: Partial<ResourceItem> & { title: string;
       fileSize: res.fileSize || (res.type === 'prompt' ? 'Instant Copy' : 'Instant'),
       thumbnail_url: thumbnail || '',
       thumbnailUrl: thumbnail || '',
-      downloadUrl: res.downloadUrl,
-      linkUrl: res.linkUrl,
-      promptContent: res.promptContent,
+      download_url: downloadVal || '',
+      downloadUrl: downloadVal || '',
+      link_url: linkVal || '',
+      linkUrl: linkVal || '',
+      pdf_file: res.pdf_file || '',
+      prompt_content: promptVal || '',
+      promptContent: promptVal || '',
       dateAdded: res.dateAdded || new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
       downloadCount: res.downloadCount ?? 0,
       featured: res.featured ?? false,
@@ -2278,9 +2374,9 @@ export async function saveResource(res: Partial<ResourceItem> & { title: string;
         file_format: saved.fileFormat,
         file_size: saved.fileSize,
         thumbnail_url: saved.thumbnail_url || saved.thumbnailUrl || null,
-        download_url: saved.downloadUrl || null,
-        link_url: saved.linkUrl || null,
-        prompt_content: saved.promptContent || null,
+        download_url: saved.download_url || saved.downloadUrl || null,
+        link_url: saved.link_url || saved.linkUrl || null,
+        prompt_content: saved.prompt_content || saved.promptContent || null,
         gradient: saved.gradient || null,
         tags: saved.tags || [],
         featured: saved.featured || false,

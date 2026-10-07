@@ -224,13 +224,25 @@ export function QuotationDownloadModal({
 
     const fullPhone = phone.startsWith("+") ? phone.trim() : `${country.dialCode} ${phone.trim()}`;
 
-    // If resource has a direct uploaded PDF or external URL (like Google Drive, cloud link, or static PDF)
+    // 1. If resource has a direct uploaded PDF or external download URL
     if (effectiveDownload && (effectiveDownload.startsWith("http://") || effectiveDownload.startsWith("https://") || effectiveDownload.startsWith("data:") || effectiveDownload.endsWith(".pdf"))) {
       window.open(effectiveDownload, "_blank");
       toast.success(`Opening "${effectiveTitle}" in new tab...`);
       return;
     }
 
+    // 2. If resource has a link URL (e.g. Google Drive, Canva, Notion, or external web link)
+    if (effectiveLink && (effectiveLink.startsWith("http://") || effectiveLink.startsWith("https://") || effectiveLink.startsWith("/"))) {
+      if (effectiveLink.startsWith("/")) {
+        window.location.href = effectiveLink;
+      } else {
+        window.open(effectiveLink, "_blank");
+      }
+      toast.success(`Opening "${effectiveTitle}" link in new tab...`);
+      return;
+    }
+
+    // 3. If it is the custom interactive calculator quote
     if (type === "calculator" && calcData) {
       const quoteDetails: QuoteDetails = {
         quoteId: `${Math.floor(100000 + Math.random() * 900000)}`,
@@ -254,10 +266,14 @@ export function QuotationDownloadModal({
       };
       downloadQuotationPDF(quoteDetails);
       toast.success("Quotation PDF opened! Click 'Print / Save as PDF' in the window.");
-    } else {
+      return;
+    }
+
+    // 4. Only if it is explicitly the generic "Official Agency Price List & Rate Card"
+    if (type === "pricelist") {
       downloadPriceListPDF({
         resourceTitle: effectiveTitle,
-        resourceCategory: type === "pricelist" ? "Price List" : "Resource Hub",
+        resourceCategory: "Price List",
         clientName: name.trim(),
         clientEmail: email.trim(),
         clientPhone: fullPhone,
@@ -266,7 +282,10 @@ export function QuotationDownloadModal({
         date: today,
       });
       toast.success("Official PDF document opened! Click 'Print / Save as PDF' in window.");
+      return;
     }
+
+    toast.info(`Access unlocked for "${effectiveTitle}"!`);
   };
 
   const handleWhatsAppRedirect = () => {
@@ -450,7 +469,7 @@ export function QuotationDownloadModal({
 
             {/* Direct Link Section (If resource has a Link URL) */}
             {effectiveLink && (
-              <div className="rounded-2xl border border-border bg-card/80 p-4 text-left space-y-2.5">
+              <div className="rounded-2xl border border-cyan/40 bg-cyan/5 p-4 text-left space-y-2.5 shadow-sm">
                 <div className="flex items-center justify-between text-xs font-bold text-cyan">
                   <span className="flex items-center gap-1.5">
                     <LinkIcon className="h-3.5 w-3.5" /> Direct Resource Link
@@ -471,7 +490,7 @@ export function QuotationDownloadModal({
                         window.open(effectiveLink, "_blank");
                       }
                     }}
-                    className="flex-1 rounded-xl bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs h-9"
+                    className="flex-1 rounded-xl bg-cyan text-slate-950 hover:bg-cyan/90 font-bold text-xs h-9 shadow-md"
                   >
                     <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Open in New Tab
                   </Button>
@@ -488,21 +507,50 @@ export function QuotationDownloadModal({
             )}
 
             {/* Direct PDF Download / Document Button */}
-            {(type === "calculator" || type === "pricelist" || resource?.type === "pdf" || resource?.type === "checklist" || effectiveDownload) && (
+            {(effectiveDownload || type === "calculator" || type === "pricelist" || (!effectiveLink && (resource?.type === "pdf" || resource?.type === "checklist"))) && (
               <div className="rounded-2xl border border-border bg-card/80 p-4 text-left space-y-2">
                 <div className="flex items-center justify-between text-xs font-bold text-foreground">
                   <span className="flex items-center gap-1.5 text-cyan">
                     <FileText className="h-3.5 w-3.5" /> {effectiveTitle}
                   </span>
                   <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[9px] font-bold">
-                    Ready to Download
+                    {effectiveDownload ? "File Ready" : "Document Ready"}
                   </Badge>
                 </div>
                 <Button
                   onClick={handleDownloadPDF}
                   className="w-full rounded-xl bg-cyan text-slate-950 hover:bg-cyan/90 font-extrabold text-xs h-10 shadow-md"
                 >
-                  <Download className="mr-1.5 h-4 w-4" /> Download / View PDF Document
+                  <Download className="mr-1.5 h-4 w-4" /> Download / View Document
+                </Button>
+              </div>
+            )}
+
+            {/* AI Prompt Section (If resource is an AI prompt) */}
+            {(resource?.type === "prompt" || resource?.promptContent || resource?.prompt_content) && (
+              <div className="rounded-2xl border border-purple-500/30 bg-purple-950/10 p-4 text-left space-y-2.5">
+                <div className="flex items-center justify-between text-xs font-bold text-purple-400">
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5" /> Ready-to-Use AI Prompt
+                  </span>
+                  <Badge variant="outline" className="text-[9px] border-purple-500/30 text-purple-300">
+                    Instant Copy
+                  </Badge>
+                </div>
+                <pre className="p-3 rounded-xl bg-surface border border-border font-mono text-[11px] text-foreground leading-relaxed max-h-36 overflow-y-auto whitespace-pre-wrap select-all">
+                  {resource.promptContent || resource.prompt_content || "Prompt ready to copy"}
+                </pre>
+                <Button
+                  onClick={() => {
+                    const promptText = resource.promptContent || resource.prompt_content || "";
+                    if (promptText) {
+                      navigator.clipboard.writeText(promptText);
+                      toast.success("AI Prompt copied to clipboard!");
+                    }
+                  }}
+                  className="w-full rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs h-9"
+                >
+                  <Copy className="mr-1.5 h-3.5 w-3.5" /> Copy Prompt to Clipboard
                 </Button>
               </div>
             )}

@@ -62,6 +62,8 @@ import {
   getRoles,
   getResourceLeads,
   deleteResourceLead,
+  uploadResourceThumbnail,
+  uploadResourcePdf,
   subscribeToDataChanges,
 } from '@/lib/db';
 import { useAuth } from '@/lib/auth-context';
@@ -144,6 +146,18 @@ ALTER TABLE public.resource_leads ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow public read access to resources" ON public.resources FOR SELECT USING (true);
 CREATE POLICY "Allow all access to resources" ON public.resources FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access to resource_leads" ON public.resource_leads FOR ALL USING (true) WITH CHECK (true);
+
+-- 4. Storage Bucket for Resources (Images & PDFs)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('resources', 'resources', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+DROP POLICY IF EXISTS "Public Access resources" ON storage.objects;
+CREATE POLICY "Public Access resources"
+ON storage.objects FOR ALL
+TO anon, authenticated
+USING (bucket_id = 'resources')
+WITH CHECK (bucket_id = 'resources');
 `;
 
 export function AdminResourcesManager() {
@@ -341,7 +355,7 @@ export function AdminResourcesManager() {
     }
   };
 
-  // Image Upload Handling
+  // Image Upload Handling (Direct Supabase Storage with WebP fallback)
   const handleImageUpload = async (file: File) => {
     if (file.size > 10 * 1024 * 1024) {
       toast.error('Image size must be less than 10MB');
@@ -349,9 +363,9 @@ export function AdminResourcesManager() {
     }
     setIsUploadingImage(true);
     try {
-      const compressedDataUrl = await compressImageFile(file, 600, 400, 0.85);
-      setEditingResource((prev) => (prev ? { ...prev, thumbnail_url: compressedDataUrl, thumbnailUrl: compressedDataUrl } : null));
-      toast.success(`Thumbnail "${file.name}" compressed and attached!`);
+      const publicUrl = await uploadResourceThumbnail(file);
+      setEditingResource((prev) => (prev ? { ...prev, thumbnail_url: publicUrl, thumbnailUrl: publicUrl } : null));
+      toast.success(`Thumbnail "${file.name}" uploaded successfully!`);
     } catch (err) {
       toast.error('Failed to process image file');
     } finally {
@@ -359,39 +373,31 @@ export function AdminResourcesManager() {
     }
   };
 
-  // PDF Document File Upload Handling
+  // PDF Document File Upload Handling (Direct Supabase Storage with DataURL fallback)
   const handlePdfUpload = async (file: File) => {
-    if (file.size > 20 * 1024 * 1024) {
-      toast.error('PDF file size must be less than 20MB');
+    if (file.size > 25 * 1024 * 1024) {
+      toast.error('PDF file size must be less than 25MB');
       return;
     }
     setIsUploadingPdf(true);
     try {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const fileDataUrl = reader.result as string;
-        const sizeFormatted = file.size > 1024 * 1024 
-          ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` 
-          : `${Math.round(file.size / 1024)} KB`;
+      const sizeFormatted = file.size > 1024 * 1024 
+        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` 
+        : `${Math.round(file.size / 1024)} KB`;
 
-        setEditingResource((prev) => (prev ? {
-          ...prev,
-          pdf_file: fileDataUrl,
-          download_url: fileDataUrl,
-          downloadUrl: fileDataUrl,
-          fileSize: sizeFormatted,
-          fileFormat: 'PDF Document',
-        } : null));
-        toast.success(`PDF "${file.name}" (${sizeFormatted}) uploaded successfully!`);
-        setIsUploadingPdf(false);
-      };
-      reader.onerror = () => {
-        toast.error('Failed to read PDF file');
-        setIsUploadingPdf(false);
-      };
-      reader.readAsDataURL(file);
+      const resultUrl = await uploadResourcePdf(file);
+      setEditingResource((prev) => (prev ? {
+        ...prev,
+        pdf_file: resultUrl,
+        download_url: resultUrl,
+        downloadUrl: resultUrl,
+        fileSize: sizeFormatted,
+        fileFormat: 'PDF Document',
+      } : null));
+      toast.success(`PDF "${file.name}" (${sizeFormatted}) uploaded successfully!`);
     } catch (err) {
       toast.error('Failed to upload PDF file');
+    } finally {
       setIsUploadingPdf(false);
     }
   };

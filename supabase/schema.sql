@@ -265,6 +265,23 @@ CREATE TABLE IF NOT EXISTS public.resources (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 15. RESOURCE LEADS TABLE (VISITOR CRM)
+CREATE TABLE IF NOT EXISTS public.resource_leads (
+    id TEXT PRIMARY KEY DEFAULT ('lead-' || gen_random_uuid()),
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    business_name TEXT,
+    country TEXT,
+    notes TEXT,
+    resource_id TEXT,
+    resource_title TEXT NOT NULL,
+    resource_type TEXT DEFAULT 'resource',
+    coupon_code TEXT DEFAULT 'XGROW-SAVE15',
+    calc_data JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- ==============================================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- ==============================================================================
@@ -272,6 +289,7 @@ CREATE TABLE IF NOT EXISTS public.resources (
 ALTER TABLE public.services ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pricing_plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.resources ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.resource_leads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.testimonials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.faqs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
@@ -292,6 +310,8 @@ CREATE POLICY "Public can view published testimonials" ON public.testimonials FO
 CREATE POLICY "Public can view published faqs" ON public.faqs FOR SELECT USING (status = 'published');
 CREATE POLICY "Public can view published trusted logos" ON public.trusted_logos FOR SELECT USING (status = 'published');
 CREATE POLICY "Allow all hero_banners" ON public.hero_banners FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all resources" ON public.resources FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all resource_leads" ON public.resource_leads FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Public read custom_roles" ON public.custom_roles FOR SELECT USING (true);
 
 -- Service role full access
@@ -309,6 +329,8 @@ CREATE POLICY "Service role full access tasks" ON public.tasks FOR ALL USING (tr
 CREATE POLICY "Service role full access updates" ON public.project_updates FOR ALL USING (true);
 CREATE POLICY "Service role full access invoices" ON public.invoices_documents FOR ALL USING (true);
 CREATE POLICY "Service role full access notifications" ON public.notifications FOR ALL USING (true);
+CREATE POLICY "Service role full access resources" ON public.resources FOR ALL USING (true);
+CREATE POLICY "Service role full access resource_leads" ON public.resource_leads FOR ALL USING (true);
 
 -- Clients read own data
 CREATE POLICY "Clients read own data" ON public.clients FOR SELECT USING (auth.uid() = user_id);
@@ -358,7 +380,7 @@ VALUES
 ('hero-default', 'Default Agency Showcase', 'XGRO AI Platform & Agency Growth Suite Mockup', '⚡ Core Showcase', '/home/hero.png', '/contact', 'Get Started', 'mockup', true, true, 0)
 ON CONFLICT (id) DO NOTHING;
 
--- Storage Buckets Configuration
+-- Storage Buckets Configuration (hero_banners & resources)
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('hero_banners', 'hero_banners', true)
 ON CONFLICT (id) DO UPDATE SET public = true;
@@ -369,6 +391,17 @@ ON storage.objects FOR ALL
 TO anon, authenticated
 USING (bucket_id = 'hero_banners')
 WITH CHECK (bucket_id = 'hero_banners');
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('resources', 'resources', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+DROP POLICY IF EXISTS "Public Access resources" ON storage.objects;
+CREATE POLICY "Public Access resources"
+ON storage.objects FOR ALL
+TO anon, authenticated
+USING (bucket_id = 'resources')
+WITH CHECK (bucket_id = 'resources');
 
 -- Seed Team Members (Super Admin Prashant Bajak)
 INSERT INTO public.team_members (name, email, phone, role, department, status)

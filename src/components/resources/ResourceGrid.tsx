@@ -36,6 +36,7 @@ import {
 import {
   getResources,
   incrementResourceDownloads,
+  getUnlockedLead,
   subscribeToDataChanges,
 } from "@/lib/db";
 import { QuotationDownloadModal } from "./QuotationDownloadModal";
@@ -94,13 +95,17 @@ export function ResourceGrid() {
     // Record download/action in DB
     incrementResourceDownloads(res.id);
 
-    if (res.type === "prompt") {
+    const unlocked = getUnlockedLead();
+
+    if (res.type === "prompt" && unlocked) {
+      // If already unlocked, user can view prompt directly
       setActivePromptResource(res);
       setPromptModalOpen(true);
     } else {
+      // Open lead unlock modal (if already unlocked, it immediately displays resource link & files)
       setSelectedResourceForModal(res);
       setActiveDownloadTitle(res.title);
-      setActiveDownloadType(res.category === "PDF Guides" ? "pricelist" : "resource");
+      setActiveDownloadType("resource");
       setLeadModalOpen(true);
     }
   };
