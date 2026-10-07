@@ -41,6 +41,10 @@ import {
   getBillingCycleDefinition,
   getServicesForPlan,
   AgencyServiceDefinition,
+  calculateTimelineStatus,
+  formatTimelineDate,
+  getDefaultDueDateForService,
+  SERVICE_TIMELINE_CONFIG,
 } from '@/lib/client-services';
 
 interface ClientServicesWidgetProps {
@@ -132,9 +136,7 @@ export function ClientServicesWidget({
             </div>
           </div>
           <p className="text-xs text-muted-foreground pl-7 sm:pl-7.5">
-            {isYearly
-              ? 'Premium early annual partner contract with dedicated multidisciplinary team allocation.'
-              : 'Ongoing retained agency deliverables with priority sprint execution and monthly reporting.'}
+            Individual service deliverables have dedicated due dates and completion timelines tracked below.
           </p>
         </div>
 
@@ -152,48 +154,87 @@ export function ClientServicesWidget({
         )}
       </div>
 
-      {/* Active Subscribed Services Grid */}
+      {/* Active Subscribed Services Grid with Individual Due Dates */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {activeServices.map((svc) => (
-          <div
-            key={svc.id}
-            className={`p-5 rounded-3xl border bg-gradient-to-br ${svc.bgGradient} space-y-3 relative group transition-all duration-300 hover:shadow-md hover:-translate-y-0.5`}
-          >
-            <div className="flex items-start justify-between gap-2.5">
-              <div className="flex items-start gap-3 min-w-0 flex-1">
-                <div className={`h-9 w-9 sm:h-10 sm:w-10 rounded-2xl flex items-center justify-center border shadow-sm shrink-0 mt-0.5 ${svc.badgeClass}`}>
-                  {getServiceIcon(svc.iconName)}
+        {activeServices.map((svc) => {
+          const schedule = client.service_schedules?.[svc.id];
+          const effectiveDueDate = schedule?.due_date || getDefaultDueDateForService(svc.id, client.created_at ? new Date(client.created_at) : new Date());
+          const effectiveStatus = schedule?.status || (client.status === 'active' ? 'in_progress' : 'pending');
+          const timeline = calculateTimelineStatus(schedule?.due_date || effectiveDueDate, effectiveStatus);
+          const config = SERVICE_TIMELINE_CONFIG[svc.id];
+
+          return (
+            <div
+              key={svc.id}
+              className={`p-5 rounded-3xl border bg-gradient-to-br ${svc.bgGradient} space-y-3 relative group transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 flex flex-col justify-between`}
+            >
+              <div>
+                <div className="flex items-start justify-between gap-2.5">
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                    <div className={`h-9 w-9 sm:h-10 sm:w-10 rounded-2xl flex items-center justify-center border shadow-sm shrink-0 mt-0.5 ${svc.badgeClass}`}>
+                      {getServiceIcon(svc.iconName)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-extrabold text-sm text-foreground group-hover:text-cyan transition-colors leading-snug break-words">
+                        {svc.name}
+                      </h4>
+                      <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider block mt-0.5">
+                        {svc.category}
+                      </span>
+                    </div>
+                  </div>
+
+                  <Badge className={`text-[9.5px] font-black uppercase tracking-wider px-2.5 py-0.5 shrink-0 whitespace-nowrap self-start ${
+                    effectiveStatus === 'completed'
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                      : effectiveStatus === 'ongoing'
+                      ? 'bg-purple-500/20 text-purple-400 border border-purple-500/40'
+                      : 'bg-cyan/15 text-cyan border border-cyan/40'
+                  }`}>
+                    {effectiveStatus === 'completed' ? '✓ Delivered' : effectiveStatus === 'ongoing' ? '● Ongoing Retainer' : '● In Progress'}
+                  </Badge>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <h4 className="font-extrabold text-sm text-foreground group-hover:text-cyan transition-colors leading-snug break-words">
-                    {svc.name}
-                  </h4>
-                  <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider block mt-0.5">
-                    {svc.category}
-                  </span>
+
+                <p className="text-xs text-muted-foreground leading-relaxed mt-2">
+                  {schedule?.notes || svc.description}
+                </p>
+
+                {/* Individual Service Due Date / Completion Target */}
+                <div className="mt-3 p-3 rounded-2xl bg-surface/80 border border-border/80 space-y-1.5 shadow-sm">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-muted-foreground font-semibold flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5 text-cyan shrink-0" />
+                      Target Completion:
+                    </span>
+                    <span className="font-mono font-bold text-foreground">
+                      {formatTimelineDate(schedule?.due_date || effectiveDueDate)}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 border-t border-border/40">
+                    <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
+                      <span className={`h-1.5 w-1.5 rounded-full ${timeline.dotColor}`} />
+                      {config?.label || 'Sprint Delivery'}
+                    </span>
+                    <Badge variant="outline" className={`text-[9.5px] px-2 py-0.5 font-bold ${timeline.badgeClass}`}>
+                      {timeline.label}
+                    </Badge>
+                  </div>
                 </div>
               </div>
 
-              <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[9px] uppercase font-black tracking-wider px-2.5 py-0.5 shrink-0 whitespace-nowrap self-start">
-                ● Active
-              </Badge>
+              <div className="pt-2 border-t border-border/50 flex items-center justify-between text-[11px] mt-auto">
+                <span className="text-muted-foreground font-mono flex items-center gap-1">
+                  <ShieldCheck className="h-3.5 w-3.5 text-cyan shrink-0" />
+                  Verified Deliverable
+                </span>
+                <span className="font-bold text-foreground shrink-0 text-[10px]">
+                  {client.billing_cycle === 'yearly' ? 'Annual Plan' : 'Monthly Cycle'}
+                </span>
+              </div>
             </div>
-
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              {svc.description}
-            </p>
-
-            <div className="pt-2 border-t border-border/50 flex items-center justify-between text-[11px]">
-              <span className="text-muted-foreground font-mono flex items-center gap-1">
-                <ShieldCheck className="h-3.5 w-3.5 text-cyan shrink-0" />
-                Verified Agency Deliverable
-              </span>
-              <span className="font-bold text-foreground shrink-0">
-                {client.billing_cycle === 'yearly' ? 'Annual Plan' : 'Monthly'}
-              </span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Add-on Services Quick Discovery Strip */}

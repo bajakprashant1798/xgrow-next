@@ -15,6 +15,7 @@ export interface StoredUserCredential {
   status?: 'active' | 'inactive' | 'pending_approval';
   selected_plan?: string;
   services?: string[];
+  service_schedules?: Record<string, any>;
   billing_cycle?: 'monthly' | 'yearly' | 'one_time';
   subscription_tier?: string;
   retainer_amount?: number;
@@ -247,6 +248,7 @@ export async function POST(request: NextRequest) {
         status: body.status || existing.status || 'active',
         selected_plan: body.selected_plan || existing.selected_plan,
         services: Array.isArray(body.services) ? body.services : existing.services,
+        service_schedules: body.service_schedules !== undefined ? body.service_schedules : existing.service_schedules,
         billing_cycle: body.billing_cycle || existing.billing_cycle,
         subscription_tier: body.subscription_tier || existing.subscription_tier,
         retainer_amount: body.retainer_amount !== undefined ? body.retainer_amount : existing.retainer_amount,

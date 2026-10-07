@@ -15,6 +15,8 @@ import {
   UserCheck,
   UserPlus,
   Clock,
+  Calendar,
+  CalendarDays,
   CheckCircle2,
   AlertCircle,
   AlertTriangle,
@@ -81,7 +83,7 @@ import {
   resetUserPassword,
   EmailCheckResult,
 } from '@/lib/db';
-import { ClientModel, ProjectModel, CustomRoleModel, ProjectStatus } from '@/lib/supabase/types';
+import { ClientModel, ProjectModel, CustomRoleModel, ProjectStatus, ClientServiceSchedule } from '@/lib/supabase/types';
 import {
   AVAILABLE_AGENCY_SERVICES,
   BILLING_CYCLES,
@@ -89,6 +91,10 @@ import {
   getServiceDefinition,
   getBillingCycleDefinition,
   getServicesForPlan,
+  getDefaultDueDateForService,
+  formatTimelineDate,
+  calculateTimelineStatus,
+  SERVICE_TIMELINE_CONFIG,
 } from '@/lib/client-services';
 import { useAuth } from '@/lib/auth-context';
 import { AdminAccessDenied } from '@/components/admin/AdminAccessDenied';
@@ -106,6 +112,7 @@ interface OnboardUserData {
   status: 'active' | 'pending_approval' | 'inactive';
   selected_plan?: string;
   services: string[];
+  service_schedules?: Record<string, ClientServiceSchedule>;
   billing_cycle: 'monthly' | 'yearly' | 'one_time' | 'quarterly';
   subscription_tier: 'Standard' | 'Growth' | 'Premium Enterprise';
   retainer_amount?: number;
@@ -133,30 +140,52 @@ export default function ClientsManagementPage() {
 
   // Unified Onboard User/Client Dialog state
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [userData, setUserData] = useState<OnboardUserData>({
-    name: '',
-    email: '',
-    phone: '',
-    role: 'client',
-    company_name: '',
-    department: 'Engineering',
-    address: '',
-    status: 'active',
-    selected_plan: 'Scale Growth Plan (₹39,999/mo)',
-    services: ['website', 'seo'],
-    billing_cycle: 'monthly',
-    subscription_tier: 'Growth',
-    retainer_amount: 39999,
-    notes: '',
-    assignedProjectIds: [],
-    autoCreateProject: true,
-    initialProjectTitle: '',
+  const [userData, setUserData] = useState<OnboardUserData>(() => {
+    const initialSchedules: Record<string, ClientServiceSchedule> = {
+      website: {
+        service_id: 'website',
+        due_date: getDefaultDueDateForService('website'),
+        status: 'in_progress',
+        start_date: new Date().toISOString().split('T')[0],
+      },
+      seo: {
+        service_id: 'seo',
+        due_date: getDefaultDueDateForService('seo'),
+        status: 'in_progress',
+        start_date: new Date().toISOString().split('T')[0],
+      },
+    };
+    return {
+      name: '',
+      email: '',
+      phone: '',
+      role: 'client',
+      company_name: '',
+      department: 'Engineering',
+      address: '',
+      status: 'active',
+      selected_plan: 'Scale Growth Plan (₹39,999/mo)',
+      services: ['website', 'seo'],
+      service_schedules: initialSchedules,
+      billing_cycle: 'monthly',
+      subscription_tier: 'Growth',
+      retainer_amount: 39999,
+      notes: '',
+      assignedProjectIds: [],
+      autoCreateProject: true,
+      initialProjectTitle: '',
+    };
   });
 
   // Debounced Email Check state for dialog
   const [originalEmail, setOriginalEmail] = useState('');
   const [emailCheckStatus, setEmailCheckStatus] = useState<'idle' | 'checking' | 'available' | 'duplicate'>('idle');
   const [emailCheckResult, setEmailCheckResult] = useState<EmailCheckResult | null>(null);
+
+  // Dedicated Service Timelines & Due Dates Modal state (for quick 1-click edit from client cards)
+  const [isTimelineModalOpen, setIsTimelineModalOpen] = useState(false);
+  const [activeClientForTimeline, setActiveClientForTimeline] = useState<ClientModel | null>(null);
+  const [tempSchedules, setTempSchedules] = useState<Record<string, ClientServiceSchedule>>({});
 
   // One-Time Credentials Modal state
   const [isCredentialsModalOpen, setIsCredentialsModalOpen] = useState(false);
@@ -240,15 +269,29 @@ export default function ClientsManagementPage() {
   const handleApplyPlanPreset = (presetKey: string) => {
     const preset = PLAN_SERVICE_PRESETS[presetKey];
     if (!preset) return;
+
+    const nextSchedules: Record<string, ClientServiceSchedule> = { ...(userData.service_schedules || {}) };
+    preset.services.forEach((sId) => {
+      if (!nextSchedules[sId]) {
+        nextSchedules[sId] = {
+          service_id: sId,
+          due_date: getDefaultDueDateForService(sId),
+          status: 'in_progress',
+          start_date: new Date().toISOString().split('T')[0],
+        };
+      }
+    });
+
     setUserData((prev) => ({
       ...prev,
       selected_plan: preset.name,
       services: [...preset.services],
+      service_schedules: nextSchedules,
       billing_cycle: preset.billing_cycle,
       subscription_tier: preset.tier,
       retainer_amount: preset.defaultAmount,
     }));
-    toast.success(`Applied "${preset.name.split('(')[0].trim()}" package! Automatically checkmarked ${preset.services.length} services.`);
+    toast.success(`Applied "${preset.name.split('(')[0].trim()}" package! Configured ${preset.services.length} services with individual delivery timelines.`);
   };
 
   const toggleService = (serviceId: string) => {
@@ -257,12 +300,62 @@ export default function ClientsManagementPage() {
       const nextServices = exists
         ? prev.services.filter((id) => id !== serviceId)
         : [...prev.services, serviceId];
-      return { ...prev, services: nextServices };
+
+      const nextSchedules: Record<string, ClientServiceSchedule> = { ...(prev.service_schedules || {}) };
+      if (!exists && !nextSchedules[serviceId]) {
+        nextSchedules[serviceId] = {
+          service_id: serviceId,
+          due_date: getDefaultDueDateForService(serviceId),
+          status: 'in_progress',
+          start_date: new Date().toISOString().split('T')[0],
+        };
+      }
+
+      return { ...prev, services: nextServices, service_schedules: nextSchedules };
     });
+  };
+
+  const updateServiceSchedule = (
+    serviceId: string,
+    updates: Partial<ClientServiceSchedule>
+  ) => {
+    setUserData((prev) => {
+      const current = prev.service_schedules?.[serviceId] || {
+        service_id: serviceId,
+        due_date: getDefaultDueDateForService(serviceId),
+        status: 'in_progress',
+        start_date: new Date().toISOString().split('T')[0],
+      };
+      return {
+        ...prev,
+        service_schedules: {
+          ...(prev.service_schedules || {}),
+          [serviceId]: { ...current, ...updates },
+        },
+      };
+    });
+  };
+
+  const addDaysToServiceDueDate = (serviceId: string, daysToAdd: number) => {
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() + daysToAdd);
+    const dateStr = targetDate.toISOString().split('T')[0];
+    updateServiceSchedule(serviceId, { due_date: dateStr });
+    toast.info(`Set due date for ${getServiceDefinition(serviceId).shortName} to ${formatTimelineDate(dateStr)} (+${daysToAdd} days)`);
   };
 
   const openCreateDialog = () => {
     const defaultPreset = PLAN_SERVICE_PRESETS.growth;
+    const initialSchedules: Record<string, ClientServiceSchedule> = {};
+    defaultPreset.services.forEach((sId) => {
+      initialSchedules[sId] = {
+        service_id: sId,
+        due_date: getDefaultDueDateForService(sId),
+        status: 'in_progress',
+        start_date: new Date().toISOString().split('T')[0],
+      };
+    });
+
     setOriginalEmail('');
     setUserData({
       name: '',
@@ -275,6 +368,7 @@ export default function ClientsManagementPage() {
       status: 'active',
       selected_plan: defaultPreset.name,
       services: [...defaultPreset.services],
+      service_schedules: initialSchedules,
       billing_cycle: defaultPreset.billing_cycle,
       subscription_tier: defaultPreset.tier,
       retainer_amount: defaultPreset.defaultAmount,
@@ -307,6 +401,18 @@ export default function ClientsManagementPage() {
         ? client.services
         : getServicesForPlan(effectivePlan);
 
+    const existingSchedules: Record<string, ClientServiceSchedule> = { ...(client.service_schedules || {}) };
+    effectiveServices.forEach((sId) => {
+      if (!existingSchedules[sId]) {
+        existingSchedules[sId] = {
+          service_id: sId,
+          due_date: getDefaultDueDateForService(sId, client.created_at ? new Date(client.created_at) : new Date()),
+          status: client.status === 'active' ? 'in_progress' : 'pending',
+          start_date: client.created_at ? client.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+        };
+      }
+    });
+
     setUserData({
       id: client.id,
       name: client.name,
@@ -319,6 +425,7 @@ export default function ClientsManagementPage() {
       status: client.status || 'active',
       selected_plan: effectivePlan,
       services: [...effectiveServices],
+      service_schedules: existingSchedules,
       billing_cycle: client.billing_cycle || 'monthly',
       subscription_tier: client.subscription_tier || 'Growth',
       retainer_amount: client.retainer_amount !== undefined ? client.retainer_amount : 39999,
@@ -329,6 +436,72 @@ export default function ClientsManagementPage() {
     setEmailCheckStatus('idle');
     setEmailCheckResult(null);
     setIsDialogOpen(true);
+  };
+
+  const openServiceTimelineModal = (client: ClientModel) => {
+    setActiveClientForTimeline(client);
+    const effectiveServices =
+      client.services && client.services.length > 0
+        ? client.services
+        : getServicesForPlan(client.selected_plan);
+
+    const schedules: Record<string, ClientServiceSchedule> = { ...(client.service_schedules || {}) };
+    effectiveServices.forEach((sId) => {
+      if (!schedules[sId]) {
+        schedules[sId] = {
+          service_id: sId,
+          due_date: getDefaultDueDateForService(sId, client.created_at ? new Date(client.created_at) : new Date()),
+          status: client.status === 'active' ? 'in_progress' : 'pending',
+          start_date: client.created_at ? client.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+        };
+      }
+    });
+
+    setTempSchedules(schedules);
+    setIsTimelineModalOpen(true);
+  };
+
+  const updateTempSchedule = (serviceId: string, updates: Partial<ClientServiceSchedule>) => {
+    setTempSchedules((prev) => {
+      const current = prev[serviceId] || {
+        service_id: serviceId,
+        due_date: getDefaultDueDateForService(serviceId),
+        status: 'in_progress',
+        start_date: new Date().toISOString().split('T')[0],
+      };
+      return {
+        ...prev,
+        [serviceId]: { ...current, ...updates },
+      };
+    });
+  };
+
+  const addDaysToTempDueDate = (serviceId: string, daysToAdd: number) => {
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() + daysToAdd);
+    const dateStr = targetDate.toISOString().split('T')[0];
+    updateTempSchedule(serviceId, { due_date: dateStr });
+    toast.info(`Set due date for ${getServiceDefinition(serviceId).shortName} to ${formatTimelineDate(dateStr)} (+${daysToAdd} days)`);
+  };
+
+  const handleSaveTimelineModal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeClientForTimeline) return;
+
+    try {
+      const updatedClient: ClientModel = {
+        ...activeClientForTimeline,
+        service_schedules: tempSchedules,
+      };
+
+      await saveClient(updatedClient);
+      toast.success(`Service due dates & timelines updated for ${activeClientForTimeline.name}!`);
+      setIsTimelineModalOpen(false);
+      setActiveClientForTimeline(null);
+      loadData();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update service timelines');
+    }
   };
 
   const openAssignProjectsModal = (client: ClientModel) => {
@@ -410,6 +583,7 @@ export default function ClientsManagementPage() {
           status: userData.status,
           selected_plan: userData.selected_plan,
           services: userData.services,
+          service_schedules: userData.service_schedules,
           billing_cycle: userData.billing_cycle,
           subscription_tier: userData.subscription_tier,
           retainer_amount: userData.retainer_amount,
@@ -865,10 +1039,13 @@ export default function ClientsManagementPage() {
                       </div>
                     )}
 
-                    {/* Subscribed Agency Services & Products */}
-                    <div className="p-3 rounded-2xl bg-surface/60 border border-border/80 space-y-2">
+                    {/* Subscribed Agency Services & Products with Individual Due Dates */}
+                    <div className="p-3.5 rounded-2xl bg-surface/60 border border-border/80 space-y-2.5">
                       <div className="flex items-center justify-between text-[10px] font-bold text-muted-foreground uppercase">
-                        <span>Services & Deliverables</span>
+                        <span className="flex items-center gap-1">
+                          <Sparkles className="h-3 w-3 text-cyan" />
+                          Individual Service Timelines
+                        </span>
                         <Badge
                           className={`text-[9px] font-black uppercase tracking-wider ${
                             getBillingCycleDefinition(client.billing_cycle).tagClass
@@ -878,32 +1055,88 @@ export default function ClientsManagementPage() {
                         </Badge>
                       </div>
 
-                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      <div className="space-y-1.5 pt-0.5">
                         {(client.services && client.services.length > 0
                           ? client.services
                           : getServicesForPlan(client.selected_plan)
                         ).map((sId) => {
                           const sDef = getServiceDefinition(sId);
+                          const schedule = client.service_schedules?.[sId];
+                          const effectiveDueDate =
+                            schedule?.due_date ||
+                            getDefaultDueDateForService(
+                              sId,
+                              client.created_at ? new Date(client.created_at) : new Date()
+                            );
+                          const effectiveStatus =
+                            schedule?.status ||
+                            (client.status === 'active' ? 'in_progress' : 'pending');
+                          const timeline = calculateTimelineStatus(
+                            schedule?.due_date || effectiveDueDate,
+                            effectiveStatus
+                          );
+
                           return (
-                            <span
+                            <div
                               key={sId}
-                              className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg border ${sDef.badgeClass}`}
+                              className={`p-2 rounded-xl border flex items-center justify-between gap-2 text-[11px] transition-colors ${
+                                effectiveStatus === 'completed'
+                                  ? 'bg-emerald-500/5 border-emerald-500/30'
+                                  : 'bg-card/70 border-border/70 hover:border-cyan/40'
+                              }`}
                             >
-                              {sDef.shortName}
-                            </span>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className={`h-2 w-2 rounded-full shrink-0 ${timeline.dotColor}`} />
+                                <span className="font-semibold text-foreground truncate">
+                                  {sDef.shortName}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="font-mono text-[10px] text-muted-foreground">
+                                  {formatTimelineDate(schedule?.due_date || effectiveDueDate)}
+                                </span>
+                                <Badge
+                                  variant="outline"
+                                  className={`text-[8.5px] px-1.5 py-0 font-bold uppercase tracking-wider ${timeline.badgeClass}`}
+                                >
+                                  {effectiveStatus === 'completed'
+                                    ? 'Done'
+                                    : timeline.isOverdue
+                                    ? 'Overdue'
+                                    : timeline.isToday
+                                    ? 'Due Today'
+                                    : `${timeline.daysRemaining}d left`}
+                                </Badge>
+                              </div>
+                            </div>
                           );
                         })}
                       </div>
 
-                      {client.retainer_amount ? (
-                        <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-border/50 text-muted-foreground">
-                          <span>Contract Retainer Fee:</span>
-                          <span className="font-mono font-bold text-foreground">
-                            ₹{Number(client.retainer_amount).toLocaleString('en-IN')}
-                            {client.billing_cycle === 'yearly' ? ' / yr' : ' / mo'}
-                          </span>
-                        </div>
-                      ) : null}
+                      <div className="pt-1 flex items-center justify-between border-t border-border/40">
+                        {client.retainer_amount ? (
+                          <div className="text-[11px] text-muted-foreground flex items-center gap-1">
+                            <span>Retainer:</span>
+                            <span className="font-mono font-bold text-foreground">
+                              ₹{Number(client.retainer_amount).toLocaleString('en-IN')}
+                              {client.billing_cycle === 'yearly' ? '/yr' : '/mo'}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground italic">Deliverables Active</span>
+                        )}
+
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openServiceTimelineModal(client)}
+                          className="h-6 text-[10px] font-bold text-cyan hover:text-cyan hover:bg-cyan/10 rounded-full px-2 gap-1"
+                        >
+                          <Calendar className="h-3 w-3" /> Manage Due Dates
+                        </Button>
+                      </div>
                     </div>
 
                     {client.selected_plan && (
@@ -999,10 +1232,19 @@ export default function ClientsManagementPage() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => openAssignProjectsModal(client)}
+                            onClick={() => openServiceTimelineModal(client)}
                             className="rounded-full text-xs font-semibold h-8 px-2.5 border-cyan/40 text-cyan hover:bg-cyan/10"
+                            title="Set individual service due dates & completion timelines"
                           >
-                            <FolderKanban className="h-3.5 w-3.5 mr-1" /> Assign Projects
+                            <Calendar className="h-3.5 w-3.5 mr-1" /> Timelines
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openAssignProjectsModal(client)}
+                            className="rounded-full text-xs font-semibold h-8 px-2.5 border-border hover:border-cyan/40 text-muted-foreground hover:text-foreground"
+                          >
+                            <FolderKanban className="h-3.5 w-3.5 mr-1 text-cyan" /> Projects
                           </Button>
                           <Button
                             size="sm"
@@ -1019,7 +1261,7 @@ export default function ClientsManagementPage() {
                             className="rounded-full text-xs font-semibold h-8 px-2.5 border-border hover:border-cyan/40"
                             title="Reset Password & Download Credentials"
                           >
-                            <KeyRound className="h-3 w-3 mr-1 text-cyan" /> Reset Password
+                            <KeyRound className="h-3 w-3 mr-1 text-cyan" /> Password
                           </Button>
                         </div>
                         <Button
@@ -1048,7 +1290,7 @@ export default function ClientsManagementPage() {
 
       {/* Dedicated Assign Projects to Client Modal */}
       <Dialog open={isAssignProjectDialogOpen} onOpenChange={setIsAssignProjectDialogOpen}>
-        <DialogContent className="max-w-2xl rounded-3xl p-6 sm:p-8 max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl sm:max-w-4xl w-[95vw] rounded-3xl p-6 sm:p-8 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl font-extrabold flex items-center gap-2">
               <FolderKanban className="h-5 w-5 text-cyan" />
@@ -1247,100 +1489,102 @@ export default function ClientsManagementPage() {
 
       {/* Dedicated Onboard / Edit Client Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-lg rounded-3xl p-6 sm:p-8 max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl sm:max-w-4xl lg:max-w-5xl rounded-3xl p-6 sm:p-8 max-h-[90vh] overflow-y-auto w-[95vw]">
           <DialogHeader>
-            <DialogTitle className="text-xl font-extrabold flex items-center gap-2">
+            <DialogTitle className="text-xl sm:text-2xl font-extrabold flex items-center gap-2">
               <UserPlus className="h-5 w-5 text-cyan" />
               {userData.id ? 'Edit Client Account' : 'Onboard New Client'}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Enter client details, business information, and assign project workspaces.
+              Enter client details, business information, choose subscribed services, and configure individual deliverable due dates.
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSaveUser} className="space-y-4 mt-2">
-            {/* Name */}
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-foreground">Full Name *</label>
-              <Input
-                placeholder="e.g. Dr. Alok Verma"
-                value={userData.name}
-                onChange={(e) => setUserData({ ...userData, name: e.target.value })}
-                required
-                className="text-xs rounded-xl h-9"
-              />
-            </div>
+          <form onSubmit={handleSaveUser} className="space-y-4.5 mt-2">
+            {/* Basic Info (2 Columns) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {/* Name */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-foreground">Full Name *</label>
+                <Input
+                  placeholder="e.g. Dr. Alok Verma"
+                  value={userData.name}
+                  onChange={(e) => setUserData({ ...userData, name: e.target.value })}
+                  required
+                  className="text-xs rounded-xl h-9"
+                />
+              </div>
 
-            {/* Email with Debounced Real-time Duplicate Check */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-foreground">Email Address (Login ID) *</label>
-                {emailCheckStatus === 'checking' && (
-                  <span className="text-[10px] text-cyan flex items-center gap-1">
-                    <Loader2 className="h-3 w-3 animate-spin" /> Checking email availability...
-                  </span>
-                )}
-                {emailCheckStatus === 'available' && (
-                  <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
-                    <CheckCircle2 className="h-3 w-3" /> Email available
-                  </span>
-                )}
-                {emailCheckStatus === 'duplicate' && (
-                  <span className="text-[10px] text-rose-400 font-bold flex items-center gap-1">
-                    <AlertTriangle className="h-3 w-3" /> Email already registered!
-                  </span>
+              {/* Email with Debounced Real-time Duplicate Check */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-foreground">Email Address (Login ID) *</label>
+                  {emailCheckStatus === 'checking' && (
+                    <span className="text-[10px] text-cyan flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Checking availability...
+                    </span>
+                  )}
+                  {emailCheckStatus === 'available' && (
+                    <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3" /> Email available
+                    </span>
+                  )}
+                  {emailCheckStatus === 'duplicate' && (
+                    <span className="text-[10px] text-rose-400 font-bold flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3" /> Email already registered!
+                    </span>
+                  )}
+                </div>
+                <Input
+                  type="email"
+                  placeholder="e.g. contact@abchospital.in"
+                  value={userData.email}
+                  onChange={(e) => setUserData({ ...userData, email: e.target.value })}
+                  required
+                  className={`text-xs rounded-xl h-9 font-mono transition-colors ${
+                    emailCheckStatus === 'duplicate'
+                      ? 'border-rose-500 focus-visible:ring-rose-500 bg-rose-500/5'
+                      : emailCheckStatus === 'available'
+                      ? 'border-emerald-500 focus-visible:ring-emerald-500 bg-emerald-500/5'
+                      : ''
+                  }`}
+                />
+                {emailCheckStatus === 'duplicate' && emailCheckResult && (
+                  <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-[10.5px] text-rose-300 flex items-start gap-1.5 mt-1">
+                    <AlertCircle className="h-3.5 w-3.5 text-rose-400 shrink-0 mt-0.5" />
+                    <div>
+                      An account already exists for <strong>{emailCheckResult.name}</strong> ({emailCheckResult.role}).
+                    </div>
+                  </div>
                 )}
               </div>
-              <Input
-                type="email"
-                placeholder="e.g. contact@abchospital.in"
-                value={userData.email}
-                onChange={(e) => setUserData({ ...userData, email: e.target.value })}
-                required
-                className={`text-xs rounded-xl h-9 font-mono transition-colors ${
-                  emailCheckStatus === 'duplicate'
-                    ? 'border-rose-500 focus-visible:ring-rose-500 bg-rose-500/5'
-                    : emailCheckStatus === 'available'
-                    ? 'border-emerald-500 focus-visible:ring-emerald-500 bg-emerald-500/5'
-                    : ''
-                }`}
-              />
-              {emailCheckStatus === 'duplicate' && emailCheckResult && (
-                <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-300 flex items-start gap-2">
-                  <AlertCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold">Cannot create duplicate user:</span> An account already exists for{' '}
-                    <strong>{emailCheckResult.name}</strong> ({emailCheckResult.role}). User accounts must have unique emails across the platform.
-                  </div>
-                </div>
-              )}
-            </div>
 
-            {/* Phone */}
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-foreground">Phone / WhatsApp</label>
-              <Input
-                placeholder="+91 98765 43210"
-                value={userData.phone || ''}
-                onChange={(e) => setUserData({ ...userData, phone: e.target.value })}
-                className="text-xs rounded-xl h-9"
-              />
-            </div>
+              {/* Phone */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-foreground">Phone / WhatsApp</label>
+                <Input
+                  placeholder="+91 98765 43210"
+                  value={userData.phone || ''}
+                  onChange={(e) => setUserData({ ...userData, phone: e.target.value })}
+                  className="text-xs rounded-xl h-9"
+                />
+              </div>
 
-            {/* Company / Brand */}
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-foreground">Company / Hospital / Brand *</label>
-              <Input
-                placeholder="e.g. ABC Super Speciality Hospital"
-                value={userData.company_name || ''}
-                onChange={(e) => setUserData({ ...userData, company_name: e.target.value })}
-                required
-                className="text-xs rounded-xl h-9"
-              />
+              {/* Company / Brand */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-foreground">Company / Hospital / Brand *</label>
+                <Input
+                  placeholder="e.g. ABC Super Speciality Hospital"
+                  value={userData.company_name || ''}
+                  onChange={(e) => setUserData({ ...userData, company_name: e.target.value })}
+                  required
+                  className="text-xs rounded-xl h-9"
+                />
+              </div>
             </div>
 
             {/* Subscribed Agency Services & Products Multi-select */}
-            <div className="space-y-3 p-4 rounded-2xl bg-surface/60 border border-border">
+            <div className="space-y-3 p-4 sm:p-5 rounded-2xl bg-surface/60 border border-border">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
                   <Sparkles className="h-3.5 w-3.5 text-cyan" />
@@ -1356,7 +1600,7 @@ export default function ClientsManagementPage() {
                 <span className="text-[10px] uppercase font-bold text-muted-foreground block">
                   Select Plan Template (Auto-checks Respective Services):
                 </span>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {Object.entries(PLAN_SERVICE_PRESETS).map(([key, preset]) => {
                     const isCurrent = userData.selected_plan === preset.name;
                     return (
@@ -1366,13 +1610,13 @@ export default function ClientsManagementPage() {
                         variant="outline"
                         size="sm"
                         onClick={() => handleApplyPlanPreset(key)}
-                        className={`h-8 text-[10px] font-bold rounded-xl px-2 transition-all justify-start truncate ${
+                        className={`h-9 text-[10.5px] font-bold rounded-xl px-2.5 transition-all justify-start truncate ${
                           isCurrent
                             ? 'bg-cyan text-slate-950 border-cyan shadow-sm font-black'
                             : 'bg-card/60 hover:bg-cyan/15 hover:text-cyan hover:border-cyan/40 border-border'
                         }`}
                       >
-                        <Zap className="h-3 w-3 mr-1 shrink-0" />
+                        <Zap className="h-3.5 w-3.5 mr-1.5 shrink-0" />
                         <span className="truncate">{preset.name.split('(')[0].trim()}</span>
                       </Button>
                     );
@@ -1380,15 +1624,15 @@ export default function ClientsManagementPage() {
                 </div>
               </div>
 
-              <div className="pt-1">
+              <div className="pt-1.5">
                 <div className="flex items-center justify-between pb-1.5">
                   <p className="text-[11px] text-muted-foreground">
                     Check or customize any active services for this client:
                   </p>
-                  <span className="text-[10px] text-muted-foreground italic">Click to toggle</span>
+                  <span className="text-[10px] text-muted-foreground italic">Click card to toggle</span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                   {AVAILABLE_AGENCY_SERVICES.map((svc) => {
                     const isChecked = userData.services.includes(svc.id);
                     return (
@@ -1403,15 +1647,15 @@ export default function ClientsManagementPage() {
                           }
                         }}
                         onClick={() => toggleService(svc.id)}
-                        className={`p-2.5 rounded-xl border text-left text-xs transition-all flex items-center justify-between gap-2 cursor-pointer select-none ${
+                        className={`p-3 rounded-2xl border text-left text-xs transition-all flex items-center justify-between gap-2 cursor-pointer select-none ${
                           isChecked
                             ? 'border-cyan bg-cyan/15 font-bold text-cyan shadow-sm ring-1 ring-cyan/40'
                             : 'border-border bg-card/60 text-muted-foreground hover:border-cyan/30 hover:text-foreground'
                         }`}
                       >
-                        <div className="flex items-center gap-2 truncate">
+                        <div className="flex items-center gap-2 min-w-0">
                           <div
-                            className={`h-4 w-4 rounded-md border flex items-center justify-center transition-colors shrink-0 ${
+                            className={`h-4.5 w-4.5 rounded-md border flex items-center justify-center transition-colors shrink-0 ${
                               isChecked
                                 ? 'bg-cyan border-cyan text-slate-950'
                                 : 'border-muted-foreground/40 bg-surface'
@@ -1419,9 +1663,9 @@ export default function ClientsManagementPage() {
                           >
                             {isChecked && <Check className="h-3 w-3 stroke-[3]" />}
                           </div>
-                          <span className="truncate">{svc.shortName}</span>
+                          <span className="truncate text-xs font-semibold">{svc.shortName}</span>
                         </div>
-                        <span className="text-[9px] uppercase tracking-wider opacity-75 truncate shrink-0">
+                        <span className="text-[8.5px] uppercase tracking-wider opacity-75 truncate shrink-0">
                           {svc.category}
                         </span>
                       </div>
@@ -1430,6 +1674,159 @@ export default function ClientsManagementPage() {
                 </div>
               </div>
             </div>
+
+            {/* Individual Service Due Dates & Delivery Timelines Configuration */}
+            {userData.services.length > 0 && (
+              <div className="space-y-3 p-4 rounded-2xl bg-surface/70 border border-cyan/30 shadow-inner">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                      <Calendar className="h-3.5 w-3.5 text-cyan" />
+                      Individual Service Due Dates & Completion Timelines *
+                    </label>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Assign independent finish dates & deliverable statuses for each selected service (e.g. Website 14 days, SEO 90 days). Clients will receive timeline countdown notifications for each service separately.
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] text-cyan border-cyan/40 bg-cyan/10 font-bold shrink-0">
+                    {userData.services.length} Timelines
+                  </Badge>
+                </div>
+
+                <div className="space-y-3 pt-1">
+                  {userData.services.map((svcId) => {
+                    const svcDef = getServiceDefinition(svcId);
+                    const schedule = userData.service_schedules?.[svcId] || {
+                      service_id: svcId,
+                      due_date: getDefaultDueDateForService(svcId),
+                      status: 'in_progress',
+                      start_date: new Date().toISOString().split('T')[0],
+                    };
+                    const effectiveDueDate = schedule.due_date || getDefaultDueDateForService(svcId);
+                    const timeline = calculateTimelineStatus(effectiveDueDate, schedule.status || 'in_progress');
+                    const config = SERVICE_TIMELINE_CONFIG[svcId];
+
+                    return (
+                      <div
+                        key={svcId}
+                        className="p-3.5 rounded-2xl border border-border/80 bg-card/80 space-y-3 shadow-sm hover:border-cyan/40 transition-colors"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <div className={`h-7 w-7 rounded-xl border flex items-center justify-center font-bold text-xs ${svcDef.badgeClass}`}>
+                              {svcDef.shortName.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <h4 className="font-extrabold text-xs text-foreground">
+                                {svcDef.name}
+                              </h4>
+                              <span className="text-[9.5px] uppercase font-bold text-muted-foreground">
+                                {svcDef.category} • Recommended: {config?.label || 'Sprint Delivery'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className={`text-[9.5px] px-2 py-0.5 font-bold ${timeline.badgeClass}`}>
+                              {schedule.status === 'completed'
+                                ? '✓ Completed'
+                                : timeline.isOverdue
+                                ? '⚠️ Overdue'
+                                : timeline.isToday
+                                ? '⚡ Due Today'
+                                : `${timeline.daysRemaining} days left`}
+                            </Badge>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
+                          {/* Due Date Picker with Quick Date Offset Buttons */}
+                          <div className="sm:col-span-7 space-y-1">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="text-muted-foreground font-semibold flex items-center gap-1">
+                                <Clock className="h-3 w-3 text-cyan" />
+                                Target Completion Date:
+                              </span>
+                              <div className="flex items-center gap-1 font-mono">
+                                <button
+                                  type="button"
+                                  onClick={() => addDaysToServiceDueDate(svcId, 7)}
+                                  className="text-[9px] px-1.5 py-0.5 rounded-md bg-surface border border-border hover:border-cyan hover:text-cyan transition-colors"
+                                  title="Add 7 Days from today"
+                                >
+                                  +7d
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => addDaysToServiceDueDate(svcId, 14)}
+                                  className="text-[9px] px-1.5 py-0.5 rounded-md bg-surface border border-border hover:border-cyan hover:text-cyan transition-colors"
+                                  title="Add 14 Days from today"
+                                >
+                                  +14d
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => addDaysToServiceDueDate(svcId, 30)}
+                                  className="text-[9px] px-1.5 py-0.5 rounded-md bg-surface border border-border hover:border-cyan hover:text-cyan transition-colors"
+                                  title="Add 30 Days from today"
+                                >
+                                  +30d
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => addDaysToServiceDueDate(svcId, 90)}
+                                  className="text-[9px] px-1.5 py-0.5 rounded-md bg-surface border border-border hover:border-cyan hover:text-cyan transition-colors"
+                                  title="Add 90 Days from today (SEO milestone)"
+                                >
+                                  +90d
+                                </button>
+                              </div>
+                            </div>
+                            <Input
+                              type="date"
+                              value={effectiveDueDate}
+                              onChange={(e) => updateServiceSchedule(svcId, { due_date: e.target.value })}
+                              className="text-xs rounded-xl h-8.5 bg-surface/90 font-mono"
+                            />
+                          </div>
+
+                          {/* Individual Deliverable Status */}
+                          <div className="sm:col-span-5 space-y-1">
+                            <span className="text-[10px] text-muted-foreground font-semibold block">
+                              Service Status:
+                            </span>
+                            <Select
+                              value={schedule.status || 'in_progress'}
+                              onValueChange={(val: any) => updateServiceSchedule(svcId, { status: val })}
+                            >
+                              <SelectTrigger className="text-xs rounded-xl h-8.5 bg-surface/90">
+                                <SelectValue placeholder="Status" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="in_progress">● In Progress (Active)</SelectItem>
+                                <SelectItem value="completed">✓ Completed / Delivered</SelectItem>
+                                <SelectItem value="ongoing">✦ Ongoing Retainer</SelectItem>
+                                <SelectItem value="pending">○ Pending Kickoff</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+
+                        {/* Deliverable Scope & Milestone Note */}
+                        <div className="space-y-1">
+                          <Input
+                            placeholder={`Scope note (e.g. "${config?.recommendedDescription || 'Milestone scope'}")`}
+                            value={schedule.notes || ''}
+                            onChange={(e) => updateServiceSchedule(svcId, { notes: e.target.value })}
+                            className="text-[11px] rounded-xl h-8 bg-surface/70"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Retainer & Billing Model Details */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1697,6 +2094,210 @@ export default function ClientsManagementPage() {
                   className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-6"
                 >
                   Confirm & Show Credentials
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dedicated Service Timelines & Due Dates Modal */}
+      <Dialog open={isTimelineModalOpen} onOpenChange={setIsTimelineModalOpen}>
+        <DialogContent className="max-w-3xl sm:max-w-4xl lg:max-w-5xl w-[95vw] rounded-3xl p-6 sm:p-8 max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-extrabold flex items-center gap-2">
+              <Calendar className="h-5 w-5 text-cyan" />
+              Service Timelines & Due Dates — {activeClientForTimeline?.name}
+            </DialogTitle>
+            <DialogDescription className="text-xs leading-relaxed">
+              Configure independent target completion dates and deliverable milestones for each subscribed service. Since website development, SEO, and AI automation have different delivery timelines, each service countdown is tracked independently for client notifications.
+            </DialogDescription>
+          </DialogHeader>
+
+          {activeClientForTimeline && (
+            <form onSubmit={handleSaveTimelineModal} className="space-y-4 mt-2">
+              {/* Client Summary Banner */}
+              <div className="p-3.5 rounded-2xl bg-surface/70 border border-border flex items-center justify-between text-xs">
+                <div>
+                  <p className="font-bold text-foreground flex items-center gap-1.5">
+                    <Building className="h-3.5 w-3.5 text-cyan" />
+                    {activeClientForTimeline.company_name || activeClientForTimeline.name}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                    {activeClientForTimeline.email}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <Badge
+                    className={`text-[9.5px] font-black uppercase tracking-wider ${
+                      getBillingCycleDefinition(activeClientForTimeline.billing_cycle).tagClass
+                    }`}
+                  >
+                    {getBillingCycleDefinition(activeClientForTimeline.billing_cycle).badge}
+                  </Badge>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    {activeClientForTimeline.selected_plan || 'Growth Engine'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Service Schedules List */}
+              <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+                {(activeClientForTimeline.services && activeClientForTimeline.services.length > 0
+                  ? activeClientForTimeline.services
+                  : getServicesForPlan(activeClientForTimeline.selected_plan)
+                ).map((svcId) => {
+                  const svcDef = getServiceDefinition(svcId);
+                  const schedule = tempSchedules[svcId] || {
+                    service_id: svcId,
+                    due_date: getDefaultDueDateForService(svcId),
+                    status: 'in_progress',
+                    start_date: new Date().toISOString().split('T')[0],
+                  };
+                  const effectiveDueDate =
+                    schedule.due_date ||
+                    getDefaultDueDateForService(
+                      svcId,
+                      activeClientForTimeline.created_at
+                        ? new Date(activeClientForTimeline.created_at)
+                        : new Date()
+                    );
+                  const effectiveStatus = schedule.status || 'in_progress';
+                  const timeline = calculateTimelineStatus(effectiveDueDate, effectiveStatus);
+                  const config = SERVICE_TIMELINE_CONFIG[svcId];
+
+                  return (
+                    <div
+                      key={svcId}
+                      className="p-3.5 rounded-2xl border border-border bg-card/80 space-y-3 shadow-sm hover:border-cyan/40 transition-colors"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`h-8 w-8 rounded-xl border flex items-center justify-center font-bold text-xs ${svcDef.badgeClass}`}>
+                            {svcDef.shortName.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <h4 className="font-extrabold text-xs text-foreground">
+                              {svcDef.name}
+                            </h4>
+                            <span className="text-[10px] uppercase font-bold text-muted-foreground">
+                              {svcDef.category} • Recommended: {config?.label || 'Sprint Delivery'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <Badge variant="outline" className={`text-[9.5px] px-2 py-0.5 font-bold ${timeline.badgeClass}`}>
+                          {effectiveStatus === 'completed'
+                            ? '✓ Completed'
+                            : timeline.isOverdue
+                            ? '⚠️ Overdue'
+                            : timeline.isToday
+                            ? '⚡ Due Today'
+                            : `${timeline.daysRemaining} days left`}
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
+                        {/* Due Date Picker with Quick Date Offset Buttons */}
+                        <div className="sm:col-span-7 space-y-1">
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="text-muted-foreground font-semibold flex items-center gap-1">
+                              <Clock className="h-3 w-3 text-cyan" />
+                              Target Completion Date:
+                            </span>
+                            <div className="flex items-center gap-1 font-mono">
+                              <button
+                                type="button"
+                                onClick={() => addDaysToTempDueDate(svcId, 7)}
+                                className="text-[9px] px-1.5 py-0.5 rounded-md bg-surface border border-border hover:border-cyan hover:text-cyan transition-colors"
+                                title="Add 7 Days from today"
+                              >
+                                +7d
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => addDaysToTempDueDate(svcId, 14)}
+                                className="text-[9px] px-1.5 py-0.5 rounded-md bg-surface border border-border hover:border-cyan hover:text-cyan transition-colors"
+                                title="Add 14 Days from today"
+                              >
+                                +14d
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => addDaysToTempDueDate(svcId, 30)}
+                                className="text-[9px] px-1.5 py-0.5 rounded-md bg-surface border border-border hover:border-cyan hover:text-cyan transition-colors"
+                                title="Add 30 Days from today"
+                              >
+                                +30d
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => addDaysToTempDueDate(svcId, 90)}
+                                className="text-[9px] px-1.5 py-0.5 rounded-md bg-surface border border-border hover:border-cyan hover:text-cyan transition-colors"
+                                title="Add 90 Days from today (SEO milestone)"
+                              >
+                                +90d
+                              </button>
+                            </div>
+                          </div>
+                          <Input
+                            type="date"
+                            value={effectiveDueDate}
+                            onChange={(e) => updateTempSchedule(svcId, { due_date: e.target.value })}
+                            className="text-xs rounded-xl h-8.5 bg-surface/90 font-mono"
+                          />
+                        </div>
+
+                        {/* Individual Deliverable Status */}
+                        <div className="sm:col-span-5 space-y-1">
+                          <span className="text-[10px] text-muted-foreground font-semibold block">
+                            Service Status:
+                          </span>
+                          <Select
+                            value={effectiveStatus}
+                            onValueChange={(val: any) => updateTempSchedule(svcId, { status: val })}
+                          >
+                            <SelectTrigger className="text-xs rounded-xl h-8.5 bg-surface/90">
+                              <SelectValue placeholder="Status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="in_progress">● In Progress (Active)</SelectItem>
+                              <SelectItem value="completed">✓ Completed / Delivered</SelectItem>
+                              <SelectItem value="ongoing">✦ Ongoing Retainer</SelectItem>
+                              <SelectItem value="pending">○ Pending Kickoff</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      {/* Deliverable Scope & Milestone Note */}
+                      <div className="space-y-1">
+                        <Input
+                          placeholder={`Scope note (e.g. "${config?.recommendedDescription || 'Milestone scope'}")`}
+                          value={schedule.notes || ''}
+                          onChange={(e) => updateTempSchedule(svcId, { notes: e.target.value })}
+                          className="text-[11px] rounded-xl h-8 bg-surface/70"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <DialogFooter className="pt-2 flex sm:justify-between items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsTimelineModalOpen(false)}
+                  className="rounded-full text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className="rounded-full bg-cyan text-slate-950 font-bold text-xs px-6 shadow-sm"
+                >
+                  Save Service Timelines & Due Dates
                 </Button>
               </DialogFooter>
             </form>

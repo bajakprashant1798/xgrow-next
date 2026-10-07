@@ -531,6 +531,12 @@ export async function getClients(): Promise<ClientModel[]> {
           (Array.isArray(seedMatch?.services) ? seedMatch?.services : null) ??
           getServicesForPlan(chosenPlan);
 
+        const chosenSchedules =
+          remoteMeta.service_schedules ||
+          localMatch?.service_schedules ||
+          seedMatch?.service_schedules ||
+          {};
+
         return {
           id: c.id,
           name: c.name || localMatch?.name || seedMatch?.name || 'Client',
@@ -542,6 +548,7 @@ export async function getClients(): Promise<ClientModel[]> {
           status: c.status || localMatch?.status || seedMatch?.status || 'active',
           selected_plan: chosenPlan,
           services: chosenServices,
+          service_schedules: chosenSchedules,
           billing_cycle: remoteMeta.billing_cycle || localMatch?.billing_cycle || seedMatch?.billing_cycle || 'monthly',
           subscription_tier: remoteMeta.subscription_tier || localMatch?.subscription_tier || seedMatch?.subscription_tier || 'Growth',
           retainer_amount: remoteMeta.retainer_amount ?? localMatch?.retainer_amount ?? seedMatch?.retainer_amount ?? 39999,
@@ -679,6 +686,10 @@ export async function saveClient(client: Partial<ClientModel> & { name: string; 
           : (existing.services && existing.services.length > 0
               ? existing.services
               : getServicesForPlan(client.selected_plan || existing.selected_plan)),
+      service_schedules:
+        client.service_schedules !== undefined
+          ? client.service_schedules
+          : (existing.service_schedules || {}),
       billing_cycle: client.billing_cycle || existing.billing_cycle || 'monthly',
       subscription_tier: client.subscription_tier || existing.subscription_tier || 'Growth',
       retainer_amount:
@@ -702,6 +713,7 @@ export async function saveClient(client: Partial<ClientModel> & { name: string; 
         client.services && client.services.length > 0
           ? client.services
           : getServicesForPlan(client.selected_plan),
+      service_schedules: client.service_schedules || {},
       billing_cycle: client.billing_cycle || 'monthly',
       subscription_tier: client.subscription_tier || 'Growth',
       retainer_amount: client.retainer_amount || 39999,
@@ -732,7 +744,7 @@ export async function saveClient(client: Partial<ClientModel> & { name: string; 
       console.warn('Error syncing client to Supabase:', e);
     }
 
-    // 2. Persist full dynamic client metadata (services, plan, billing, tier, retainer, notes) to Supabase custom_roles
+    // 2. Persist full dynamic client metadata (services, plan, billing, tier, retainer, service_schedules, notes) to Supabase custom_roles
     try {
       const { data: existingRole } = await supabase
         .from('custom_roles')
@@ -743,6 +755,7 @@ export async function saveClient(client: Partial<ClientModel> & { name: string; 
       const metaStore = existingRole?.permissions?.metadata || {};
       metaStore[cleanEmail] = {
         services: savedClient.services,
+        service_schedules: savedClient.service_schedules,
         selected_plan: savedClient.selected_plan,
         billing_cycle: savedClient.billing_cycle,
         subscription_tier: savedClient.subscription_tier,
@@ -783,6 +796,7 @@ export async function saveClient(client: Partial<ClientModel> & { name: string; 
         status: savedClient.status,
         selected_plan: savedClient.selected_plan,
         services: savedClient.services,
+        service_schedules: savedClient.service_schedules,
         billing_cycle: savedClient.billing_cycle,
         subscription_tier: savedClient.subscription_tier,
         retainer_amount: savedClient.retainer_amount,

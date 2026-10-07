@@ -88,6 +88,16 @@ export interface PricingPlanModel {
   updated_at?: string;
 }
 
+export interface ClientServiceSchedule {
+  service_id: string; // e.g. 'website', 'graphic_design', 'ai_automation', 'google_business', 'seo', 'video_editing', 'paid_ads', 'social_media'
+  due_date?: string; // Target finish / completion date (YYYY-MM-DD or ISO string)
+  start_date?: string; // Service kickoff date
+  status?: 'pending' | 'in_progress' | 'completed' | 'ongoing'; // Individual deliverable progress
+  notes?: string; // Scope or delivery note e.g. "5 pages web app redesign"
+  estimated_days?: number; // e.g. 14 days
+  completed_at?: string; // Timestamp when marked completed
+}
+
 export interface ClientModel {
   id: string;
   user_id?: string;
@@ -100,6 +110,7 @@ export interface ClientModel {
   status: 'active' | 'pending_approval' | 'inactive';
   selected_plan?: string;
   services?: string[]; // e.g. ['website', 'graphic_design', 'ai_automation', 'google_business', 'seo', 'video_editing']
+  service_schedules?: Record<string, ClientServiceSchedule>; // Keyed by service_id
   billing_cycle?: 'monthly' | 'yearly' | 'one_time' | 'quarterly';
   subscription_tier?: 'Standard' | 'Growth' | 'Premium Enterprise';
   retainer_amount?: number;

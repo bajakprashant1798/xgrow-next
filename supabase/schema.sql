@@ -109,9 +109,25 @@ CREATE TABLE IF NOT EXISTS public.clients (
     company_name TEXT,
     avatar_url TEXT,
     address TEXT,
-    status TEXT DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+    status TEXT DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'pending_approval')),
+    selected_plan TEXT,
+    services JSONB DEFAULT '[]'::jsonb,
+    service_schedules JSONB DEFAULT '{}'::jsonb,
+    billing_cycle TEXT DEFAULT 'monthly',
+    subscription_tier TEXT DEFAULT 'Growth',
+    retainer_amount NUMERIC DEFAULT 0,
+    notes TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Migration helpers if table already exists in existing Supabase instances
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS selected_plan TEXT;
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS services JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS service_schedules JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS billing_cycle TEXT DEFAULT 'monthly';
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS subscription_tier TEXT DEFAULT 'Growth';
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS retainer_amount NUMERIC DEFAULT 0;
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS notes TEXT;
 
 -- 6. CUSTOM ROLES & RBAC PERMISSION MATRIX TABLE
 CREATE TABLE IF NOT EXISTS public.custom_roles (

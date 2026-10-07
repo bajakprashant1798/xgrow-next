@@ -228,3 +228,201 @@ export function getPresetForPlan(planName?: string) {
 export function getServicesForPlan(planName?: string): string[] {
   return getPresetForPlan(planName).services;
 }
+
+// ==============================================================================
+// INDIVIDUAL SERVICE DELIVERY TIMELINES & DUE DATE HELPERS
+// ==============================================================================
+
+export interface ServiceTimelinePreset {
+  defaultDays: number;
+  label: string;
+  cycleType: 'sprint' | 'retainer' | 'milestone';
+  recommendedDescription: string;
+}
+
+export const SERVICE_TIMELINE_CONFIG: Record<string, ServiceTimelinePreset> = {
+  website: {
+    defaultDays: 14,
+    label: '14-Day Web Sprint',
+    cycleType: 'sprint',
+    recommendedDescription: 'Full responsive website / web app build, UI design & launch.',
+  },
+  graphic_design: {
+    defaultDays: 7,
+    label: '7-Day Creative Sprint',
+    cycleType: 'sprint',
+    recommendedDescription: 'Logo, brand book, social creatives & high-res mockups.',
+  },
+  ai_automation: {
+    defaultDays: 10,
+    label: '10-Day AI Setup',
+    cycleType: 'sprint',
+    recommendedDescription: 'WhatsApp AI bot, webhook workflow & automated CRM lead qualification.',
+  },
+  google_business: {
+    defaultDays: 21,
+    label: '21-Day Local Rank',
+    cycleType: 'milestone',
+    recommendedDescription: 'Google Business Profile audit, 3-Pack local ranking & review funnels.',
+  },
+  seo: {
+    defaultDays: 90,
+    label: '90-Day SEO Milestone',
+    cycleType: 'milestone',
+    recommendedDescription: 'Technical SEO, high-intent keywords ranking & authority backlinks.',
+  },
+  video_editing: {
+    defaultDays: 5,
+    label: '5-Day Reel Batch',
+    cycleType: 'sprint',
+    recommendedDescription: 'Batch editing of viral Instagram Reels & YouTube Shorts.',
+  },
+  social_media: {
+    defaultDays: 30,
+    label: '30-Day Monthly Cycle',
+    cycleType: 'retainer',
+    recommendedDescription: 'Monthly social media post schedule, copywriting & engagement.',
+  },
+  paid_ads: {
+    defaultDays: 7,
+    label: '7-Day Ad Launch',
+    cycleType: 'sprint',
+    recommendedDescription: 'Meta & Google Ads funnel setup, creative testing & pixel tracking.',
+  },
+};
+
+/**
+ * Calculates a default due date (YYYY-MM-DD) for a given service
+ */
+export function getDefaultDueDateForService(serviceId: string, baseDate: Date = new Date()): string {
+  const config = SERVICE_TIMELINE_CONFIG[serviceId] || { defaultDays: 14 };
+  const d = new Date(baseDate);
+  d.setDate(d.getDate() + config.defaultDays);
+  return d.toISOString().split('T')[0];
+}
+
+/**
+ * Formats YYYY-MM-DD into a human-friendly string e.g. "Oct 25, 2026"
+ */
+export function formatTimelineDate(dateStr?: string): string {
+  if (!dateStr) return 'Not Scheduled';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  } catch (_) {
+    return dateStr;
+  }
+}
+
+/**
+ * Computes countdown, overdue flag, and styling badge for a specific service due date
+ */
+export function calculateTimelineStatus(
+  dueDate?: string,
+  serviceStatus: 'pending' | 'in_progress' | 'completed' | 'ongoing' = 'in_progress'
+): {
+  daysRemaining: number;
+  isOverdue: boolean;
+  isCompleted: boolean;
+  isToday: boolean;
+  label: string;
+  badgeClass: string;
+  dotColor: string;
+} {
+  if (serviceStatus === 'completed') {
+    return {
+      daysRemaining: 0,
+      isOverdue: false,
+      isCompleted: true,
+      isToday: false,
+      label: 'Delivered / Completed',
+      badgeClass: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 font-bold',
+      dotColor: 'bg-emerald-400',
+    };
+  }
+
+  if (serviceStatus === 'ongoing') {
+    return {
+      daysRemaining: 30,
+      isOverdue: false,
+      isCompleted: false,
+      isToday: false,
+      label: 'Ongoing Retainer',
+      badgeClass: 'bg-purple-500/20 text-purple-400 border-purple-500/40 font-bold',
+      dotColor: 'bg-purple-400',
+    };
+  }
+
+  if (!dueDate) {
+    return {
+      daysRemaining: 0,
+      isOverdue: false,
+      isCompleted: false,
+      isToday: false,
+      label: 'Timeline Pending',
+      badgeClass: 'bg-muted/40 text-muted-foreground border-border font-medium',
+      dotColor: 'bg-muted-foreground',
+    };
+  }
+
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const target = new Date(dueDate);
+  target.setHours(0, 0, 0, 0);
+
+  const diffMs = target.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    const overdueDays = Math.abs(diffDays);
+    return {
+      daysRemaining: diffDays,
+      isOverdue: true,
+      isCompleted: false,
+      isToday: false,
+      label: `Overdue by ${overdueDays} day${overdueDays > 1 ? 's' : ''}`,
+      badgeClass: 'bg-rose-500/20 text-rose-400 border-rose-500/40 font-bold animate-pulse',
+      dotColor: 'bg-rose-500',
+    };
+  }
+
+  if (diffDays === 0) {
+    return {
+      daysRemaining: 0,
+      isOverdue: false,
+      isCompleted: false,
+      isToday: true,
+      label: 'Due Today (Target Finish)',
+      badgeClass: 'bg-amber-500/20 text-amber-400 border-amber-500/40 font-extrabold',
+      dotColor: 'bg-amber-400',
+    };
+  }
+
+  if (diffDays <= 3) {
+    return {
+      daysRemaining: diffDays,
+      isOverdue: false,
+      isCompleted: false,
+      isToday: false,
+      label: `${diffDays} day${diffDays > 1 ? 's' : ''} left (Finishing Soon)`,
+      badgeClass: 'bg-amber-400/15 text-amber-300 border-amber-400/30 font-bold',
+      dotColor: 'bg-amber-400',
+    };
+  }
+
+  return {
+    daysRemaining: diffDays,
+    isOverdue: false,
+    isCompleted: false,
+    isToday: false,
+    label: `${diffDays} days remaining (On Track)`,
+    badgeClass: 'bg-cyan/15 text-cyan border-cyan/30 font-bold',
+    dotColor: 'bg-cyan',
+  };
+}
+
