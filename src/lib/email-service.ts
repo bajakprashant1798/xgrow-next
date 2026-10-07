@@ -197,11 +197,6 @@ export function generateInvoiceEmailHtml(params: {
       <div style="text-align: center;">
         <a href="https://xgro.in/client#invoices" class="btn">View & Download PDF Invoice</a>
       </div>
-
-      <div style="margin-top: 32px; padding: 16px; background: #090e17; border-radius: 8px; font-size: 12px; color: #94a3b8;">
-        <strong style="color: #e2e8f0;">Bank / UPI Details:</strong><br>
-        Bank: HDFC Bank · Account: XGRO Tech Solutions · UPI: <code>xgro@hdfcbank</code>
-      </div>
     </div>
     <div class="footer">
       XGRO Digital Agency · Moradabad & NCR · +91 63953 19725 · billing@xgro.in

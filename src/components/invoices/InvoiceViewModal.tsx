@@ -10,21 +10,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  Download,
   Printer,
   Mail,
   CheckCircle2,
   AlertCircle,
-  Copy,
-  Calendar,
-  Building2,
-  FileText,
-  CreditCard,
-  QrCode,
   ShieldCheck,
-  Send,
-  Sparkles,
-  Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { InvoiceDocumentModel, ClientModel, ProjectModel } from '@/lib/supabase/types';
@@ -51,7 +41,6 @@ export function InvoiceViewModal({
   onStatusChange,
 }: InvoiceViewModalProps) {
   const [isSendingEmail, setIsSendingEmail] = useState(false);
-  const [copiedPayment, setCopiedPayment] = useState(false);
 
   if (!invoice) return null;
 
@@ -115,22 +104,6 @@ export function InvoiceViewModal({
     } finally {
       setIsSendingEmail(false);
     }
-  };
-
-  const handleCopyPayment = () => {
-    const paymentText = `XGRO Digital Agency Payment Details:
-Bank: HDFC Bank
-Account: XGRO Tech Solutions
-Account No: 50200084920194
-IFSC: HDFC0001234
-UPI ID: xgro@hdfcbank
-Amount: ₹${grandTotal.toLocaleString('en-IN')}
-Reference: ${docRef}`;
-
-    navigator.clipboard.writeText(paymentText);
-    setCopiedPayment(true);
-    toast.success('Bank & UPI details copied to clipboard!');
-    setTimeout(() => setCopiedPayment(false), 2500);
   };
 
   return (
@@ -312,31 +285,9 @@ Reference: ${docRef}`;
           </div>
 
           {/* Summary & Totals */}
-          <div className="flex flex-col sm:flex-row justify-between gap-6 pt-4 border-t border-border print:border-gray-300">
-            {/* Payment Details Box */}
-            <div className="sm:max-w-xs space-y-2 p-4 rounded-xl bg-surface/90 border border-border print:border-gray-200 print:bg-gray-50 text-[11px]">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-foreground print:text-black flex items-center gap-1.5 text-cyan">
-                  <CreditCard className="h-3.5 w-3.5" /> Bank & UPI Details
-                </span>
-                <button
-                  onClick={handleCopyPayment}
-                  className="text-[10px] font-bold text-muted-foreground hover:text-cyan print:hidden"
-                >
-                  {copiedPayment ? 'Copied!' : 'Copy'}
-                </button>
-              </div>
-              <div className="space-y-0.5 text-muted-foreground print:text-gray-700 font-mono text-[10px]">
-                <p>Bank: <strong>HDFC Bank Ltd</strong></p>
-                <p>A/C Name: <strong>XGRO TECH SOLUTIONS</strong></p>
-                <p>A/C No: <strong>50200084920194</strong></p>
-                <p>IFSC: <strong>HDFC0001234</strong></p>
-                <p>UPI ID: <strong>xgro@hdfcbank</strong></p>
-              </div>
-            </div>
-
+          <div className="flex flex-col sm:flex-row justify-end gap-6 pt-4 border-t border-border print:border-gray-300">
             {/* Price Calculation Box */}
-            <div className="sm:w-64 space-y-2 text-xs">
+            <div className="w-full sm:w-72 space-y-2 text-xs">
               <div className="flex justify-between text-muted-foreground print:text-gray-700">
                 <span>Subtotal:</span>
                 <span className="font-mono font-bold text-foreground print:text-black">
