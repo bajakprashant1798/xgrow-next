@@ -56,6 +56,7 @@ import {
   subscribeToDataChanges,
 } from '@/lib/db';
 import { HeroBannerModel, BannerAspectRatio } from '@/lib/supabase/types';
+import { initialHeroBanners } from '@/lib/seed-data';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 
 interface AdminHeroBannerManagerProps {
@@ -68,11 +69,17 @@ export function AdminHeroBannerManager({
   canDelete = true,
 }: AdminHeroBannerManagerProps) {
   const [banners, setBanners] = useState<HeroBannerModel[]>([]);
-  const [activeBanner, setActiveBanner] = useState<HeroBannerModel | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+
+  // Derive activeBanner directly from banners array — guarantees 100% synchronization
+  const activeBanner =
+    banners.find((b) => b.is_active) ||
+    banners.find((b) => b.is_default || b.id === 'hero-default') ||
+    banners[0] ||
+    null;
 
   // Modal States
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -94,14 +101,29 @@ export function AdminHeroBannerManager({
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'active' | 'custom' | 'default'>('all');
 
-  const loadData = async () => {
+  const loadData = async (forceFresh = true) => {
     try {
-      const [allList, active] = await Promise.all([
-        getHeroBanners(),
-        getActiveHeroBanner(),
-      ]);
+      if (forceFresh && typeof window !== 'undefined') {
+        try {
+          const res = await fetch('/api/hero-banners', { cache: 'no-store' });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && Array.isArray(data.banners)) {
+              const activeId = data.activeId || data.activeBanner?.id;
+              const normalized = (data.banners as HeroBannerModel[]).map((b) => ({
+                ...b,
+                is_active: b.id === activeId || (b.is_active && !activeId),
+              }));
+              setBanners(normalized);
+              setIsLoading(false);
+              return;
+            }
+          }
+        } catch (_) {}
+      }
+
+      const allList = await getHeroBanners();
       setBanners(allList);
-      setActiveBanner(active);
     } catch (err) {
       console.error('Failed to load hero banners:', err);
       toast.error('Failed to load hero banners');
@@ -111,9 +133,9 @@ export function AdminHeroBannerManager({
   };
 
   useEffect(() => {
-    loadData();
+    loadData(true);
     const unsubscribe = subscribeToDataChanges(() => {
-      loadData();
+      loadData(true);
     });
     return () => unsubscribe();
   }, []);
@@ -151,7 +173,6 @@ export function AdminHeroBannerManager({
   const handleSetActive = async (banner: HeroBannerModel) => {
     try {
       // Optimistically update UI state immediately
-      setActiveBanner({ ...banner, is_active: true });
       setBanners((prev) =>
         prev.map((b) => ({
           ...b,
@@ -159,21 +180,20 @@ export function AdminHeroBannerManager({
         }))
       );
       await setActiveHeroBanner(banner.id);
-      await loadData();
       toast.success(`"${banner.title}" is now live on the homepage!`);
+      await loadData(true);
     } catch (err) {
       console.error('Error activating banner:', err);
       toast.error('Failed to set active banner');
+      await loadData(true);
     }
   };
 
   // Reset to default hero image
   const handleResetToDefault = async () => {
-    const defaultBanner = banners.find((b) => b.is_default || b.id === 'hero-default');
-    if (!defaultBanner) {
-      toast.error('Default hero banner not found');
-      return;
-    }
+    const defaultBanner =
+      banners.find((b) => b.is_default || b.id === 'hero-default') ||
+      initialHeroBanners[0];
     await handleSetActive(defaultBanner);
   };
 
@@ -277,7 +297,7 @@ export function AdminHeroBannerManager({
 
       setIsEditModalOpen(false);
       setEditingBanner(null);
-      await loadData();
+      await loadData(true);
     } catch (err) {
       console.error('Error saving hero banner:', err);
       toast.error('Failed to save hero banner. Please check console.', { id: toastId });
@@ -301,28 +321,31 @@ export function AdminHeroBannerManager({
     }
 
     // Optimistically update UI immediately
-    setBanners((prev) => prev.filter((b) => b.id !== bannerId));
-    if (activeBanner?.id === bannerId) {
-      const defaultBanner = banners.find((b) => b.is_default || b.id === 'hero-default');
-      if (defaultBanner) {
-        setActiveBanner({ ...defaultBanner, is_active: true });
+    const wasActive = activeBanner?.id === bannerId;
+    setBanners((prev) => {
+      const remaining = prev.filter((b) => b.id !== bannerId);
+      if (wasActive) {
+        return remaining.map((b) =>
+          b.is_default || b.id === 'hero-default' ? { ...b, is_active: true } : { ...b, is_active: false }
+        );
       }
-    }
+      return remaining;
+    });
     setDeleteConfirmId(null);
 
     try {
       const success = await deleteHeroBanner(bannerId);
       if (success) {
         toast.success('Banner deleted successfully');
-        await loadData();
+        await loadData(true);
       } else {
         toast.error('Cannot delete the default hero banner.');
-        await loadData();
+        await loadData(true);
       }
     } catch (err) {
       console.error('Error deleting banner:', err);
       toast.error('Failed to delete banner');
-      await loadData();
+      await loadData(true);
     }
   };
 

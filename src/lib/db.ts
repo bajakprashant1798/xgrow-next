@@ -4171,11 +4171,32 @@ export async function saveHeroBanner(
 
 export async function setActiveHeroBanner(bannerId: string): Promise<HeroBannerModel | null> {
   const current = await getHeroBanners();
-  const target = current.find((b) => b.id === bannerId);
-  if (!target) return null;
+  let target = current.find((b) => b.id === bannerId) || (bannerId === 'hero-default' ? initialHeroBanners[0] : null);
 
   if (typeof window !== 'undefined') {
     localStorage.setItem(STORAGE_KEYS.ACTIVE_HERO_ID, bannerId);
+  }
+
+  // 1. Primary: Server API route sync (Awaited to ensure server is updated before returning)
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch('/api/hero-banners', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_active', bannerId }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.banners)) {
+          setLocalItem(STORAGE_KEYS.HERO_BANNERS, json.banners);
+          if (json.activeBanner) target = json.activeBanner;
+          notifyDataChanged();
+          return target;
+        }
+      }
+    } catch (e) {
+      console.warn('API setActive notice:', e);
+    }
   }
 
   const now = new Date().toISOString();
@@ -4188,25 +4209,29 @@ export async function setActiveHeroBanner(bannerId: string): Promise<HeroBannerM
   setLocalItem(STORAGE_KEYS.HERO_BANNERS, updatedList);
   notifyDataChanged();
 
-  // 1. Server API route sync (Primary - updates Supabase DB server-side)
-  if (typeof window !== 'undefined') {
-    try {
-      await fetch('/api/hero-banners', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'set_active', bannerId }),
-      });
-    } catch (e) {
-      console.warn('API setActive notice:', e);
-    }
-  }
-
-  // 2. Direct Supabase sync
+  // 2. Direct Supabase sync (best effort)
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
       await supabase.from('hero_banners').update({ is_active: false }).neq('id', bannerId);
-      await supabase.from('hero_banners').update({ is_active: true, updated_at: now }).eq('id', bannerId);
+      if (bannerId === 'hero-default') {
+        await supabase.from('hero_banners').upsert({
+          id: 'hero-default',
+          title: 'Default Agency Showcase',
+          subtitle: 'XGRO AI Platform & Agency Growth Suite Mockup',
+          badge_text: '',
+          image_url: '/home/hero.png',
+          link_url: '/contact',
+          button_text: 'Get Started',
+          aspect_ratio: 'mockup',
+          is_active: true,
+          is_default: true,
+          display_order: 0,
+          updated_at: now,
+        });
+      } else {
+        await supabase.from('hero_banners').update({ is_active: true, updated_at: now }).eq('id', bannerId);
+      }
     } catch (e) {
       console.warn('Supabase setActiveHeroBanner notice:', e);
     }

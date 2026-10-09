@@ -140,6 +140,45 @@ async function uploadBase64ToSupabaseStorage(
   return null;
 }
 
+async function deleteHeroBannerImageFromStorage(imageUrl: string) {
+  if (!imageUrl || imageUrl.startsWith('/home/hero.png') || imageUrl.startsWith('data:')) {
+    return;
+  }
+
+  // 1. Delete from Supabase Storage bucket
+  const supabase = getSupabaseServerClient();
+  if (supabase && imageUrl.includes('/storage/v1/object/public/')) {
+    try {
+      const publicMarker = '/storage/v1/object/public/';
+      const idx = imageUrl.indexOf(publicMarker);
+      if (idx !== -1) {
+        const rest = imageUrl.substring(idx + publicMarker.length);
+        const firstSlash = rest.indexOf('/');
+        if (firstSlash !== -1) {
+          const bucket = rest.substring(0, firstSlash);
+          const filePath = decodeURIComponent(rest.substring(firstSlash + 1));
+          await supabase.storage.from(bucket).remove([filePath]);
+        }
+      }
+    } catch (err) {
+      console.warn('[Hero API] Notice deleting image from Supabase storage:', err);
+    }
+  }
+
+  // 2. Delete from local public uploads folder if saved locally
+  if (imageUrl.startsWith('/uploads/hero/')) {
+    try {
+      const fileName = imageUrl.replace('/uploads/hero/', '');
+      const localFilePath = path.join(process.cwd(), 'public', 'uploads', 'hero', fileName);
+      if (fs.existsSync(localFilePath)) {
+        fs.unlinkSync(localFilePath);
+      }
+    } catch (e) {
+      console.warn('[Hero API] Notice deleting local upload file:', e);
+    }
+  }
+}
+
 export async function GET() {
   try {
     const { banners: diskBanners, activeId: diskActiveId, deletedIds } = readStoredBanners();
@@ -253,7 +292,24 @@ export async function POST(request: NextRequest) {
       if (supabase) {
         try {
           await supabase.from('hero_banners').update({ is_active: false }).neq('id', bannerIdToActivate);
-          await supabase.from('hero_banners').update({ is_active: true, updated_at: now }).eq('id', bannerIdToActivate);
+          if (bannerIdToActivate === 'hero-default') {
+            await supabase.from('hero_banners').upsert({
+              id: 'hero-default',
+              title: 'Default Agency Showcase',
+              subtitle: 'XGRO AI Platform & Agency Growth Suite Mockup',
+              badge_text: '',
+              image_url: '/home/hero.png',
+              link_url: '/contact',
+              button_text: 'Get Started',
+              aspect_ratio: 'mockup',
+              is_active: true,
+              is_default: true,
+              display_order: 0,
+              updated_at: now,
+            });
+          } else {
+            await supabase.from('hero_banners').update({ is_active: true, updated_at: now }).eq('id', bannerIdToActivate);
+          }
         } catch (sbErr) {
           console.warn('[Hero API] Supabase set_active notice:', sbErr);
         }
@@ -375,6 +431,11 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    // Delete associated image file from Supabase Storage & local disk
+    if (targetBanner?.image_url) {
+      await deleteHeroBannerImageFromStorage(targetBanner.image_url);
+    }
+
     let updatedActiveId = currentActiveId;
     if (currentActiveId === id) {
       updatedActiveId = 'hero-default';
@@ -395,7 +456,20 @@ export async function DELETE(request: NextRequest) {
       try {
         await supabase.from('hero_banners').delete().eq('id', id);
         if (updatedActiveId === 'hero-default') {
-          await supabase.from('hero_banners').update({ is_active: true }).eq('id', 'hero-default');
+          await supabase.from('hero_banners').upsert({
+            id: 'hero-default',
+            title: 'Default Agency Showcase',
+            subtitle: 'XGRO AI Platform & Agency Growth Suite Mockup',
+            badge_text: '',
+            image_url: '/home/hero.png',
+            link_url: '/contact',
+            button_text: 'Get Started',
+            aspect_ratio: 'mockup',
+            is_active: true,
+            is_default: true,
+            display_order: 0,
+            updated_at: new Date().toISOString(),
+          });
         }
       } catch (e) {
         console.warn('[Hero API] Supabase delete notice:', e);
