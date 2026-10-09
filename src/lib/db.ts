@@ -2010,6 +2010,38 @@ export async function deleteProjectUpdate(
 }
 
 export async function getAllInvoices(): Promise<InvoiceDocumentModel[]> {
+  // 1. Try server API first (Supabase backed)
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch('/api/invoices');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.invoices)) {
+          const [projects, clients] = await Promise.all([getProjects(), getClients()]);
+          const enriched = (data.invoices as InvoiceDocumentModel[]).map((inv) => {
+            const proj = projects.find((p) => p.id === inv.project_id);
+            const client = clients.find((c) => c.id === inv.client_id || (proj && c.id === proj.client_id));
+            return {
+              ...inv,
+              project_name: inv.project_name || proj?.project_name,
+              client_name: inv.client_name || client?.name,
+              client_email: inv.client_email || client?.email,
+              client_company: inv.client_company || client?.company_name,
+            };
+          });
+          return enriched.sort((a, b) => {
+            const dateA = new Date(a.issue_date || a.created_at || '').getTime();
+            const dateB = new Date(b.issue_date || b.created_at || '').getTime();
+            return dateB - dateA;
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[Invoices] API fetch notice, using local cache:', e);
+    }
+  }
+
+  // 2. Local fallback
   const [projects, clients] = await Promise.all([getProjects(), getClients()]);
   const allInvoices: InvoiceDocumentModel[] = [];
 
@@ -2038,41 +2070,113 @@ export async function getAllInvoices(): Promise<InvoiceDocumentModel[]> {
   });
 }
 
+export async function uploadInvoiceQrCode(file: File): Promise<string> {
+  // 1. Primary: Server-side upload endpoint (uploads to Supabase Storage)
+  if (typeof window !== 'undefined') {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/invoices/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.url) {
+          return data.url;
+        }
+      }
+    } catch (apiErr) {
+      console.warn('Server QR upload notice, trying direct client upload:', apiErr);
+    }
+  }
+
+  // 2. Client-side Supabase storage upload
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    const bucketsToTry = ['invoices', 'public', 'resources', 'hero_banners'];
+    for (const bucket of bucketsToTry) {
+      try {
+        const ext = file.name.split('.').pop() || 'png';
+        const cleanFileName = `qr-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${ext}`;
+        const filePath = `qr_codes/${cleanFileName}`;
+
+        const { data, error } = await supabase.storage
+          .from(bucket)
+          .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: true,
+          });
+
+        if (!error && data) {
+          const { data: publicUrlData } = supabase.storage
+            .from(bucket)
+            .getPublicUrl(filePath);
+
+          if (publicUrlData?.publicUrl) {
+            return publicUrlData.publicUrl;
+          }
+        }
+      } catch (err) {
+        // try next bucket
+      }
+    }
+  }
+
+  // Fallback: compress to optimized WebP
+  return await compressImageFile(file, 600, 600, 0.9);
+}
+
 export async function addProjectInvoice(
   projectId: string,
   invoice: Omit<InvoiceDocumentModel, 'id' | 'created_at'>
 ): Promise<ProjectModel | null> {
   const projects = await getProjects();
-  const project = projects.find((p) => p.id === projectId);
-  if (!project) return null;
+  let project = projects.find((p) => p.id === projectId);
+  if (!project && projects.length > 0) {
+    project = projects[0];
+    projectId = project.id;
+  }
 
+  const generatedId = `inv-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const newDoc: InvoiceDocumentModel = {
     ...invoice,
-    id: `inv-${Date.now()}`,
+    id: generatedId,
     project_id: projectId,
     created_at: new Date().toISOString(),
   };
 
-  project.invoices = [...(project.invoices || []), newDoc];
-  setLocalItem(STORAGE_KEYS.PROJECTS, projects);
+  if (project) {
+    project.invoices = [newDoc, ...(project.invoices || [])];
+    setLocalItem(STORAGE_KEYS.PROJECTS, projects);
+    memoryCache[STORAGE_KEYS.PROJECTS] = { data: projects, timestamp: Date.now() };
+  }
 
-  const supabase = getSupabaseClient();
-  if (supabase && projectId.length > 30 && invoice.client_id.length > 30) {
+  // Sync to /api/invoices (Supabase Service Role + Disk)
+  if (typeof window !== 'undefined') {
     try {
-      await supabase.from('invoices_documents').insert({
-        project_id: projectId,
-        client_id: invoice.client_id,
-        type: invoice.type || 'invoice',
-        title: invoice.title,
-        reference_number: invoice.reference_number,
-        amount: invoice.amount,
-        status: invoice.status || 'sent',
-        notes: invoice.notes,
+      const res = await fetch('/api/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', invoice: newDoc }),
       });
-    } catch (e) {
-      console.warn('Error inserting invoice in Supabase:', e);
+      if (res.ok) {
+        const resData = await res.json();
+        if (resData.success && resData.invoice && project) {
+          // update with server assigned id if changed
+          project.invoices = (project.invoices || []).map((i) =>
+            i.id === generatedId ? resData.invoice : i
+          );
+          setLocalItem(STORAGE_KEYS.PROJECTS, projects);
+          memoryCache[STORAGE_KEYS.PROJECTS] = { data: projects, timestamp: Date.now() };
+        }
+      }
+    } catch (apiErr) {
+      console.warn('[Invoices] API sync notice:', apiErr);
     }
   }
+
+  notifyDataChanged();
 
   // Auto-notify client on portal about newly created invoice/quotation
   if (invoice.client_id) {
@@ -2089,7 +2193,7 @@ export async function addProjectInvoice(
     });
   }
 
-  return project;
+  return project || null;
 }
 
 export async function updateProjectInvoice(
@@ -2098,34 +2202,49 @@ export async function updateProjectInvoice(
   updates: Partial<InvoiceDocumentModel>
 ): Promise<ProjectModel | null> {
   const projects = await getProjects();
-  const project = projects.find((p) => p.id === projectId);
-  if (!project) return null;
-
-  project.invoices = (project.invoices || []).map((inv) =>
-    inv.id === invoiceId
-      ? { ...inv, ...updates, updated_at: new Date().toISOString() }
-      : inv
-  );
-  setLocalItem(STORAGE_KEYS.PROJECTS, projects);
-
-  const supabase = getSupabaseClient();
-  if (supabase && invoiceId.length > 30) {
-    try {
-      await supabase.from('invoices_documents').update({
-        title: updates.title,
-        amount: updates.amount,
-        status: updates.status,
-        notes: updates.notes,
-        due_date: updates.due_date,
-      }).eq('id', invoiceId);
-    } catch (e) {
-      console.warn('Error updating invoice in Supabase:', e);
+  let project = projects.find((p) => p.id === projectId || p.invoices?.some((i) => i.id === invoiceId));
+  if (!project) {
+    // Search across all projects for invoiceId
+    for (const p of projects) {
+      if (p.invoices?.some((i) => i.id === invoiceId)) {
+        project = p;
+        projectId = p.id;
+        break;
+      }
     }
   }
 
+  if (project) {
+    project.invoices = (project.invoices || []).map((inv) =>
+      inv.id === invoiceId
+        ? { ...inv, ...updates, updated_at: new Date().toISOString() }
+        : inv
+    );
+    setLocalItem(STORAGE_KEYS.PROJECTS, projects);
+    memoryCache[STORAGE_KEYS.PROJECTS] = { data: projects, timestamp: Date.now() };
+  }
+
+  // Sync to /api/invoices
+  if (typeof window !== 'undefined') {
+    try {
+      await fetch('/api/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update',
+          invoice: { ...updates, id: invoiceId, project_id: projectId },
+        }),
+      });
+    } catch (e) {
+      console.warn('[Invoices] API update notice:', e);
+    }
+  }
+
+  notifyDataChanged();
+
   // Auto-notify client about invoice changes
-  if (project.client_id && (updates.status || updates.amount || updates.due_date)) {
-    const targetInv = project.invoices.find((i) => i.id === invoiceId);
+  if (project?.client_id && (updates.status || updates.amount || updates.due_date)) {
+    const targetInv = project.invoices?.find((i) => i.id === invoiceId);
     if (targetInv) {
       const docTypeLabel = targetInv.type === 'quotation' ? 'Quotation' : 'Invoice';
       await addNotification({
@@ -2140,30 +2259,45 @@ export async function updateProjectInvoice(
     }
   }
 
-  return project;
+  return project || null;
 }
 
 export async function deleteProjectInvoice(
   projectId: string,
-  invoiceId: string
+  invoiceId: string,
+  referenceNumber?: string
 ): Promise<ProjectModel | null> {
   const projects = await getProjects();
-  const project = projects.find((p) => p.id === projectId);
-  if (!project) return null;
+  let project = projects.find((p) => p.id === projectId || p.invoices?.some((i) => i.id === invoiceId || (referenceNumber && i.reference_number === referenceNumber)));
 
-  project.invoices = (project.invoices || []).filter((inv) => inv.id !== invoiceId);
-  setLocalItem(STORAGE_KEYS.PROJECTS, projects);
-
-  const supabase = getSupabaseClient();
-  if (supabase && invoiceId.length > 30) {
-    try {
-      await supabase.from('invoices_documents').delete().eq('id', invoiceId);
-    } catch (e) {
-      console.warn('Error deleting invoice from Supabase:', e);
+  // Remove from all projects to ensure full clean up
+  for (const p of projects) {
+    if (p.invoices) {
+      p.invoices = p.invoices.filter((i) => i.id !== invoiceId && (!referenceNumber || i.reference_number !== referenceNumber));
+      if (!project) project = p;
     }
   }
 
-  return project;
+  setLocalItem(STORAGE_KEYS.PROJECTS, projects);
+  memoryCache[STORAGE_KEYS.PROJECTS] = { data: projects, timestamp: Date.now() };
+
+  // Sync delete to /api/invoices (which also permanently removes QR code image from Supabase Storage)
+  if (typeof window !== 'undefined') {
+    try {
+      const params = new URLSearchParams();
+      if (invoiceId) params.append('id', invoiceId);
+      if (referenceNumber) params.append('ref', referenceNumber);
+      if (projectId) params.append('projectId', projectId);
+      await fetch(`/api/invoices?${params.toString()}`, {
+        method: 'DELETE',
+      });
+    } catch (e) {
+      console.warn('[Invoices] API delete notice:', e);
+    }
+  }
+
+  notifyDataChanged();
+  return project || null;
 }
 
 

@@ -207,6 +207,14 @@ export interface InvoiceDocumentModel {
   due_date?: string;
   notes?: string;
   payment_terms?: string;
+  payment_mode?: 'qr_code' | 'bank_transfer' | 'both' | 'none';
+  qr_code_url?: string;
+  upi_id?: string;
+  bank_name?: string;
+  account_name?: string;
+  account_number?: string;
+  ifsc_code?: string;
+  branch_name?: string;
   items?: InvoiceLineItem[];
   created_at?: string;
   updated_at?: string;

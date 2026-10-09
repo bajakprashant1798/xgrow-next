@@ -238,12 +238,42 @@ CREATE TABLE IF NOT EXISTS public.invoices_documents (
     reference_number TEXT,
     file_url TEXT,
     amount NUMERIC DEFAULT 0,
+    subtotal NUMERIC DEFAULT 0,
+    tax_rate NUMERIC DEFAULT 0,
+    tax_amount NUMERIC DEFAULT 0,
+    discount_amount NUMERIC DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'sent' CHECK (status IN ('draft', 'sent', 'paid', 'overdue', 'accepted', 'rejected')),
     issue_date DATE DEFAULT CURRENT_DATE,
     due_date DATE,
     notes TEXT,
+    payment_terms TEXT,
+    payment_mode TEXT DEFAULT 'bank_transfer',
+    qr_code_url TEXT,
+    upi_id TEXT,
+    bank_name TEXT,
+    account_name TEXT,
+    account_number TEXT,
+    ifsc_code TEXT,
+    branch_name TEXT,
+    items JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Migration helpers for invoices_documents
+ALTER TABLE public.invoices_documents ADD COLUMN IF NOT EXISTS subtotal NUMERIC DEFAULT 0;
+ALTER TABLE public.invoices_documents ADD COLUMN IF NOT EXISTS tax_rate NUMERIC DEFAULT 0;
+ALTER TABLE public.invoices_documents ADD COLUMN IF NOT EXISTS tax_amount NUMERIC DEFAULT 0;
+ALTER TABLE public.invoices_documents ADD COLUMN IF NOT EXISTS discount_amount NUMERIC DEFAULT 0;
+ALTER TABLE public.invoices_documents ADD COLUMN IF NOT EXISTS payment_terms TEXT;
+ALTER TABLE public.invoices_documents ADD COLUMN IF NOT EXISTS payment_mode TEXT DEFAULT 'bank_transfer';
+ALTER TABLE public.invoices_documents ADD COLUMN IF NOT EXISTS qr_code_url TEXT;
+ALTER TABLE public.invoices_documents ADD COLUMN IF NOT EXISTS upi_id TEXT;
+ALTER TABLE public.invoices_documents ADD COLUMN IF NOT EXISTS bank_name TEXT;
+ALTER TABLE public.invoices_documents ADD COLUMN IF NOT EXISTS account_name TEXT;
+ALTER TABLE public.invoices_documents ADD COLUMN IF NOT EXISTS account_number TEXT;
+ALTER TABLE public.invoices_documents ADD COLUMN IF NOT EXISTS ifsc_code TEXT;
+ALTER TABLE public.invoices_documents ADD COLUMN IF NOT EXISTS branch_name TEXT;
+ALTER TABLE public.invoices_documents ADD COLUMN IF NOT EXISTS items JSONB;
 
 -- 13. NOTIFICATIONS TABLE
 CREATE TABLE IF NOT EXISTS public.notifications (

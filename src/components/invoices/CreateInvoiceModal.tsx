@@ -7,7 +7,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,7 +20,14 @@ import {
   CheckCircle2,
   Calendar,
   CreditCard,
-  Sparkles,
+  QrCode,
+  Landmark,
+  Layers,
+  UploadCloud,
+  X,
+  Loader2,
+  Check,
+  Building2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -30,7 +36,7 @@ import {
   ProjectModel,
   ClientModel,
 } from '@/lib/supabase/types';
-import { addProjectInvoice, getProjects, getClients } from '@/lib/db';
+import { addProjectInvoice, getProjects, getClients, uploadInvoiceQrCode } from '@/lib/db';
 import { sendInvoiceEmail } from '@/lib/email-service';
 
 interface CreateInvoiceModalProps {
@@ -65,6 +71,17 @@ export function CreateInvoiceModal({
   const [notes, setNotes] = useState('Payment is due within 15 days of invoice date. Thank you for choosing XGRO!');
   const [sendEmailImmediately, setSendEmailImmediately] = useState(true);
 
+  // Payment Options States
+  const [paymentMode, setPaymentMode] = useState<'qr_code' | 'bank_transfer' | 'both' | 'none'>('both');
+  const [qrCodeUrl, setQrCodeUrl] = useState('');
+  const [isUploadingQr, setIsUploadingQr] = useState(false);
+  const [upiId, setUpiId] = useState('xgro.services@okhdfcbank');
+  const [bankName, setBankName] = useState('HDFC Bank');
+  const [accountName, setAccountName] = useState('XGRO Tech Solutions LLP');
+  const [accountNumber, setAccountNumber] = useState('50200084729104');
+  const [ifscCode, setIfscCode] = useState('HDFC0001234');
+  const [branchName, setBranchName] = useState('Civil Lines, Moradabad');
+
   // Line items
   const [lineItems, setLineItems] = useState<InvoiceLineItem[]>([
     { description: 'Website Development & Design Phase', quantity: 1, unit_price: 35000, total: 35000 },
@@ -84,11 +101,39 @@ export function CreateInvoiceModal({
   }, [open, type, defaultProjectId]);
 
   const loadInitialData = async () => {
-    const [p, c] = await Promise.all([getProjects(), getClients()]);
-    setProjects(p);
-    setClients(c);
-    if (!selectedProjectId && p.length > 0) {
-      setSelectedProjectId(defaultProjectId || p[0].id);
+    try {
+      const [p, c] = await Promise.all([getProjects(), getClients()]);
+      setProjects(p);
+      setClients(c);
+      if (p.length > 0) {
+        const matching = defaultProjectId && p.some((proj) => proj.id === defaultProjectId);
+        setSelectedProjectId(matching ? defaultProjectId! : p[0].id);
+      }
+    } catch (err) {
+      console.warn('Notice loading initial data for invoice modal:', err);
+    }
+  };
+
+  // QR Code upload to Supabase Storage
+  const handleQrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload an image file (PNG, JPG, WEBP)');
+      return;
+    }
+
+    setIsUploadingQr(true);
+    const toastId = toast.loading('Uploading QR code to Supabase Storage...');
+    try {
+      const url = await uploadInvoiceQrCode(file);
+      setQrCodeUrl(url);
+      toast.success('Payment QR code stored in Supabase!', { id: toastId });
+    } catch (err) {
+      toast.error('Failed to upload QR code', { id: toastId });
+    } finally {
+      setIsUploadingQr(false);
     }
   };
 
@@ -125,25 +170,22 @@ export function CreateInvoiceModal({
       toast.error('Invoice title is required');
       return;
     }
-    if (!selectedProjectId) {
-      toast.error('Please select a project');
-      return;
-    }
 
-    const currentProject = projects.find((p) => p.id === selectedProjectId);
-    const clientId = currentProject?.client_id || 'cli-1';
-    const client = clients.find((c) => c.id === clientId);
+    const targetProjectId = selectedProjectId || defaultProjectId || projects[0]?.id || 'proj-1';
+    const currentProject = projects.find((p) => p.id === targetProjectId) || projects[0];
+    const clientId = currentProject?.client_id || clients[0]?.id || 'cli-1';
+    const client = clients.find((c) => c.id === clientId) || clients[0];
 
     const newInvoice: Omit<InvoiceDocumentModel, 'id' | 'created_at'> = {
-      project_id: selectedProjectId,
-      project_name: currentProject?.project_name,
+      project_id: targetProjectId,
+      project_name: currentProject?.project_name || 'Standard Deliverables',
       client_id: clientId,
-      client_name: client?.name,
-      client_email: client?.email,
-      client_company: client?.company_name,
+      client_name: client?.name || currentProject?.client?.name || 'Client Account',
+      client_email: client?.email || currentProject?.client?.email || 'billing@client.com',
+      client_company: client?.company_name || currentProject?.client?.company_name || '',
       type: type,
       title: title.trim(),
-      reference_number: referenceNumber.trim(),
+      reference_number: referenceNumber.trim() || `INV-${Date.now().toString().slice(-4)}`,
       amount: grandTotal,
       subtotal: subtotal,
       tax_rate: taxRate,
@@ -153,26 +195,39 @@ export function CreateInvoiceModal({
       due_date: dueDate,
       notes: notes,
       items: lineItems,
+      payment_mode: paymentMode,
+      qr_code_url: paymentMode === 'qr_code' || paymentMode === 'both' ? qrCodeUrl : undefined,
+      upi_id: paymentMode === 'qr_code' || paymentMode === 'both' ? upiId : undefined,
+      bank_name: paymentMode === 'bank_transfer' || paymentMode === 'both' ? bankName : undefined,
+      account_name: paymentMode === 'bank_transfer' || paymentMode === 'both' ? accountName : undefined,
+      account_number: paymentMode === 'bank_transfer' || paymentMode === 'both' ? accountNumber : undefined,
+      ifsc_code: paymentMode === 'bank_transfer' || paymentMode === 'both' ? ifscCode : undefined,
+      branch_name: paymentMode === 'bank_transfer' || paymentMode === 'both' ? branchName : undefined,
     };
 
     try {
-      await addProjectInvoice(selectedProjectId, newInvoice);
+      await addProjectInvoice(targetProjectId, newInvoice);
 
       if (sendEmailImmediately) {
-        await sendInvoiceEmail({
-          invoice: { ...newInvoice, id: `inv-${Date.now()}` },
-          client: client,
-          project: currentProject,
-        });
-        toast.success(`${type === 'quotation' ? 'Quotation' : 'Invoice'} created & email dispatched!`);
+        try {
+          await sendInvoiceEmail({
+            invoice: { ...newInvoice, id: `inv-${Date.now()}` },
+            client: client,
+            project: currentProject,
+          });
+          toast.success(`${type === 'quotation' ? 'Quotation' : 'Invoice'} created & email dispatched!`);
+        } catch (emailErr) {
+          toast.success(`${type === 'quotation' ? 'Quotation' : 'Invoice'} created successfully!`);
+        }
       } else {
         toast.success(`${type === 'quotation' ? 'Quotation' : 'Invoice'} created successfully!`);
       }
 
       onOpenChange(false);
       if (onInvoiceCreated) onInvoiceCreated();
-    } catch (err) {
-      toast.error('Failed to create invoice');
+    } catch (err: any) {
+      console.error('Error creating invoice:', err);
+      toast.error(err?.message || 'Failed to create invoice');
     }
   };
 
@@ -189,7 +244,7 @@ export function CreateInvoiceModal({
             Create Invoice or Quotation
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Itemize project deliverables, calculate GST, and issue to client dashboard & email.
+            Itemize project deliverables, configure payment details (QR code / bank transfer), and issue directly.
           </DialogDescription>
         </DialogHeader>
 
@@ -381,6 +436,240 @@ export function CreateInvoiceModal({
                 <span className="font-mono font-extrabold text-cyan text-sm">₹{grandTotal.toLocaleString('en-IN')}</span>
               </div>
             </div>
+          </div>
+
+          {/* ========================================================================= */}
+          {/* PAYMENT & SETTLEMENT METHOD CONFIGURATION (QR CODE / BANK DETAILS)         */}
+          {/* ========================================================================= */}
+          <div className="space-y-3.5 pt-3 border-t border-border">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                  <CreditCard className="h-4 w-4 text-cyan" />
+                  Payment & Settlement Method
+                </label>
+                <p className="text-[11px] text-muted-foreground">
+                  Choose how the client will settle this invoice. Stored securely on Supabase.
+                </p>
+              </div>
+              <Badge variant="outline" className="text-[10px] text-cyan border-cyan/30">
+                Supabase Sync
+              </Badge>
+            </div>
+
+            {/* Payment Mode Selector Tabs */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <button
+                type="button"
+                onClick={() => setPaymentMode('both')}
+                className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-bold transition-all ${
+                  paymentMode === 'both'
+                    ? 'border-cyan bg-cyan/10 text-cyan shadow-sm ring-1 ring-cyan/50'
+                    : 'border-border bg-card text-muted-foreground hover:text-foreground hover:bg-card/80'
+                }`}
+              >
+                <div className="flex items-center gap-1 mb-1">
+                  <QrCode className="h-3.5 w-3.5" />
+                  <Landmark className="h-3.5 w-3.5" />
+                </div>
+                <span>Both (QR + Bank)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaymentMode('qr_code')}
+                className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-bold transition-all ${
+                  paymentMode === 'qr_code'
+                    ? 'border-cyan bg-cyan/10 text-cyan shadow-sm ring-1 ring-cyan/50'
+                    : 'border-border bg-card text-muted-foreground hover:text-foreground hover:bg-card/80'
+                }`}
+              >
+                <QrCode className="h-4 w-4 mb-1" />
+                <span>UPI / QR Code</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaymentMode('bank_transfer')}
+                className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-bold transition-all ${
+                  paymentMode === 'bank_transfer'
+                    ? 'border-cyan bg-cyan/10 text-cyan shadow-sm ring-1 ring-cyan/50'
+                    : 'border-border bg-card text-muted-foreground hover:text-foreground hover:bg-card/80'
+                }`}
+              >
+                <Landmark className="h-4 w-4 mb-1" />
+                <span>Bank Transfer</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaymentMode('none')}
+                className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-bold transition-all ${
+                  paymentMode === 'none'
+                    ? 'border-cyan bg-cyan/10 text-cyan shadow-sm ring-1 ring-cyan/50'
+                    : 'border-border bg-card text-muted-foreground hover:text-foreground hover:bg-card/80'
+                }`}
+              >
+                <CreditCard className="h-4 w-4 mb-1" />
+                <span>None / Custom</span>
+              </button>
+            </div>
+
+            {/* Option A: UPI / QR Code Box */}
+            {(paymentMode === 'qr_code' || paymentMode === 'both') && (
+              <div className="p-4 rounded-2xl bg-card border border-border/90 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <QrCode className="h-3.5 w-3.5 text-cyan" />
+                    UPI / Payment QR Code
+                  </span>
+                  <span className="text-[10px] text-muted-foreground font-medium">
+                    Upload image or enter UPI ID
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                  {/* QR Image Uploader */}
+                  <div>
+                    {qrCodeUrl ? (
+                      <div className="flex items-center gap-3 p-2.5 rounded-xl bg-surface border border-cyan/30">
+                        <img
+                          src={qrCodeUrl}
+                          alt="Payment QR"
+                          className="h-16 w-16 object-contain rounded-lg bg-white p-1 border border-border"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-emerald-400 flex items-center gap-1">
+                            <CheckCircle2 className="h-3 w-3" /> QR Active
+                          </p>
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            Stored on Supabase Storage
+                          </p>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setQrCodeUrl('')}
+                            className="h-6 text-[10px] text-rose-400 hover:text-rose-300 p-0 mt-0.5"
+                          >
+                            <Trash2 className="h-2.5 w-2.5 mr-1" /> Remove QR
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center p-4 rounded-xl border border-dashed border-border hover:border-cyan bg-surface/50 cursor-pointer transition-colors text-center group">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleQrUpload}
+                          disabled={isUploadingQr}
+                          className="hidden"
+                        />
+                        {isUploadingQr ? (
+                          <div className="flex items-center gap-2 text-xs text-cyan">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <span>Uploading to Supabase...</span>
+                          </div>
+                        ) : (
+                          <>
+                            <UploadCloud className="h-6 w-6 text-muted-foreground group-hover:text-cyan mb-1 transition-colors" />
+                            <span className="text-xs font-bold text-foreground group-hover:text-cyan">
+                              Upload Payment QR Code
+                            </span>
+                            <span className="text-[10px] text-muted-foreground mt-0.5">
+                              PNG, JPG, WEBP (stored in Supabase)
+                            </span>
+                          </>
+                        )}
+                      </label>
+                    )}
+                  </div>
+
+                  {/* UPI ID Field */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-foreground">
+                      UPI ID / VPA
+                    </label>
+                    <Input
+                      placeholder="e.g. xgro.services@okhdfcbank"
+                      value={upiId}
+                      onChange={(e) => setUpiId(e.target.value)}
+                      className="text-xs rounded-xl bg-surface border-border font-mono h-9"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Used for one-click copy and quick scan in client invoice.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Option B: Bank Details Box */}
+            {(paymentMode === 'bank_transfer' || paymentMode === 'both') && (
+              <div className="p-4 rounded-2xl bg-card border border-border/90 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Landmark className="h-3.5 w-3.5 text-cyan" />
+                    Bank Account Details (NEFT / RTGS / IMPS)
+                  </span>
+                  <span className="text-[10px] text-muted-foreground font-medium">
+                    Pre-filled with agency bank
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-foreground">Bank Name</label>
+                    <Input
+                      placeholder="e.g. HDFC Bank"
+                      value={bankName}
+                      onChange={(e) => setBankName(e.target.value)}
+                      className="text-xs rounded-xl bg-surface border-border h-9"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-foreground">Account Holder Name</label>
+                    <Input
+                      placeholder="e.g. XGRO Tech Solutions LLP"
+                      value={accountName}
+                      onChange={(e) => setAccountName(e.target.value)}
+                      className="text-xs rounded-xl bg-surface border-border h-9"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-foreground">Account Number</label>
+                    <Input
+                      placeholder="e.g. 50200084729104"
+                      value={accountNumber}
+                      onChange={(e) => setAccountNumber(e.target.value)}
+                      className="text-xs rounded-xl bg-surface border-border font-mono h-9"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-foreground">IFSC Code</label>
+                    <Input
+                      placeholder="e.g. HDFC0001234"
+                      value={ifscCode}
+                      onChange={(e) => setIfscCode(e.target.value)}
+                      className="text-xs rounded-xl bg-surface border-border font-mono h-9 uppercase"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2 space-y-1">
+                    <label className="text-[11px] font-bold text-foreground">Branch Name / Address</label>
+                    <Input
+                      placeholder="e.g. Civil Lines, Station Road, Moradabad"
+                      value={branchName}
+                      onChange={(e) => setBranchName(e.target.value)}
+                      className="text-xs rounded-xl bg-surface border-border h-9"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Notes & Payment Terms */}

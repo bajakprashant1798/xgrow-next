@@ -15,11 +15,16 @@ import {
   CheckCircle2,
   AlertCircle,
   ShieldCheck,
+  QrCode,
+  Landmark,
+  Copy,
+  Check,
+  CreditCard,
+  Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { InvoiceDocumentModel, ClientModel, ProjectModel } from '@/lib/supabase/types';
 import { sendInvoiceEmail } from '@/lib/email-service';
-import { Logo } from '@/components/site/Logo';
 
 interface InvoiceViewModalProps {
   invoice: InvoiceDocumentModel | null;
@@ -41,6 +46,7 @@ export function InvoiceViewModal({
   onStatusChange,
 }: InvoiceViewModalProps) {
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   if (!invoice) return null;
 
@@ -72,8 +78,28 @@ export function InvoiceViewModal({
   const taxAmount = invoice.tax_amount || 0;
   const grandTotal = invoice.amount;
 
+  // Payment Resolution
+  const paymentMode = invoice.payment_mode || (invoice.qr_code_url ? 'qr_code' : 'bank_transfer');
+  const qrCodeUrl = invoice.qr_code_url;
+  const upiId = invoice.upi_id || 'xgro.services@okhdfcbank';
+  const bankName = invoice.bank_name || 'HDFC Bank';
+  const accountName = invoice.account_name || 'XGRO Tech Solutions LLP';
+  const accountNumber = invoice.account_number || '50200084729104';
+  const ifscCode = invoice.ifsc_code || 'HDFC0001234';
+  const branchName = invoice.branch_name || 'Civil Lines, Station Road, Moradabad';
+
+  const showQr = (paymentMode === 'qr_code' || paymentMode === 'both') && qrCodeUrl;
+  const showBank = paymentMode === 'bank_transfer' || paymentMode === 'both' || (!showQr && paymentMode !== 'none');
+
+  const copyToClipboard = (text: string, label: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedField(label);
+    toast.success(`${label} copied to clipboard!`);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
   const handlePrint = () => {
-    // Inject print styling and trigger browser print dialog
     const printContent = document.getElementById('printable-invoice');
     if (!printContent) return;
 
@@ -156,8 +182,8 @@ export function InvoiceViewModal({
               <div className="flex items-center gap-3">
                 <img
                   src="/xlogo.png"
-                  alt="XGRO Logo"
-                  className="h-10 w-10 object-contain rounded-xl"
+                  alt="XGRO Official Logo"
+                  className="h-11 w-11 object-contain rounded-xl bg-surface/50 p-1 border border-border/80 shadow-sm print:border-gray-300"
                 />
                 <div>
                   <h1 className="text-2xl font-black tracking-tight text-foreground print:text-black">
@@ -297,7 +323,7 @@ export function InvoiceViewModal({
 
               {taxAmount > 0 && (
                 <div className="flex justify-between text-muted-foreground print:text-gray-700">
-                  <span>GST (18%):</span>
+                  <span>GST ({invoice.tax_rate || 18}%):</span>
                   <span className="font-mono font-bold text-foreground print:text-black">
                     ₹{taxAmount.toLocaleString('en-IN')}
                   </span>
@@ -312,6 +338,179 @@ export function InvoiceViewModal({
               </div>
             </div>
           </div>
+
+          {/* ========================================================================= */}
+          {/* PAYMENT & SETTLEMENT SECTION (DYNAMIC QR CODE / BANK TRANSFER)            */}
+          {/* ========================================================================= */}
+          {paymentMode !== 'none' && (showQr || showBank) && (
+            <div className="pt-6 border-t border-border print:border-gray-300 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-cyan print:text-gray-800 flex items-center gap-1.5">
+                  <CreditCard className="h-4 w-4" />
+                  Payment & Settlement Details
+                </h3>
+                <span className="text-[11px] text-muted-foreground print:text-gray-500 font-medium">
+                  {isPaid ? 'Settled & Verified' : 'Please settle using the payment options below'}
+                </span>
+              </div>
+
+              <div className={`grid grid-cols-1 ${showQr && showBank ? 'sm:grid-cols-2' : ''} gap-4`}>
+                {/* 1. UPI / QR Code Box */}
+                {showQr && (
+                  <div className="p-4 rounded-2xl bg-surface/90 border border-cyan/30 print:border-gray-300 print:bg-white flex flex-col justify-between space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-foreground print:text-black flex items-center gap-1.5">
+                        <QrCode className="h-4 w-4 text-cyan print:text-black" />
+                        Scan & Pay via UPI
+                      </span>
+                      <Badge className="bg-cyan/15 text-cyan border-cyan/30 print:border-gray-400 print:text-black text-[10px]">
+                        Instant Settle
+                      </Badge>
+                    </div>
+
+                    <div className="flex items-center gap-4 py-2">
+                      <div className="bg-white p-2 rounded-xl border border-border shadow-sm shrink-0">
+                        <img
+                          src={qrCodeUrl}
+                          alt="UPI Payment QR Code"
+                          className="h-28 w-28 object-contain rounded-lg"
+                        />
+                      </div>
+
+                      <div className="space-y-2 text-xs flex-1 min-w-0">
+                        <p className="text-[11px] text-muted-foreground print:text-gray-600 leading-snug">
+                          Scan using any UPI App (GPay, PhonePe, Paytm, BHIM, CRED):
+                        </p>
+
+                        {upiId && (
+                          <div className="space-y-1">
+                            <span className="text-[10px] uppercase font-bold text-muted-foreground print:text-gray-700">
+                              UPI ID / VPA:
+                            </span>
+                            <div className="flex items-center gap-1.5 bg-card print:bg-gray-100 px-2.5 py-1.5 rounded-lg border border-border print:border-gray-300">
+                              <span className="font-mono font-bold text-xs text-foreground print:text-black truncate flex-1">
+                                {upiId}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => copyToClipboard(upiId, 'UPI ID')}
+                                title="Copy UPI ID"
+                                className="h-6 w-6 text-muted-foreground hover:text-cyan print:hidden shrink-0"
+                              >
+                                {copiedField === 'UPI ID' ? (
+                                  <Check className="h-3.5 w-3.5 text-emerald-400" />
+                                ) : (
+                                  <Copy className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
+                        <p className="text-[10px] font-mono text-cyan print:text-black font-semibold">
+                          Amount: ₹{grandTotal.toLocaleString('en-IN')}
+                        </p>
+                      </div>
+                    </div>
+
+                    <p className="text-[10px] text-muted-foreground print:text-gray-500">
+                      💡 Please share payment reference / screenshot after transfer for instant ledger update.
+                    </p>
+                  </div>
+                )}
+
+                {/* 2. Direct Bank Wire / NEFT Transfer Box */}
+                {showBank && (
+                  <div className="p-4 rounded-2xl bg-surface/90 border border-border print:border-gray-300 print:bg-white flex flex-col justify-between space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-foreground print:text-black flex items-center gap-1.5">
+                        <Landmark className="h-4 w-4 text-cyan print:text-black" />
+                        Bank Account (NEFT / RTGS / IMPS)
+                      </span>
+                      <Badge variant="outline" className="text-[10px] border-border print:border-gray-400 text-muted-foreground print:text-black">
+                        Direct Transfer
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2 text-xs divide-y divide-border/60 print:divide-gray-200">
+                      <div className="flex justify-between items-center pt-1.5 first:pt-0">
+                        <span className="text-muted-foreground print:text-gray-600">Beneficiary:</span>
+                        <span className="font-bold text-foreground print:text-black text-right">
+                          {accountName}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center pt-1.5">
+                        <span className="text-muted-foreground print:text-gray-600">Bank Name:</span>
+                        <span className="font-bold text-foreground print:text-black text-right">
+                          {bankName}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center pt-1.5">
+                        <span className="text-muted-foreground print:text-gray-600">Account No:</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-extrabold text-foreground print:text-black">
+                            {accountNumber}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => copyToClipboard(accountNumber, 'Account Number')}
+                            title="Copy Account Number"
+                            className="h-5 w-5 text-muted-foreground hover:text-cyan print:hidden"
+                          >
+                            {copiedField === 'Account Number' ? (
+                              <Check className="h-3 w-3 text-emerald-400" />
+                            ) : (
+                              <Copy className="h-3 w-3" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between items-center pt-1.5">
+                        <span className="text-muted-foreground print:text-gray-600">IFSC Code:</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-bold text-cyan print:text-black uppercase">
+                            {ifscCode}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => copyToClipboard(ifscCode, 'IFSC Code')}
+                            title="Copy IFSC Code"
+                            className="h-5 w-5 text-muted-foreground hover:text-cyan print:hidden"
+                          >
+                            {copiedField === 'IFSC Code' ? (
+                              <Check className="h-3 w-3 text-emerald-400" />
+                            ) : (
+                              <Copy className="h-3 w-3" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between items-center pt-1.5">
+                        <span className="text-muted-foreground print:text-gray-600">Branch:</span>
+                        <span className="text-muted-foreground print:text-gray-700 text-right truncate max-w-[180px]">
+                          {branchName}
+                        </span>
+                      </div>
+                    </div>
+
+                    <p className="text-[10px] text-muted-foreground print:text-gray-500">
+                      Account Type: Current Account · Country: India
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Notes & Terms */}
           {invoice.notes && (
@@ -344,7 +543,7 @@ export function InvoiceViewModal({
                   onClick={() => onStatusChange(st)}
                   className={`h-7 rounded-lg text-xs font-bold capitalize ${
                     invoice.status === st && st === 'paid'
-                      ? 'bg-emerald-600 hover:bg-emerald-700'
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                       : invoice.status === st && st === 'sent'
                       ? 'bg-cyan text-slate-950'
                       : ''

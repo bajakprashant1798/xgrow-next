@@ -200,6 +200,38 @@ export function generateInvoiceEmailHtml(params: {
         </div>
       </div>
 
+      ${
+        invoice.payment_mode !== 'none' && (invoice.qr_code_url || invoice.bank_name || invoice.account_number)
+          ? `
+      <div style="background: #131d31; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; margin: 20px 0; text-align: left;">
+        <h4 style="margin: 0 0 12px 0; color: #38bdf8; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Payment & Settlement Details</h4>
+        ${
+          invoice.qr_code_url
+            ? `
+          <div style="margin-bottom: 14px; text-align: center;">
+            <img src="${invoice.qr_code_url}" alt="Payment QR Code" style="max-width: 140px; height: auto; border-radius: 8px; border: 1px solid #334155; padding: 4px; background: #ffffff;" />
+            ${invoice.upi_id ? `<p style="font-family: monospace; font-size: 12px; color: #38bdf8; margin: 6px 0 0 0;">UPI: <strong>${invoice.upi_id}</strong></p>` : ''}
+          </div>
+          `
+            : ''
+        }
+        ${
+          invoice.bank_name || invoice.account_number
+            ? `
+          <table style="width: 100%; font-size: 12px; color: #94a3b8; border-collapse: collapse;">
+            ${invoice.account_name ? `<tr><td style="padding: 3px 0;">Beneficiary:</td><td style="color: #f1f5f9; font-weight: bold; text-align: right;">${invoice.account_name}</td></tr>` : ''}
+            ${invoice.bank_name ? `<tr><td style="padding: 3px 0;">Bank Name:</td><td style="color: #f1f5f9; font-weight: bold; text-align: right;">${invoice.bank_name}</td></tr>` : ''}
+            ${invoice.account_number ? `<tr><td style="padding: 3px 0;">Account No:</td><td style="color: #38bdf8; font-family: monospace; font-weight: bold; text-align: right;">${invoice.account_number}</td></tr>` : ''}
+            ${invoice.ifsc_code ? `<tr><td style="padding: 3px 0;">IFSC Code:</td><td style="color: #f1f5f9; font-family: monospace; font-weight: bold; text-align: right;">${invoice.ifsc_code}</td></tr>` : ''}
+          </table>
+          `
+            : ''
+        }
+      </div>
+      `
+          : ''
+      }
+
       <div style="text-align: center;">
         <a href="https://xgro.in/client#invoices" class="btn">View & Download PDF Invoice</a>
       </div>

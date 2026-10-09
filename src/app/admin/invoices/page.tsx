@@ -177,14 +177,16 @@ export default function AdminInvoicesPage() {
       toast.error('You do not have permission to delete invoices');
       return;
     }
-    if (!inv.project_id) return;
+    // Optimistic instant UI update
+    setInvoices((prev) => prev.filter((i) => i.id !== inv.id && (!inv.reference_number || i.reference_number !== inv.reference_number)));
     try {
-      await deleteProjectInvoice(inv.project_id, inv.id);
-      toast.success(`Invoice #${inv.reference_number || inv.id} removed`);
+      await deleteProjectInvoice(inv.project_id || '', inv.id, inv.reference_number);
+      toast.success(`Invoice #${inv.reference_number || inv.id} deleted & assets removed`);
       setDeleteTarget(null);
-      loadData();
+      await loadData();
     } catch (err) {
       toast.error('Failed to delete invoice');
+      await loadData();
     }
   };
 
