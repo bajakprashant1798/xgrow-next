@@ -107,7 +107,8 @@ export async function getPublishedTrustedLogos(): Promise<TrustedLogoModel[]> {
 // Safely fetch Active Hero Banner
 export async function getActiveHeroBannerForSite(): Promise<HeroBannerModel> {
   if (typeof window === 'undefined') {
-    return initialHeroBanners.find((b) => b.is_active) || initialHeroBanners[0];
+    const { getServerActiveHeroBanner } = await import('@/lib/server-hero-banners');
+    return await getServerActiveHeroBanner();
   }
   return await getActiveHeroBanner();
 }

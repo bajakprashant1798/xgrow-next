@@ -12,6 +12,9 @@ import { Testimonials } from "@/components/home/Testimonials";
 import { PricingPreview } from "@/components/home/PricingPreview";
 import { FaqSection } from "@/components/home/FaqSection";
 import { ContactCta } from "@/components/home/ContactCta";
+import { getServerActiveHeroBanner } from "@/lib/server-hero-banners";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "XGRO — Digital Growth Agency in Moradabad | Websites, SEO & AI",
@@ -22,10 +25,12 @@ export const metadata: Metadata = {
   },
 };
 
-export default function Home() {
+export default async function Home() {
+  const activeHeroBanner = await getServerActiveHeroBanner();
+
   return (
     <>
-      <Hero />
+      <Hero initialActiveBanner={activeHeroBanner} />
       <TrustedBy />
       <ServicesOverview />
       <ServicesStrip />
@@ -41,3 +46,4 @@ export default function Home() {
     </>
   );
 }
+

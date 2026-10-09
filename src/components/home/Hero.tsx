@@ -12,9 +12,15 @@ import { getActiveHeroBanner, subscribeToDataChanges } from "@/lib/db";
 import { HeroBannerModel } from "@/lib/supabase/types";
 import { initialHeroBanners } from "@/lib/seed-data";
 
-export function Hero() {
+interface HeroProps {
+  initialActiveBanner?: HeroBannerModel;
+}
+
+export function Hero({ initialActiveBanner }: HeroProps) {
   const { t } = useLang();
-  const [activeBanner, setActiveBanner] = useState<HeroBannerModel>(initialHeroBanners[0]);
+  const [activeBanner, setActiveBanner] = useState<HeroBannerModel>(
+    initialActiveBanner || initialHeroBanners[0]
+  );
   const [imageError, setImageError] = useState(false);
 
   useEffect(() => {
@@ -30,9 +36,12 @@ export function Hero() {
         console.warn("Failed to load active hero banner:", err);
       }
     }
-    loadBanner();
+
+    if (!initialActiveBanner) {
+      loadBanner();
+    }
     return subscribeToDataChanges(loadBanner);
-  }, []);
+  }, [initialActiveBanner]);
 
   const isCustomOfferBanner = !activeBanner?.is_default && activeBanner?.id !== "hero-default";
   const displayImageUrl = activeBanner?.image_url || "/home/hero.png";
