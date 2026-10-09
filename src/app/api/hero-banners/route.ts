@@ -15,16 +15,15 @@ function getStorageFilePath(): string {
     }
     return path.join(localDir, 'hero_banners.json');
   } catch {
-    // Vercel serverless read-only filesystem fallback
     return path.join('/tmp', 'hero_banners.json');
   }
 }
 
 function getSupabaseServerClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-  if (!url || !anonKey || !url.startsWith('http')) return null;
-  return createClient(url, anonKey, {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  if (!url || !key || !url.startsWith('http')) return null;
+  return createClient(url, key, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
@@ -59,11 +58,9 @@ function readStoredBanners(): { banners: HeroBannerModel[]; activeId: string; de
         }
       }
     }
-  } catch (e) {
-    // Use inMemoryData if file read failed
-  }
+  } catch (e) {}
 
-  // Ensure default hero banner always exists and can never be removed
+  // Ensure default hero banner always exists
   const defaultHeroIndex = banners.findIndex((b) => b.is_default || b.id === 'hero-default');
   if (defaultHeroIndex === -1) {
     banners.unshift(initialHeroBanners[0]);
@@ -77,7 +74,6 @@ function readStoredBanners(): { banners: HeroBannerModel[]; activeId: string; de
     };
   }
 
-  // Enforce active banner
   if (!banners.some((b) => b.id === activeId)) {
     activeId = 'hero-default';
   }
@@ -102,60 +98,119 @@ function writeStoredBanners(banners: HeroBannerModel[], activeId: string, delete
   const filePath = getStorageFilePath();
   try {
     fs.writeFileSync(filePath, JSON.stringify(dataToSave, null, 2), 'utf-8');
-  } catch (e) {
-    // Silent in-memory fallback
+  } catch (e) {}
+}
+
+async function uploadBase64ToSupabaseStorage(
+  dataUrl: string,
+  bannerId: string
+): Promise<string | null> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase || !dataUrl.startsWith('data:')) return null;
+
+  try {
+    const matches = dataUrl.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) return null;
+
+    const mimeType = matches[1];
+    const ext = mimeType.split('/')[1] || 'png';
+    const fileName = `banners/banner-${bannerId}-${Date.now()}.${ext}`;
+    const buffer = Buffer.from(matches[2], 'base64');
+
+    const buckets = ['hero_banners', 'resources', 'public'];
+    for (const bucket of buckets) {
+      try {
+        const { error } = await supabase.storage.from(bucket).upload(fileName, buffer, {
+          contentType: mimeType,
+          cacheControl: '31536000',
+          upsert: true,
+        });
+
+        if (!error) {
+          const { data: pubData } = supabase.storage.from(bucket).getPublicUrl(fileName);
+          if (pubData?.publicUrl) {
+            return pubData.publicUrl;
+          }
+        }
+      } catch {}
+    }
+  } catch (err) {
+    console.warn('[Hero API] Error uploading base64 to Supabase Storage:', err);
   }
+  return null;
 }
 
 export async function GET() {
   try {
-    const { banners: diskBanners, activeId, deletedIds } = readStoredBanners();
-    let finalList = diskBanners;
-
-    // Optional Supabase fetch if available
+    const { banners: diskBanners, activeId: diskActiveId, deletedIds } = readStoredBanners();
     const supabase = getSupabaseServerClient();
+
     if (supabase) {
       try {
-        const { data, error } = await supabase
+        // 1. Fetch from Supabase hero_banners table
+        const { data: supaBanners, error: supaErr } = await supabase
           .from('hero_banners')
           .select('*')
-          .order('display_order', { ascending: true });
+          .order('display_order', { ascending: true })
+          .order('created_at', { ascending: false });
 
-        if (!error && data && data.length > 0) {
+        if (!supaErr && supaBanners && supaBanners.length > 0) {
+          const remoteList = supaBanners as HeroBannerModel[];
           const map = new Map<string, HeroBannerModel>();
 
-          // Add disk banners first (our local authority)
-          for (const item of diskBanners) {
-            if (item && item.id) map.set(item.id, item);
-          }
-
-          // Add remote items ONLY if they were not deleted
-          for (const item of data as HeroBannerModel[]) {
-            if (item && item.id && !deletedIds.includes(item.id) && !map.has(item.id)) {
+          // Merge remote items (Supabase is source of truth)
+          for (const item of remoteList) {
+            if (item && item.id && !deletedIds.includes(item.id)) {
               map.set(item.id, item);
             }
           }
 
-          finalList = Array.from(map.values()).map((b) => ({
+          // Ensure default banner exists
+          if (!map.has('hero-default')) {
+            map.set('hero-default', initialHeroBanners[0]);
+          }
+
+          const allBanners = Array.from(map.values());
+          // Check which banner is active in Supabase
+          const remoteActive = allBanners.find((b) => b.is_active);
+          const activeId = remoteActive?.id || 'hero-default';
+
+          const finalBanners = allBanners.map((b) => ({
             ...b,
             is_active: b.id === activeId,
           }));
+
+          const activeBanner =
+            finalBanners.find((b) => b.id === activeId) ||
+            finalBanners.find((b) => b.is_default) ||
+            initialHeroBanners[0];
+
+          // Sync back to memory/disk
+          writeStoredBanners(finalBanners, activeId, deletedIds);
+
+          return NextResponse.json({
+            success: true,
+            activeId,
+            activeBanner,
+            banners: finalBanners,
+          });
         }
       } catch (err) {
-        // Fallback to disk list
+        console.warn('[Hero API] Supabase query notice, using disk fallback:', err);
       }
     }
 
+    // Fallback to disk list
     const activeBanner =
-      finalList.find((b) => b.is_active) ||
-      finalList.find((b) => b.is_default || b.id === 'hero-default') ||
+      diskBanners.find((b) => b.is_active) ||
+      diskBanners.find((b) => b.is_default || b.id === 'hero-default') ||
       initialHeroBanners[0];
 
     return NextResponse.json({
       success: true,
-      activeId,
+      activeId: diskActiveId,
       activeBanner,
-      banners: finalList,
+      banners: diskBanners,
     });
   } catch (err: any) {
     return NextResponse.json(
@@ -183,6 +238,7 @@ export async function POST(request: NextRequest) {
     let updatedDeletedIds = [...currentDeletedIds];
     let targetSavedBanner: HeroBannerModel | null = null;
     const now = new Date().toISOString();
+    const supabase = getSupabaseServerClient();
 
     if (action === 'set_active' && bannerIdToActivate) {
       updatedActiveId = bannerIdToActivate;
@@ -192,13 +248,30 @@ export async function POST(request: NextRequest) {
         updated_at: b.id === bannerIdToActivate ? now : b.updated_at,
       }));
       targetSavedBanner = updatedList.find((b) => b.id === bannerIdToActivate) || null;
+
+      // Sync active state to Supabase table
+      if (supabase) {
+        try {
+          await supabase.from('hero_banners').update({ is_active: false }).neq('id', bannerIdToActivate);
+          await supabase.from('hero_banners').update({ is_active: true, updated_at: now }).eq('id', bannerIdToActivate);
+        } catch (sbErr) {
+          console.warn('[Hero API] Supabase set_active notice:', sbErr);
+        }
+      }
     } else if (bannerData) {
       const isDefault = bannerData.is_default || bannerData.id === 'hero-default';
-      const id = bannerData.id || `hero-${Date.now()}`;
-      
-      // Remove from deleted IDs if re-saved
-      updatedDeletedIds = updatedDeletedIds.filter((deletedId) => deletedId !== id);
+      const id = bannerData.id || `hero-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
+      // If image_url is a base64 string, upload to Supabase Storage to get a clean permanent CDN URL
+      let finalImageUrl = (bannerData.image_url || '/home/hero.png').trim();
+      if (finalImageUrl.startsWith('data:')) {
+        const uploadedUrl = await uploadBase64ToSupabaseStorage(finalImageUrl, id);
+        if (uploadedUrl) {
+          finalImageUrl = uploadedUrl;
+        }
+      }
+
+      updatedDeletedIds = updatedDeletedIds.filter((deletedId) => deletedId !== id);
       const existingIdx = updatedList.findIndex((b) => b.id === id);
 
       const newBanner: HeroBannerModel = {
@@ -206,7 +279,7 @@ export async function POST(request: NextRequest) {
         title: (bannerData.title || (isDefault ? 'Default Agency Showcase' : 'Special Promotion')).trim(),
         subtitle: (bannerData.subtitle || '').trim(),
         badge_text: (bannerData.badge_text || '').trim(),
-        image_url: (bannerData.image_url || '/home/hero.png').trim(),
+        image_url: finalImageUrl,
         link_url: (bannerData.link_url || '').trim(),
         button_text: (bannerData.button_text || 'Claim Offer').trim(),
         aspect_ratio: bannerData.aspect_ratio || 'auto',
@@ -232,40 +305,39 @@ export async function POST(request: NextRequest) {
       }
 
       targetSavedBanner = newBanner;
-    }
 
-    // Save to disk
-    writeStoredBanners(updatedList, updatedActiveId, updatedDeletedIds);
-
-    // Sync to Supabase in background
-    const supabase = getSupabaseServerClient();
-    if (supabase) {
-      try {
-        if (targetSavedBanner) {
-          if (targetSavedBanner.is_active) {
-            await supabase.from('hero_banners').update({ is_active: false }).neq('id', targetSavedBanner.id);
+      // Sync to Supabase table
+      if (supabase) {
+        try {
+          if (newBanner.is_active) {
+            await supabase.from('hero_banners').update({ is_active: false }).neq('id', newBanner.id);
           }
           await supabase.from('hero_banners').upsert({
-            id: targetSavedBanner.id,
-            title: targetSavedBanner.title,
-            subtitle: targetSavedBanner.subtitle,
-            badge_text: targetSavedBanner.badge_text,
-            image_url: targetSavedBanner.image_url,
-            link_url: targetSavedBanner.link_url,
-            button_text: targetSavedBanner.button_text,
-            aspect_ratio: targetSavedBanner.aspect_ratio,
-            is_active: targetSavedBanner.is_active,
-            is_default: targetSavedBanner.is_default,
-            display_order: targetSavedBanner.display_order,
+            id: newBanner.id,
+            title: newBanner.title,
+            subtitle: newBanner.subtitle,
+            badge_text: newBanner.badge_text,
+            image_url: newBanner.image_url,
+            link_url: newBanner.link_url,
+            button_text: newBanner.button_text,
+            aspect_ratio: newBanner.aspect_ratio,
+            is_active: newBanner.is_active,
+            is_default: newBanner.is_default,
+            display_order: newBanner.display_order,
             updated_at: now,
           });
+        } catch (sbErr) {
+          console.warn('[Hero API] Supabase upsert notice:', sbErr);
         }
-      } catch (sbErr) {
-        console.warn('[Hero API] Supabase sync notice:', sbErr);
       }
     }
 
-    const activeBanner = updatedList.find((b) => b.is_active) || updatedList[0];
+    writeStoredBanners(updatedList, updatedActiveId, updatedDeletedIds);
+
+    const activeBanner =
+      updatedList.find((b) => b.id === updatedActiveId) ||
+      updatedList.find((b) => b.is_active) ||
+      updatedList[0];
 
     return NextResponse.json({
       success: true,
@@ -294,8 +366,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     const { banners: currentBanners, activeId: currentActiveId, deletedIds: currentDeletedIds } = readStoredBanners();
-    
-    // Ensure default hero banner cannot be deleted
+
     const targetBanner = currentBanners.find((b) => b.id === id);
     if (targetBanner?.is_default) {
       return NextResponse.json(
